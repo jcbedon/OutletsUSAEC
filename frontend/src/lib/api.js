@@ -52,6 +52,7 @@ export const getUserNotifications = (userId) => api.get(`/notifications/${userId
 // Admin
 export const getAllClients = () => api.get("/admin/clients");
 export const getActiveClients = () => api.get("/admin/clients/active");
+export const createClient = (data) => api.post("/admin/clients/create", data);
 export const updateClientCommission = (userId, commissionFee) => 
   api.put(`/admin/clients/${userId}/commission?commission_fee=${commissionFee}`);
 export const getClientInfo = (customerId) => api.get(`/admin/clients/${customerId}/info`);
