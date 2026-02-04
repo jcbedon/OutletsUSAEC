@@ -928,6 +928,51 @@ async def get_reports_summary():
         "top_customers": top_customers
     }
 
+# ==================== SETTINGS ENDPOINTS ====================
+
+@api_router.get("/admin/settings/referral-bonus")
+async def get_referral_bonus_setting():
+    """Admin: Get current referral bonus"""
+    bonus = await get_referral_bonus()
+    return {"referral_bonus": bonus}
+
+@api_router.put("/admin/settings/referral-bonus")
+async def set_referral_bonus_setting(amount: float):
+    """Admin: Set referral bonus amount"""
+    if amount < 0:
+        raise HTTPException(status_code=400, detail="El bono no puede ser negativo")
+    
+    await db.settings.update_one(
+        {"key": "referral_bonus"},
+        {"$set": {"key": "referral_bonus", "value": amount}},
+        upsert=True
+    )
+    
+    return {"message": f"Bono de referido actualizado a ${amount:.2f}", "referral_bonus": amount}
+
+@api_router.get("/admin/referrals")
+async def get_referral_stats():
+    """Admin: Get referral statistics"""
+    # Users with referrals
+    top_referrers = await db.users.find(
+        {"referral_count": {"$gt": 0}},
+        {"_id": 0, "customer_id": 1, "name": 1, "referral_count": 1}
+    ).sort("referral_count", -1).limit(20).to_list(20)
+    
+    # Total referral bonuses paid
+    referral_bonuses = await db.wallet_transactions.aggregate([
+        {"$match": {"type": "referral_bonus"}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]).to_list(1)
+    
+    total_bonus_paid = referral_bonuses[0]["total"] if referral_bonuses else 0
+    
+    return {
+        "top_referrers": top_referrers,
+        "total_bonus_paid": total_bonus_paid,
+        "current_bonus": await get_referral_bonus()
+    }
+
 # ==================== SEED ADMIN ====================
 
 @api_router.post("/admin/seed")
