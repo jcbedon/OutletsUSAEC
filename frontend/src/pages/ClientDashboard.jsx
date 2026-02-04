@@ -1,0 +1,440 @@
+import { useState, useEffect } from "react";
+import { useAuth } from "@/App";
+import { useNavigate } from "react-router-dom";
+import { 
+  getWallet, 
+  getUserPurchases, 
+  getUserShipments, 
+  getUserNotifications,
+  getWalletTransactions,
+  requestDeposit 
+} from "@/lib/api";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { 
+  Wallet, 
+  ShoppingBag, 
+  Truck, 
+  Bell, 
+  LogOut, 
+  Plus,
+  CreditCard,
+  Package,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  History
+} from "lucide-react";
+
+const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/2n5fsvku_outlets.jpg";
+
+export default function ClientDashboard() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [wallet, setWallet] = useState(null);
+  const [purchases, setPurchases] = useState([]);
+  const [shipments, setShipments] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [depositAmount, setDepositAmount] = useState("");
+  const [depositDialogOpen, setDepositDialogOpen] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      loadData();
+    }
+  }, [user]);
+
+  const loadData = async () => {
+    try {
+      const [walletRes, purchasesRes, shipmentsRes, notificationsRes, transactionsRes] = await Promise.all([
+        getWallet(user.user_id),
+        getUserPurchases(user.user_id),
+        getUserShipments(user.user_id),
+        getUserNotifications(user.user_id),
+        getWalletTransactions(user.user_id)
+      ]);
+
+      setWallet(walletRes.data);
+      setPurchases(purchasesRes.data);
+      setShipments(shipmentsRes.data);
+      setNotifications(notificationsRes.data);
+      setTransactions(transactionsRes.data);
+    } catch (error) {
+      toast.error("Error al cargar datos");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRequestDeposit = async () => {
+    if (!depositAmount || parseFloat(depositAmount) <= 0) {
+      toast.error("Ingresa un monto válido");
+      return;
+    }
+
+    try {
+      await requestDeposit({
+        user_id: user.user_id,
+        amount: parseFloat(depositAmount),
+        description: "Solicitud de recarga"
+      });
+      toast.success("Solicitud de recarga enviada. Pendiente de aprobación.");
+      setDepositDialogOpen(false);
+      setDepositAmount("");
+      loadData();
+    } catch (error) {
+      toast.error("Error al solicitar recarga");
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
+
+  const getStatusBadge = (status) => {
+    const styles = {
+      preparing: "bg-yellow-100 text-yellow-800",
+      in_transit: "bg-blue-100 text-blue-800",
+      delivered: "bg-green-100 text-green-800",
+      confirmed: "bg-green-100 text-green-800",
+      pending: "bg-yellow-100 text-yellow-800",
+      approved: "bg-green-100 text-green-800"
+    };
+    const labels = {
+      preparing: "Preparando",
+      in_transit: "En Tránsito",
+      delivered: "Entregado",
+      confirmed: "Confirmada",
+      pending: "Pendiente",
+      approved: "Aprobado"
+    };
+    return (
+      <Badge className={`${styles[status] || "bg-gray-100 text-gray-800"} font-medium`}>
+        {labels[status] || status}
+      </Badge>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-red-600 border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-20">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+          <img src={LOGO_URL} alt="Outlets USA EC" className="h-10 object-contain" />
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={handleLogout}
+            data-testid="logout-btn"
+            className="text-gray-500"
+          >
+            <LogOut className="h-5 w-5" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Wallet Card */}
+      <div className="max-w-lg mx-auto px-4 pt-4">
+        <Card className="wallet-gradient text-white rounded-3xl shadow-2xl overflow-hidden" data-testid="wallet-card">
+          <CardContent className="p-6">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <p className="text-white/70 text-sm font-medium">Tu Saldo</p>
+                <p className="text-4xl font-extrabold mt-1" data-testid="wallet-balance">
+                  ${wallet?.available?.toFixed(2) || "0.00"}
+                </p>
+              </div>
+              <div className="text-right">
+                <Badge className="bg-white/20 text-white border-0 font-bold text-lg px-3 py-1">
+                  #{user?.customer_id}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <Dialog open={depositDialogOpen} onOpenChange={setDepositDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button 
+                    className="flex-1 bg-white text-slate-900 hover:bg-gray-100 font-bold rounded-xl h-12"
+                    data-testid="request-deposit-btn"
+                  >
+                    <Plus className="h-5 w-5 mr-2" />
+                    Recargar
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="rounded-2xl">
+                  <DialogHeader>
+                    <DialogTitle className="text-xl font-bold">Solicitar Recarga</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-4">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Monto (USD)</label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={depositAmount}
+                        onChange={(e) => setDepositAmount(e.target.value)}
+                        className="h-12 text-xl font-bold text-center rounded-xl mt-2"
+                        data-testid="deposit-amount-input"
+                      />
+                    </div>
+                    <Button 
+                      className="w-full h-12 bg-red-600 hover:bg-red-700 font-bold rounded-xl"
+                      onClick={handleRequestDeposit}
+                      data-testid="submit-deposit-btn"
+                    >
+                      Enviar Solicitud
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-white/20">
+              <p className="text-white/70 text-xs">
+                Hola, <span className="font-bold text-white">{user?.name}</span>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tabs */}
+      <div className="max-w-lg mx-auto px-4 mt-6">
+        <Tabs defaultValue="purchases" className="w-full">
+          <TabsList className="grid w-full grid-cols-4 bg-gray-100 rounded-xl p-1 h-auto">
+            <TabsTrigger 
+              value="purchases" 
+              className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
+              data-testid="tab-purchases"
+            >
+              <ShoppingBag className="h-4 w-4 mb-1" />
+              <span className="hidden sm:inline ml-1">Compras</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="history"
+              className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
+              data-testid="tab-history"
+            >
+              <History className="h-4 w-4 mb-1" />
+              <span className="hidden sm:inline ml-1">Historial</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="shipments"
+              className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
+              data-testid="tab-shipments"
+            >
+              <Truck className="h-4 w-4 mb-1" />
+              <span className="hidden sm:inline ml-1">Envíos</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="notifications"
+              className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
+              data-testid="tab-notifications"
+            >
+              <Bell className="h-4 w-4 mb-1" />
+              <span className="hidden sm:inline ml-1">Avisos</span>
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Purchases Tab */}
+          <TabsContent value="purchases" className="mt-4">
+            <ScrollArea className="h-[400px]">
+              {purchases.length === 0 ? (
+                <Card className="rounded-2xl border-dashed border-2 border-gray-200">
+                  <CardContent className="p-8 text-center">
+                    <ShoppingBag className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">Sin compras aún</p>
+                    <p className="text-gray-400 text-sm mt-1">Tus compras aparecerán aquí</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {purchases.map((purchase) => (
+                    <Card key={purchase.id} className="rounded-xl border-gray-100" data-testid="purchase-item">
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <p className="font-bold text-slate-800">{purchase.item_name}</p>
+                            <p className="text-sm text-gray-500">{purchase.store}</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              {new Date(purchase.created_at).toLocaleDateString('es-ES')}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-red-600">${purchase.price.toFixed(2)}</p>
+                            <p className="text-xs text-gray-400">+${purchase.commission.toFixed(2)} com.</p>
+                            {getStatusBadge(purchase.status)}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </TabsContent>
+
+          {/* Transaction History Tab */}
+          <TabsContent value="history" className="mt-4">
+            <ScrollArea className="h-[400px]">
+              {transactions.length === 0 ? (
+                <Card className="rounded-2xl border-dashed border-2 border-gray-200">
+                  <CardContent className="p-8 text-center">
+                    <History className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">Sin movimientos</p>
+                    <p className="text-gray-400 text-sm mt-1">Tu historial aparecerá aquí</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {transactions.map((tx) => (
+                    <Card key={tx.id} className="rounded-xl border-gray-100" data-testid="transaction-item">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                            tx.type === 'deposit' ? 'bg-green-100' : 'bg-red-100'
+                          }`}>
+                            {tx.type === 'deposit' ? (
+                              <Plus className={`h-5 w-5 text-green-600`} />
+                            ) : (
+                              <ShoppingBag className={`h-5 w-5 text-red-600`} />
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-slate-800">{tx.description}</p>
+                            <p className="text-xs text-gray-400">
+                              {new Date(tx.created_at).toLocaleDateString('es-ES', {
+                                day: 'numeric',
+                                month: 'short',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className={`font-bold ${tx.amount > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {tx.amount > 0 ? '+' : ''}${Math.abs(tx.amount).toFixed(2)}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              Saldo: ${tx.balance_after.toFixed(2)}
+                            </p>
+                            {getStatusBadge(tx.status)}
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </TabsContent>
+
+          {/* Shipments Tab */}
+          <TabsContent value="shipments" className="mt-4">
+            <ScrollArea className="h-[400px]">
+              {shipments.length === 0 ? (
+                <Card className="rounded-2xl border-dashed border-2 border-gray-200">
+                  <CardContent className="p-8 text-center">
+                    <Truck className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">Sin envíos</p>
+                    <p className="text-gray-400 text-sm mt-1">Tus envíos aparecerán aquí</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {shipments.map((shipment) => (
+                    <Card key={shipment.id} className="rounded-xl border-gray-100" data-testid="shipment-item">
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start mb-3">
+                          <div>
+                            <p className="font-bold text-slate-800">
+                              {shipment.shipping_type === 'with_family' ? 'Con Familiar USA' : 'Sin Familiar USA'}
+                            </p>
+                            <p className="text-sm text-gray-500">{shipment.country}</p>
+                          </div>
+                          {getStatusBadge(shipment.status)}
+                        </div>
+                        
+                        {shipment.tracking_number && (
+                          <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                            <p className="text-xs text-gray-500">Tracking:</p>
+                            <p className="font-mono font-bold text-sm">{shipment.tracking_number}</p>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-500">{shipment.purchase_ids.length} productos</span>
+                          <span className="font-bold text-red-600">${shipment.shipping_cost.toFixed(2)}</span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </TabsContent>
+
+          {/* Notifications Tab */}
+          <TabsContent value="notifications" className="mt-4">
+            <ScrollArea className="h-[400px]">
+              {notifications.length === 0 ? (
+                <Card className="rounded-2xl border-dashed border-2 border-gray-200">
+                  <CardContent className="p-8 text-center">
+                    <Bell className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-500 font-medium">Sin notificaciones</p>
+                    <p className="text-gray-400 text-sm mt-1">Las alertas aparecerán aquí</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {notifications.map((notif) => (
+                    <Card key={notif.id} className="rounded-xl border-gray-100" data-testid="notification-item">
+                      <CardContent className="p-4">
+                        <div className="flex gap-3">
+                          <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                            <Bell className="h-5 w-5 text-red-600" />
+                          </div>
+                          <div>
+                            <p className="font-bold text-slate-800">{notif.title}</p>
+                            <p className="text-sm text-gray-600 mt-1">{notif.message}</p>
+                            <p className="text-xs text-gray-400 mt-2">
+                              {new Date(notif.created_at).toLocaleDateString('es-ES', {
+                                day: 'numeric',
+                                month: 'short',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}
