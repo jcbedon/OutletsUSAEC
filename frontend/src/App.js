@@ -12,6 +12,7 @@ import AdminClients from "@/pages/AdminClients";
 import AdminWallet from "@/pages/AdminWallet";
 import AdminShipments from "@/pages/AdminShipments";
 import AdminReports from "@/pages/AdminReports";
+import AdminReferrals from "@/pages/AdminReferrals";
 
 // Auth Context
 const AuthContext = createContext(null);
