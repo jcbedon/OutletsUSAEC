@@ -100,6 +100,20 @@ export default function ClientDashboard() {
     navigate("/login");
   };
 
+  const handleShareWhatsApp = () => {
+    const referralCode = user?.customer_id || "";
+    const message = `¡Hola! Te invito a comprar en OUTLETS USA EC. Usa mi código de referido *${referralCode}* al registrarte y ambos ganamos saldo. 🎁\n\n👉 Regístrate aquí: ${window.location.origin}/register?ref=${referralCode}`;
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, "_blank");
+  };
+
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(user?.customer_id || "");
+    setCopied(true);
+    toast.success("¡Código copiado!");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const getStatusBadge = (status) => {
     const styles = {
       preparing: "bg-yellow-100 text-yellow-800",
