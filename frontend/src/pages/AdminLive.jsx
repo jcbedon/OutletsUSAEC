@@ -150,11 +150,6 @@ export default function AdminLive() {
       }
     }
   };
-      } catch (error) {
-        // Customer not found
-      }
-    }
-  };
 
   const handleSubmitPurchase = async (e) => {
     e.preventDefault();
@@ -170,9 +165,9 @@ export default function AdminLive() {
       return;
     }
 
-    const total = price + COMMISSION;
-    if (customerWallet && customerWallet.available < total) {
-      toast.error(`Saldo insuficiente. Disponible: $${customerWallet.available.toFixed(2)}`);
+    // Only check if wallet has enough for commission (not the item price)
+    if (customerWallet && customerWallet.available < customerCommission) {
+      toast.error(`Saldo insuficiente para comisión. Disponible: $${customerWallet.available.toFixed(2)}, Comisión: $${customerCommission.toFixed(2)}`);
       return;
     }
 
@@ -188,7 +183,7 @@ export default function AdminLive() {
       });
 
       toast.success(
-        `✓ ${result.data.customer_name}: ${purchaseForm.item_name} - $${result.data.total.toFixed(2)}`,
+        `✓ ${result.data.customer_name}: ${purchaseForm.item_name} - Precio: $${result.data.price_with_tax.toFixed(2)} (Comisión: $${result.data.commission.toFixed(2)})`,
         { duration: 3000 }
       );
 
