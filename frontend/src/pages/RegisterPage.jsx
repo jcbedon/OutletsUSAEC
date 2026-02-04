@@ -247,6 +247,30 @@ export default function RegisterPage() {
                 </Label>
               </div>
 
+              {/* Referral Code */}
+              <div className="space-y-2">
+                <Label htmlFor="referral_code" className="text-slate-700 font-medium">
+                  Código de Referido (opcional)
+                </Label>
+                <div className="relative">
+                  <Gift className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-green-500" />
+                  <Input
+                    id="referral_code"
+                    data-testid="register-referral-input"
+                    type="text"
+                    placeholder="Ej: J4582"
+                    className="pl-10 h-12 rounded-xl bg-green-50 border-green-200 uppercase"
+                    value={formData.referral_code}
+                    onChange={(e) => setFormData({ ...formData, referral_code: e.target.value.toUpperCase() })}
+                  />
+                </div>
+                {formData.referral_code && (
+                  <p className="text-xs text-green-600 font-medium">
+                    ¡Ambos ganarán saldo al registrarte!
+                  </p>
+                )}
+              </div>
+
               <Button
                 type="submit"
                 data-testid="register-submit-btn"
