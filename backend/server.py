@@ -35,9 +35,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Constants
-COMMISSION_FEE = 3.0  # USD
+DEFAULT_COMMISSION_FEE = 3.0  # USD - Default, can be customized per client
 LOW_BALANCE_THRESHOLD = 9.0  # USD
 DEFAULT_REFERRAL_BONUS = 5.0  # USD - Configurable by admin
+ILLINOIS_TAX_RATE = 0.0825  # 8.25% tax
 
 # ==================== MODELS ====================
 
@@ -49,6 +50,7 @@ class UserCreate(BaseModel):
     whatsapp_consent: bool = False
     password: str
     referral_code: Optional[str] = None  # Code of who referred this user
+    commission_fee: float = DEFAULT_COMMISSION_FEE  # Custom commission for this client
 
 class UserLogin(BaseModel):
     identifier: str  # Can be email, whatsapp, or customer_id
@@ -61,6 +63,7 @@ class User(BaseModel):
     referral_code: str = ""  # Unique code for sharing (same as customer_id)
     referred_by: Optional[str] = None  # customer_id of referrer
     referral_count: int = 0  # Number of successful referrals
+    commission_fee: float = DEFAULT_COMMISSION_FEE  # Custom commission for this client
     name: str
     country: str
     whatsapp: str
