@@ -49,6 +49,7 @@ export default function AdminShipments() {
   const [selectedPurchases, setSelectedPurchases] = useState([]);
   const [shipmentForm, setShipmentForm] = useState({
     shipping_type: "",
+    shipping_cost: "",
     address: "",
     country: "",
     phone: "",
