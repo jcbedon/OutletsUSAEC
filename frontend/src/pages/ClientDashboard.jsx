@@ -11,25 +11,23 @@ import {
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
-  Wallet, 
   ShoppingBag, 
   Truck, 
   Bell, 
   LogOut, 
   Plus,
-  CreditCard,
-  Package,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  History
+  History,
+  Share2,
+  Gift,
+  Copy,
+  Check
 } from "lucide-react";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/2n5fsvku_outlets.jpg";
