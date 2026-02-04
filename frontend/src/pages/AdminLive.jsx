@@ -136,13 +136,20 @@ export default function AdminLive() {
     setPurchaseForm({ ...purchaseForm, customer_id: customerId });
     setSelectedCustomer(null);
     setCustomerWallet(null);
+    setCustomerCommission(3.0);
 
     if (customerId.length >= 2) {
       try {
-        const walletRes = await getWalletByCustomerId(customerId);
-        const client = activeClients.find(c => c.customer_id === customerId.toUpperCase());
-        setCustomerWallet(walletRes.data);
-        setSelectedCustomer(client);
+        const clientInfoRes = await getClientInfo(customerId);
+        const clientData = clientInfoRes.data;
+        setCustomerWallet({ available: clientData.wallet_balance });
+        setSelectedCustomer(clientData);
+        setCustomerCommission(clientData.commission_fee || 3.0);
+      } catch (error) {
+        // Customer not found
+      }
+    }
+  };
       } catch (error) {
         // Customer not found
       }
