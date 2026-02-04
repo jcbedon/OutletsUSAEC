@@ -111,7 +111,7 @@ export default function AdminDashboard() {
       <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="bg-white rounded-lg p-1">
-            <img src={LOGO_URL} alt="Outlets USA EC" className="h-12 object-contain" />
+            <img src={LOGO_URL} alt="Outlets USA EC" className="h-12 object-contain logo-transparent" />
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-gray-600 hidden sm:block">

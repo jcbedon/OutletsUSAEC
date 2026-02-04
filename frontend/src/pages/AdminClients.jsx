@@ -90,7 +90,7 @@ export default function AdminClients() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="bg-white rounded-lg p-1">
-            <img src={LOGO_URL} alt="Outlets USA EC" className="h-10 object-contain" />
+            <img src={LOGO_URL} alt="Outlets USA EC" className="h-10 object-contain logo-transparent" />
           </div>
           <span className="font-bold text-slate-800">Clientes</span>
         </div>
