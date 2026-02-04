@@ -329,6 +329,7 @@ async def register_user(user_data: UserCreate):
         customer_id=customer_id,
         referral_code=customer_id,  # Same as customer_id for sharing
         referred_by=referred_by,
+        commission_fee=user_data.commission_fee,  # Custom commission
         name=user_data.name,
         country=user_data.country,
         whatsapp=user_data.whatsapp,
