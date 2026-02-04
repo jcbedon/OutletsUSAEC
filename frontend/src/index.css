@@ -161,6 +161,18 @@ code {
     color: #065f46;
 }
 
+/* Logo transparent background fix */
+.logo-transparent {
+    mix-blend-mode: multiply;
+    background: transparent;
+}
+
+/* For dark backgrounds, use screen blend mode */
+.logo-transparent-light {
+    mix-blend-mode: screen;
+    filter: invert(1);
+}
+
 @layer base {
     [data-debug-wrapper="true"] {
         display: contents !important;
