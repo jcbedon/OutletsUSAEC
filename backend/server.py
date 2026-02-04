@@ -37,8 +37,7 @@ logger = logging.getLogger(__name__)
 # Constants
 COMMISSION_FEE = 3.0  # USD
 LOW_BALANCE_THRESHOLD = 9.0  # USD
-SHIPPING_WITH_FAMILY = 32.0  # USD
-SHIPPING_WITHOUT_FAMILY = 52.0  # USD
+DEFAULT_REFERRAL_BONUS = 5.0  # USD - Configurable by admin
 
 # ==================== MODELS ====================
 
@@ -49,6 +48,7 @@ class UserCreate(BaseModel):
     email: Optional[str] = None
     whatsapp_consent: bool = False
     password: str
+    referral_code: Optional[str] = None  # Code of who referred this user
 
 class UserLogin(BaseModel):
     identifier: str  # Can be email, whatsapp, or customer_id
@@ -58,6 +58,9 @@ class User(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     customer_id: str  # Format: X1234 (letter + 4 digits)
+    referral_code: str = ""  # Unique code for sharing (same as customer_id)
+    referred_by: Optional[str] = None  # customer_id of referrer
+    referral_count: int = 0  # Number of successful referrals
     name: str
     country: str
     whatsapp: str
@@ -134,7 +137,8 @@ class Purchase(BaseModel):
 class ShipmentCreate(BaseModel):
     user_id: str
     purchase_ids: List[str]
-    shipping_type: str  # with_family, without_family
+    shipping_type: str  # with_family, without_family, custom
+    shipping_cost: float  # Admin defines the price
     address: str
     country: str
     phone: str
