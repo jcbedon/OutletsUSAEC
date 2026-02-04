@@ -57,7 +57,7 @@ export default function LoginPage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-100 px-4 py-3">
         <div className="max-w-md mx-auto flex items-center justify-center">
-          <img src={LOGO_URL} alt="Outlets USA EC" className="h-12 object-contain" />
+          <img src={LOGO_URL} alt="Outlets USA EC" className="h-20 object-contain" />
         </div>
       </div>
 

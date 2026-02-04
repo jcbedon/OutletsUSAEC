@@ -231,7 +231,7 @@ export default function AdminLive() {
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
-            <img src={LOGO_URL} alt="Outlets USA EC" className="h-8 object-contain" />
+            <img src={LOGO_URL} alt="Outlets USA EC" className="h-12 object-contain" />
           </div>
           
           {activeLive && (

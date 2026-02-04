@@ -65,7 +65,7 @@ export default function AdminWallet() {
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <img src={LOGO_URL} alt="Outlets USA EC" className="h-8 object-contain" />
+          <img src={LOGO_URL} alt="Outlets USA EC" className="h-12 object-contain" />
           <span className="font-bold text-slate-800">Recargas Pendientes</span>
         </div>
       </div>
