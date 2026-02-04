@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/App";
 import { registerUser, loginUser } from "@/lib/api";
 import { toast } from "sonner";
@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { User, Phone, Mail, Lock, Globe, UserPlus } from "lucide-react";
+import { User, Phone, Mail, Lock, Globe, UserPlus, Gift } from "lucide-react";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/2n5fsvku_outlets.jpg";
 
@@ -21,6 +21,7 @@ const COUNTRIES = [
 export default function RegisterPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -30,7 +31,17 @@ export default function RegisterPage() {
     password: "",
     confirmPassword: "",
     whatsapp_consent: false,
+    referral_code: "",
   });
+
+  // Get referral code from URL if present
+  useEffect(() => {
+    const refCode = searchParams.get("ref");
+    if (refCode) {
+      setFormData(prev => ({ ...prev, referral_code: refCode.toUpperCase() }));
+      toast.success(`¡Código de referido ${refCode.toUpperCase()} aplicado!`);
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
