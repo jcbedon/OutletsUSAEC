@@ -55,7 +55,9 @@ export default function AdminReports() {
           <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} data-testid="back-btn">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <img src={LOGO_URL} alt="Outlets USA EC" className="h-12 object-contain" />
+          <div className="bg-white rounded-lg p-1">
+            <img src={LOGO_URL} alt="Outlets USA EC" className="h-10 object-contain" />
+          </div>
           <span className="font-bold text-slate-800">Reportes</span>
         </div>
       </div>
