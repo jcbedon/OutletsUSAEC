@@ -220,6 +220,58 @@ export default function ClientDashboard() {
                   </div>
                 </DialogContent>
               </Dialog>
+
+              {/* Share/Referral Button */}
+              <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button 
+                    className="bg-green-500 hover:bg-green-600 text-white font-bold rounded-xl h-12 px-4"
+                    data-testid="share-referral-btn"
+                  >
+                    <Gift className="h-5 w-5" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="rounded-2xl">
+                  <DialogHeader>
+                    <DialogTitle className="text-xl font-bold flex items-center gap-2">
+                      <Gift className="h-6 w-6 text-green-500" />
+                      Invita y Gana
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 pt-4">
+                    <div className="bg-green-50 rounded-xl p-4 text-center">
+                      <p className="text-sm text-gray-600 mb-2">Tu código de referido:</p>
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-3xl font-extrabold text-green-600">
+                          {user?.customer_id}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCopyCode}
+                          className="text-green-600"
+                        >
+                          {copied ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <div className="text-center text-sm text-gray-600">
+                      <p>Comparte tu código con amigos.</p>
+                      <p className="font-bold text-green-600">¡Ambos ganan saldo al registrarse!</p>
+                    </div>
+
+                    <Button 
+                      className="w-full h-14 bg-green-500 hover:bg-green-600 font-bold rounded-xl text-lg"
+                      onClick={handleShareWhatsApp}
+                      data-testid="share-whatsapp-btn"
+                    >
+                      <Share2 className="h-5 w-5 mr-2" />
+                      Compartir por WhatsApp
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
 
             <div className="mt-4 pt-4 border-t border-white/20">
