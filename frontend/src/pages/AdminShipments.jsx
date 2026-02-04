@@ -302,10 +302,29 @@ export default function AdminShipments() {
                           <SelectValue placeholder="Seleccionar tipo" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="with_family">Con Familiar en USA - $32</SelectItem>
-                          <SelectItem value="without_family">Sin Familiar en USA - $52</SelectItem>
+                          <SelectItem value="with_family">Con Familiar en USA</SelectItem>
+                          <SelectItem value="without_family">Sin Familiar en USA</SelectItem>
+                          <SelectItem value="custom">Personalizado</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+
+                    {/* Shipping Cost - Custom */}
+                    <div>
+                      <Label>Costo de Envío (USD) *</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        placeholder="Ej: 32, 52, o personalizado"
+                        value={shipmentForm.shipping_cost}
+                        onChange={(e) => setShipmentForm({ ...shipmentForm, shipping_cost: e.target.value })}
+                        className="h-12 rounded-xl mt-1 text-xl font-bold"
+                        data-testid="shipping-cost-input"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Define el precio según el cliente y el envío
+                      </p>
                     </div>
 
                     {/* Address */}
