@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getAllClients, getWallet } from "@/lib/api";
+import { getAllClients, updateClientCommission } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowLeft, Users, Search, Phone, Mail, Globe, Wallet } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { ArrowLeft, Users, Search, Phone, Globe, Wallet, DollarSign, Edit, Save } from "lucide-react";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
@@ -17,6 +19,8 @@ export default function AdminClients() {
   const [filteredClients, setFilteredClients] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [editingClient, setEditingClient] = useState(null);
+  const [newCommission, setNewCommission] = useState("");
 
   useEffect(() => {
     loadClients();
@@ -48,6 +52,28 @@ export default function AdminClients() {
     }
   };
 
+  const handleEditCommission = (client) => {
+    setEditingClient(client);
+    setNewCommission((client.commission_fee || 3).toString());
+  };
+
+  const handleSaveCommission = async () => {
+    const commission = parseFloat(newCommission);
+    if (isNaN(commission) || commission < 0) {
+      toast.error("Ingresa un valor válido");
+      return;
+    }
+
+    try {
+      await updateClientCommission(editingClient.id, commission);
+      toast.success(`Comisión de ${editingClient.name} actualizada a $${commission.toFixed(2)}`);
+      setEditingClient(null);
+      loadClients();
+    } catch (error) {
+      toast.error("Error al actualizar comisión");
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -58,15 +84,9 @@ export default function AdminClients() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => navigate("/admin")}
-            data-testid="back-btn"
-          >
+          <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} data-testid="back-btn">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="bg-white rounded-lg p-1">
@@ -77,7 +97,6 @@ export default function AdminClients() {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-6">
-        {/* Stats */}
         <div className="grid grid-cols-2 gap-4 mb-6">
           <Card className="rounded-xl">
             <CardContent className="p-4 flex items-center gap-3">
@@ -105,7 +124,6 @@ export default function AdminClients() {
           </Card>
         </div>
 
-        {/* Search */}
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
           <Input
@@ -117,7 +135,6 @@ export default function AdminClients() {
           />
         </div>
 
-        {/* Clients List */}
         <ScrollArea className="h-[calc(100vh-320px)]">
           {filteredClients.length === 0 ? (
             <Card className="rounded-2xl border-dashed border-2 border-gray-200">
@@ -129,11 +146,7 @@ export default function AdminClients() {
           ) : (
             <div className="space-y-3">
               {filteredClients.map((client) => (
-                <Card 
-                  key={client.id} 
-                  className="rounded-xl hover:shadow-md transition-shadow"
-                  data-testid="client-item"
-                >
+                <Card key={client.id} className="rounded-xl hover:shadow-md transition-shadow" data-testid="client-item">
                   <CardContent className="p-4">
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
@@ -149,12 +162,6 @@ export default function AdminClients() {
                             <Phone className="h-4 w-4" />
                             <span>{client.whatsapp}</span>
                           </div>
-                          {client.email && (
-                            <div className="flex items-center gap-2">
-                              <Mail className="h-4 w-4" />
-                              <span>{client.email}</span>
-                            </div>
-                          )}
                           <div className="flex items-center gap-2">
                             <Globe className="h-4 w-4" />
                             <span>{client.country}</span>
@@ -162,7 +169,7 @@ export default function AdminClients() {
                         </div>
                       </div>
                       
-                      <div className="text-right">
+                      <div className="text-right space-y-2">
                         <div className={`px-3 py-2 rounded-xl ${
                           client.wallet_balance > 0 ? 'bg-green-50' : 'bg-gray-50'
                         }`}>
@@ -177,14 +184,65 @@ export default function AdminClients() {
                     </div>
                     
                     <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
-                      <span className="text-xs text-gray-400">
-                        Registro: {new Date(client.created_at).toLocaleDateString('es-ES')}
-                      </span>
-                      {client.whatsapp_consent && (
-                        <Badge className="bg-green-100 text-green-700 text-xs">
-                          WhatsApp Activo
-                        </Badge>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <DollarSign className="h-4 w-4 text-yellow-600" />
+                        <span className="text-sm text-gray-600">
+                          Comisión: <span className="font-bold text-yellow-600">${(client.commission_fee || 3).toFixed(2)}</span>
+                        </span>
+                      </div>
+                      
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="rounded-lg"
+                            onClick={() => handleEditCommission(client)}
+                            data-testid={`edit-commission-${client.customer_id}`}
+                          >
+                            <Edit className="h-4 w-4 mr-1" />
+                            Editar
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="rounded-2xl">
+                          <DialogHeader>
+                            <DialogTitle>Editar Comisión - #{client.customer_id}</DialogTitle>
+                          </DialogHeader>
+                          <div className="space-y-4 pt-4">
+                            <div>
+                              <Label>Cliente</Label>
+                              <p className="font-bold text-lg">{client.name}</p>
+                            </div>
+                            <div>
+                              <Label>Comisión por compra (USD)</Label>
+                              <div className="relative mt-2">
+                                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder="3.00"
+                                  value={newCommission}
+                                  onChange={(e) => setNewCommission(e.target.value)}
+                                  className="pl-10 h-14 text-2xl font-bold rounded-xl"
+                                  data-testid="commission-input"
+                                />
+                              </div>
+                              <p className="text-xs text-gray-500 mt-2">
+                                Esta comisión se cobrará por cada compra del cliente
+                              </p>
+                            </div>
+                            <Button
+                              onClick={handleSaveCommission}
+                              className="w-full h-12 bg-red-600 hover:bg-red-700 font-bold rounded-xl"
+                              data-testid="save-commission-btn"
+                            >
+                              <Save className="h-5 w-5 mr-2" />
+                              Guardar Comisión
+                            </Button>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
                     </div>
                   </CardContent>
                 </Card>
