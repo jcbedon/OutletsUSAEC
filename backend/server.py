@@ -880,6 +880,40 @@ async def get_active_clients():
     
     return sorted(result, key=lambda x: x["wallet_balance"], reverse=True)
 
+@api_router.put("/admin/clients/{user_id}/commission")
+async def update_client_commission(user_id: str, commission_fee: float):
+    """Admin: Update client's commission fee"""
+    if commission_fee < 0:
+        raise HTTPException(status_code=400, detail="La comisión no puede ser negativa")
+    
+    result = await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"commission_fee": commission_fee}}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    return {"message": f"Comisión actualizada a ${commission_fee:.2f}", "commission_fee": commission_fee}
+
+@api_router.get("/admin/clients/{customer_id}/info")
+async def get_client_info(customer_id: str):
+    """Admin: Get client info including commission"""
+    user = await db.users.find_one(
+        {"customer_id": customer_id.upper()},
+        {"_id": 0, "password_hash": 0}
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    wallet = await db.wallets.find_one({"user_id": user["id"]}, {"_id": 0})
+    
+    return {
+        **user,
+        "wallet_balance": wallet["available"] if wallet else 0,
+        "commission_fee": user.get("commission_fee", DEFAULT_COMMISSION_FEE)
+    }
+
 @api_router.get("/admin/reports/live/{live_id}")
 async def get_live_report(live_id: str):
     """Admin: Get detailed report for a live session"""
