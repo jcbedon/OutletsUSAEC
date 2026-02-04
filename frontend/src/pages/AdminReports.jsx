@@ -3,22 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { getReportsSummary, getLives, getLiveReport } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { 
-  ArrowLeft, 
-  BarChart3, 
-  DollarSign, 
-  Users, 
-  TrendingUp,
-  Package,
-  Radio,
-  ShoppingBag
-} from "lucide-react";
+import { ArrowLeft, BarChart3, DollarSign, Users, TrendingUp, Radio } from "lucide-react";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/2n5fsvku_outlets.jpg";
+
+function formatMoney(value) {
+  if (!value) return "0";
+  return value.toFixed(0);
+}
 
 export default function AdminReports() {
   const navigate = useNavigate();
@@ -70,17 +66,17 @@ export default function AdminReports() {
     );
   }
 
+  const totalSales = summary ? formatMoney(summary.total_sales) : "0";
+  const totalCommissions = summary ? formatMoney(summary.total_commissions) : "0";
+  const clientCount = summary ? summary.client_count : 0;
+  const liveCount = summary ? summary.live_count : 0;
+  const topCustomers = summary && summary.top_customers ? summary.top_customers : [];
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            onClick={() => navigate("/admin")}
-            data-testid="back-btn"
-          >
+          <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} data-testid="back-btn">
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <img src={LOGO_URL} alt="Outlets USA EC" className="h-8 object-contain" />
@@ -89,7 +85,6 @@ export default function AdminReports() {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-6">
-        {/* Summary Stats */}
         <h2 className="text-lg font-bold text-slate-800 mb-4">Resumen General</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <Card className="rounded-xl" data-testid="report-total-sales">
@@ -99,9 +94,7 @@ export default function AdminReports() {
                   <DollarSign className="h-5 w-5 text-green-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-extrabold text-slate-800">
-                    ${summary?.total_sales?.toFixed(0) || 0}
-                  </p>
+                  <p className="text-2xl font-extrabold text-slate-800">${totalSales}</p>
                   <p className="text-xs text-gray-500">Ventas Totales</p>
                 </div>
               </div>
@@ -115,9 +108,7 @@ export default function AdminReports() {
                   <TrendingUp className="h-5 w-5 text-yellow-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-extrabold text-slate-800">
-                    ${summary?.total_commissions?.toFixed(0) || 0}
-                  </p>
+                  <p className="text-2xl font-extrabold text-slate-800">${totalCommissions}</p>
                   <p className="text-xs text-gray-500">Comisiones</p>
                 </div>
               </div>
@@ -131,9 +122,7 @@ export default function AdminReports() {
                   <Users className="h-5 w-5 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-extrabold text-slate-800">
-                    {summary?.client_count || 0}
-                  </p>
+                  <p className="text-2xl font-extrabold text-slate-800">{clientCount}</p>
                   <p className="text-xs text-gray-500">Clientes</p>
                 </div>
               </div>
@@ -147,9 +136,7 @@ export default function AdminReports() {
                   <Radio className="h-5 w-5 text-red-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-extrabold text-slate-800">
-                    {summary?.live_count || 0}
-                  </p>
+                  <p className="text-2xl font-extrabold text-slate-800">{liveCount}</p>
                   <p className="text-xs text-gray-500">Lives</p>
                 </div>
               </div>
@@ -157,24 +144,19 @@ export default function AdminReports() {
           </Card>
         </div>
 
-        {/* Top Customers */}
         <h2 className="text-lg font-bold text-slate-800 mb-4">Top 10 Clientes</h2>
         <Card className="rounded-xl mb-8">
           <CardContent className="p-4">
-            {summary?.top_customers && summary.top_customers.length > 0 ? (
+            {topCustomers.length > 0 ? (
               <div className="space-y-3">
-                {summary.top_customers.map((customer, index) => (
-                  <div 
-                    key={customer._id}
-                    className="flex items-center justify-between py-2 border-b last:border-0"
-                    data-testid="top-customer-row"
-                  >
+                {topCustomers.map((customer, index) => (
+                  <div key={customer._id} className="flex items-center justify-between py-2 border-b last:border-0" data-testid="top-customer-row">
                     <div className="flex items-center gap-3">
                       <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                        index === 0 ? 'bg-yellow-100 text-yellow-700' :
-                        index === 1 ? 'bg-gray-200 text-gray-700' :
-                        index === 2 ? 'bg-orange-100 text-orange-700' :
-                        'bg-gray-100 text-gray-600'
+                        index === 0 ? "bg-yellow-100 text-yellow-700" :
+                        index === 1 ? "bg-gray-200 text-gray-700" :
+                        index === 2 ? "bg-orange-100 text-orange-700" :
+                        "bg-gray-100 text-gray-600"
                       }`}>
                         {index + 1}
                       </div>
@@ -193,7 +175,6 @@ export default function AdminReports() {
           </CardContent>
         </Card>
 
-        {/* Live Report */}
         <h2 className="text-lg font-bold text-slate-800 mb-4">Reporte por Live</h2>
         <Card className="rounded-xl">
           <CardContent className="p-4">
@@ -204,8 +185,8 @@ export default function AdminReports() {
               <SelectContent>
                 {lives.map((live) => (
                   <SelectItem key={live.id} value={live.id}>
-                    {live.title} - {new Date(live.created_at).toLocaleDateString('es-ES')}
-                    {live.status === 'active' && ' (EN VIVO)'}
+                    {live.title} - {new Date(live.created_at).toLocaleDateString("es-ES")}
+                    {live.status === "active" && " (EN VIVO)"}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -213,40 +194,29 @@ export default function AdminReports() {
 
             {liveReport && (
               <div className="space-y-4">
-                {/* Live Summary */}
                 <div className="grid grid-cols-3 gap-4">
                   <div className="bg-green-50 rounded-xl p-4 text-center">
                     <p className="text-xs text-gray-500">Ventas</p>
-                    <p className="text-2xl font-extrabold text-green-600">
-                      ${liveReport.total_sales.toFixed(2)}
-                    </p>
+                    <p className="text-2xl font-extrabold text-green-600">${liveReport.total_sales.toFixed(2)}</p>
                   </div>
                   <div className="bg-yellow-50 rounded-xl p-4 text-center">
                     <p className="text-xs text-gray-500">Comisiones</p>
-                    <p className="text-2xl font-extrabold text-yellow-600">
-                      ${liveReport.total_commissions.toFixed(2)}
-                    </p>
+                    <p className="text-2xl font-extrabold text-yellow-600">${liveReport.total_commissions.toFixed(2)}</p>
                   </div>
                   <div className="bg-blue-50 rounded-xl p-4 text-center">
                     <p className="text-xs text-gray-500">Compras</p>
-                    <p className="text-2xl font-extrabold text-blue-600">
-                      {liveReport.purchase_count}
-                    </p>
+                    <p className="text-2xl font-extrabold text-blue-600">{liveReport.purchase_count}</p>
                   </div>
                 </div>
 
-                {/* Customer Summary */}
-                {Object.keys(liveReport.customer_summary).length > 0 && (
+                {liveReport.customer_summary && Object.keys(liveReport.customer_summary).length > 0 && (
                   <div>
                     <h3 className="font-bold text-slate-800 mb-3">Ventas por Cliente</h3>
                     <div className="space-y-2">
                       {Object.entries(liveReport.customer_summary)
                         .sort((a, b) => b[1].total - a[1].total)
                         .map(([customerId, data]) => (
-                          <div 
-                            key={customerId}
-                            className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
-                          >
+                          <div key={customerId} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
                             <div className="flex items-center gap-2">
                               <Badge variant="outline" className="font-bold">#{customerId}</Badge>
                               <span className="text-sm text-gray-500">{data.count} compras</span>
@@ -258,17 +228,13 @@ export default function AdminReports() {
                   </div>
                 )}
 
-                {/* Purchases List */}
-                {liveReport.purchases.length > 0 && (
+                {liveReport.purchases && liveReport.purchases.length > 0 && (
                   <div>
                     <h3 className="font-bold text-slate-800 mb-3">Detalle de Compras</h3>
                     <ScrollArea className="h-60">
                       <div className="space-y-2">
                         {liveReport.purchases.map((purchase) => (
-                          <div 
-                            key={purchase.id}
-                            className="flex items-center justify-between p-3 bg-gray-50 rounded-xl text-sm"
-                          >
+                          <div key={purchase.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl text-sm">
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <Badge variant="outline" className="text-xs">#{purchase.customer_id}</Badge>
@@ -279,10 +245,7 @@ export default function AdminReports() {
                             <div className="text-right">
                               <p className="font-bold text-red-600">${purchase.total.toFixed(2)}</p>
                               <p className="text-xs text-gray-400">
-                                {new Date(purchase.created_at).toLocaleTimeString('es-ES', {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
+                                {new Date(purchase.created_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
                               </p>
                             </div>
                           </div>
