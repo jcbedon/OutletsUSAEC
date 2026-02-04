@@ -90,6 +90,13 @@ export default function AdminDashboard() {
       description: "Gestionar envíos"
     },
     { 
+      icon: Gift, 
+      label: "Referidos", 
+      path: "/admin/referrals", 
+      color: "bg-emerald-600",
+      description: "Configurar bonos"
+    },
+    { 
       icon: BarChart3, 
       label: "Reportes", 
       path: "/admin/reports", 
