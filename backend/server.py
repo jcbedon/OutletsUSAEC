@@ -858,6 +858,73 @@ async def get_all_clients():
     
     return result
 
+class AdminUserCreate(BaseModel):
+    name: str
+    country: str
+    whatsapp: str
+    email: Optional[str] = None
+    password: str
+    commission_fee: float = DEFAULT_COMMISSION_FEE
+    initial_balance: float = 0.0
+
+@api_router.post("/admin/clients/create")
+async def admin_create_client(user_data: AdminUserCreate):
+    """Admin: Create a new client with custom commission"""
+    # Check if whatsapp already exists
+    existing = await db.users.find_one({"whatsapp": user_data.whatsapp}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="Ya existe un usuario con este WhatsApp")
+    
+    # Generate unique customer_id
+    customer_id = generate_customer_id(user_data.name)
+    while await db.users.find_one({"customer_id": customer_id}, {"_id": 0}):
+        customer_id = generate_customer_id(user_data.name)
+    
+    user = User(
+        customer_id=customer_id,
+        referral_code=customer_id,
+        commission_fee=user_data.commission_fee,
+        name=user_data.name,
+        country=user_data.country,
+        whatsapp=user_data.whatsapp,
+        email=user_data.email,
+        whatsapp_consent=True,
+        password_hash=hash_password(user_data.password),
+        role="client"
+    )
+    
+    await db.users.insert_one(user.model_dump())
+    
+    # Create wallet with initial balance
+    wallet = Wallet(
+        user_id=user.id,
+        customer_id=customer_id,
+        available=user_data.initial_balance
+    )
+    await db.wallets.insert_one(wallet.model_dump())
+    
+    # If initial balance > 0, create transaction record
+    if user_data.initial_balance > 0:
+        tx = WalletTransaction(
+            user_id=user.id,
+            customer_id=customer_id,
+            type="deposit",
+            amount=user_data.initial_balance,
+            balance_after=user_data.initial_balance,
+            description="Saldo inicial (Admin)",
+            status="approved",
+            approved_at=datetime.now(timezone.utc).isoformat()
+        )
+        await db.wallet_transactions.insert_one(tx.model_dump())
+    
+    return {
+        "message": "Cliente creado exitosamente",
+        "user_id": user.id,
+        "customer_id": customer_id,
+        "commission_fee": user_data.commission_fee,
+        "initial_balance": user_data.initial_balance
+    }
+
 @api_router.get("/admin/clients/active")
 async def get_active_clients():
     """Admin: Get clients with positive wallet balance"""
