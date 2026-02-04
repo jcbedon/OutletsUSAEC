@@ -5,49 +5,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, BarChart3, DollarSign, Users, TrendingUp, Radio } from "lucide-react";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/2n5fsvku_outlets.jpg";
-
-const StatCard = ({ icon: Icon, color, value, label, testId }) => (
-  <Card className="rounded-xl" data-testid={testId}>
-    <CardContent className="p-4">
-      <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 ${color} rounded-xl flex items-center justify-center`}>
-          <Icon className="h-5 w-5" />
-        </div>
-        <div>
-          <p className="text-2xl font-extrabold text-slate-800">{value}</p>
-          <p className="text-xs text-gray-500">{label}</p>
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-);
-
-const CustomerRow = ({ customer, index }) => {
-  const bgColor = index === 0 ? "bg-yellow-100 text-yellow-700" :
-                  index === 1 ? "bg-gray-200 text-gray-700" :
-                  index === 2 ? "bg-orange-100 text-orange-700" :
-                  "bg-gray-100 text-gray-600";
-  
-  return (
-    <div className="flex items-center justify-between py-2 border-b last:border-0" data-testid="top-customer-row">
-      <div className="flex items-center gap-3">
-        <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${bgColor}`}>
-          {index + 1}
-        </div>
-        <div>
-          <p className="font-bold text-slate-800">#{customer._id}</p>
-          <p className="text-xs text-gray-500">{customer.purchase_count} compras</p>
-        </div>
-      </div>
-      <p className="text-xl font-bold text-green-600">${customer.total_spent.toFixed(2)}</p>
-    </div>
-  );
-};
 
 export default function AdminReports() {
   const navigate = useNavigate();
@@ -57,34 +18,26 @@ export default function AdminReports() {
   const [liveReport, setLiveReport] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
-    try {
-      const res1 = await getReportsSummary();
-      const res2 = await getLives();
-      setSummary(res1.data);
-      setLives(res2.data);
-    } catch (err) {
-      toast.error("Error al cargar datos");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchLiveReport = async (id) => {
-    try {
-      const res = await getLiveReport(id);
-      setLiveReport(res.data);
-    } catch (err) {
-      toast.error("Error al cargar reporte");
-    }
-  };
-
   useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res1 = await getReportsSummary();
+        const res2 = await getLives();
+        setSummary(res1.data);
+        setLives(res2.data);
+      } catch (err) {
+        toast.error("Error al cargar datos");
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchData();
   }, []);
 
   useEffect(() => {
-    if (selectedLiveId) fetchLiveReport(selectedLiveId);
+    if (selectedLiveId) {
+      getLiveReport(selectedLiveId).then(res => setLiveReport(res.data)).catch(() => toast.error("Error"));
+    }
   }, [selectedLiveId]);
 
   if (loading) {
@@ -94,12 +47,6 @@ export default function AdminReports() {
       </div>
     );
   }
-
-  const sales = summary && summary.total_sales ? summary.total_sales.toFixed(0) : "0";
-  const comms = summary && summary.total_commissions ? summary.total_commissions.toFixed(0) : "0";
-  const clients = summary ? summary.client_count : 0;
-  const livesCnt = summary ? summary.live_count : 0;
-  const topCust = summary && summary.top_customers ? summary.top_customers : [];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -116,22 +63,40 @@ export default function AdminReports() {
       <div className="max-w-4xl mx-auto px-4 py-6">
         <h2 className="text-lg font-bold text-slate-800 mb-4">Resumen General</h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <StatCard icon={DollarSign} color="bg-green-100 text-green-600" value={`$${sales}`} label="Ventas Totales" testId="report-total-sales" />
-          <StatCard icon={TrendingUp} color="bg-yellow-100 text-yellow-600" value={`$${comms}`} label="Comisiones" testId="report-commissions" />
-          <StatCard icon={Users} color="bg-blue-100 text-blue-600" value={clients} label="Clientes" testId="report-clients" />
-          <StatCard icon={Radio} color="bg-red-100 text-red-600" value={livesCnt} label="Lives" testId="report-lives" />
+          <Card className="rounded-xl" data-testid="report-total-sales">
+            <CardContent className="p-4">
+              <DollarSign className="h-6 w-6 text-green-600 mb-2" />
+              <p className="text-2xl font-extrabold">${summary ? summary.total_sales.toFixed(0) : 0}</p>
+              <p className="text-xs text-gray-500">Ventas</p>
+            </CardContent>
+          </Card>
+          <Card className="rounded-xl" data-testid="report-commissions">
+            <CardContent className="p-4">
+              <TrendingUp className="h-6 w-6 text-yellow-600 mb-2" />
+              <p className="text-2xl font-extrabold">${summary ? summary.total_commissions.toFixed(0) : 0}</p>
+              <p className="text-xs text-gray-500">Comisiones</p>
+            </CardContent>
+          </Card>
+          <Card className="rounded-xl" data-testid="report-clients">
+            <CardContent className="p-4">
+              <Users className="h-6 w-6 text-blue-600 mb-2" />
+              <p className="text-2xl font-extrabold">{summary ? summary.client_count : 0}</p>
+              <p className="text-xs text-gray-500">Clientes</p>
+            </CardContent>
+          </Card>
+          <Card className="rounded-xl" data-testid="report-lives">
+            <CardContent className="p-4">
+              <Radio className="h-6 w-6 text-red-600 mb-2" />
+              <p className="text-2xl font-extrabold">{summary ? summary.live_count : 0}</p>
+              <p className="text-xs text-gray-500">Lives</p>
+            </CardContent>
+          </Card>
         </div>
 
-        <h2 className="text-lg font-bold text-slate-800 mb-4">Top 10 Clientes</h2>
+        <h2 className="text-lg font-bold text-slate-800 mb-4">Top Clientes</h2>
         <Card className="rounded-xl mb-8">
           <CardContent className="p-4">
-            {topCust.length > 0 ? (
-              <div className="space-y-3">
-                {topCust.map((c, i) => <CustomerRow key={c._id} customer={c} index={i} />)}
-              </div>
-            ) : (
-              <p className="text-center text-gray-500 py-8">Sin datos de clientes</p>
-            )}
+            <TopCustomersList customers={summary ? summary.top_customers : []} />
           </CardContent>
         </Card>
 
@@ -143,55 +108,66 @@ export default function AdminReports() {
                 <SelectValue placeholder="Seleccionar Live" />
               </SelectTrigger>
               <SelectContent>
-                {lives.map((l) => (
-                  <SelectItem key={l.id} value={l.id}>
-                    {l.title} - {new Date(l.created_at).toLocaleDateString("es-ES")}
-                  </SelectItem>
-                ))}
+                <LiveOptions lives={lives} />
               </SelectContent>
             </Select>
-
-            {liveReport ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-green-50 rounded-xl p-4 text-center">
-                    <p className="text-xs text-gray-500">Ventas</p>
-                    <p className="text-2xl font-extrabold text-green-600">${liveReport.total_sales.toFixed(2)}</p>
-                  </div>
-                  <div className="bg-yellow-50 rounded-xl p-4 text-center">
-                    <p className="text-xs text-gray-500">Comisiones</p>
-                    <p className="text-2xl font-extrabold text-yellow-600">${liveReport.total_commissions.toFixed(2)}</p>
-                  </div>
-                  <div className="bg-blue-50 rounded-xl p-4 text-center">
-                    <p className="text-xs text-gray-500">Compras</p>
-                    <p className="text-2xl font-extrabold text-blue-600">{liveReport.purchase_count}</p>
-                  </div>
-                </div>
-
-                {liveReport.purchases && liveReport.purchases.length > 0 && (
-                  <ScrollArea className="h-60">
-                    <div className="space-y-2">
-                      {liveReport.purchases.map((p) => (
-                        <div key={p.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl text-sm">
-                          <div>
-                            <Badge variant="outline" className="text-xs">#{p.customer_id}</Badge>
-                            <span className="font-medium ml-2">{p.item_name}</span>
-                          </div>
-                          <span className="font-bold text-red-600">${p.total.toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-400">
-                <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>Selecciona un Live para ver el reporte</p>
-              </div>
-            )}
+            <LiveReportDisplay report={liveReport} />
           </CardContent>
         </Card>
+      </div>
+    </div>
+  );
+}
+
+function TopCustomersList({ customers }) {
+  if (!customers || customers.length === 0) {
+    return <p className="text-center text-gray-500 py-8">Sin datos</p>;
+  }
+  return (
+    <div className="space-y-3">
+      {customers.slice(0, 5).map((c, i) => (
+        <div key={c._id} className="flex justify-between items-center py-2 border-b last:border-0">
+          <div className="flex items-center gap-2">
+            <span className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center text-xs font-bold">{i+1}</span>
+            <span className="font-bold">#{c._id}</span>
+          </div>
+          <span className="text-green-600 font-bold">${c.total_spent.toFixed(2)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function LiveOptions({ lives }) {
+  return lives.map((l) => (
+    <SelectItem key={l.id} value={l.id}>
+      {l.title}
+    </SelectItem>
+  ));
+}
+
+function LiveReportDisplay({ report }) {
+  if (!report) {
+    return (
+      <div className="text-center py-8 text-gray-400">
+        <BarChart3 className="h-12 w-12 mx-auto mb-3 opacity-50" />
+        <p>Selecciona un Live</p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-3 gap-4">
+      <div className="bg-green-50 rounded-xl p-4 text-center">
+        <p className="text-xs text-gray-500">Ventas</p>
+        <p className="text-xl font-bold text-green-600">${report.total_sales.toFixed(2)}</p>
+      </div>
+      <div className="bg-yellow-50 rounded-xl p-4 text-center">
+        <p className="text-xs text-gray-500">Comisiones</p>
+        <p className="text-xl font-bold text-yellow-600">${report.total_commissions.toFixed(2)}</p>
+      </div>
+      <div className="bg-blue-50 rounded-xl p-4 text-center">
+        <p className="text-xs text-gray-500">Compras</p>
+        <p className="text-xl font-bold text-blue-600">{report.purchase_count}</p>
       </div>
     </div>
   );
