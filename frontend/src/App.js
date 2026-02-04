@@ -139,6 +139,14 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/admin/referrals"
+            element={
+              <ProtectedRoute requiredRole="admin">
+                <AdminReferrals />
+              </ProtectedRoute>
+            }
+          />
           
           {/* Default redirect */}
           <Route path="/" element={<Navigate to="/login" replace />} />
