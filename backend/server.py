@@ -586,12 +586,19 @@ async def create_purchase(purchase_data: PurchaseCreate):
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
     
-    total = purchase_data.price + COMMISSION_FEE
+    # Get client's custom commission fee
+    commission_fee = user.get("commission_fee", DEFAULT_COMMISSION_FEE)
     
-    if wallet["available"] < total:
+    # Calculate tax (Illinois 8.25%)
+    tax = round(purchase_data.price * ILLINOIS_TAX_RATE, 2)
+    price_with_tax = round(purchase_data.price + tax, 2)
+    total = round(price_with_tax + commission_fee, 2)  # Total for display
+    
+    # ONLY commission is deducted from wallet (item price is paid outside)
+    if wallet["available"] < commission_fee:
         raise HTTPException(
             status_code=400, 
-            detail=f"Saldo insuficiente. Disponible: ${wallet['available']:.2f}, Requerido: ${total:.2f}"
+            detail=f"Saldo insuficiente para comisión. Disponible: ${wallet['available']:.2f}, Comisión: ${commission_fee:.2f}"
         )
     
     # Create purchase
@@ -601,15 +608,17 @@ async def create_purchase(purchase_data: PurchaseCreate):
         item_name=purchase_data.item_name,
         store=purchase_data.store,
         price=purchase_data.price,
-        commission=COMMISSION_FEE,
+        tax=tax,
+        price_with_tax=price_with_tax,
+        commission=commission_fee,
         total=total,
         live_id=purchase_data.live_id
     )
     
     await db.purchases.insert_one(purchase.model_dump())
     
-    # Deduct from wallet
-    new_balance = wallet["available"] - total
+    # ONLY deduct commission from wallet (not the item price)
+    new_balance = wallet["available"] - commission_fee
     await db.wallets.update_one(
         {"user_id": user["id"]},
         {"$set": {
@@ -618,14 +627,14 @@ async def create_purchase(purchase_data: PurchaseCreate):
         }}
     )
     
-    # Record transaction
+    # Record transaction (only commission)
     transaction = WalletTransaction(
         user_id=user["id"],
         customer_id=purchase_data.customer_id.upper(),
         type="purchase",
-        amount=-total,
+        amount=-commission_fee,
         balance_after=new_balance,
-        description=f"Compra: {purchase_data.item_name} ({purchase_data.store})",
+        description=f"Comisión: {purchase_data.item_name} ({purchase_data.store})",
         status="approved",
         approved_at=datetime.now(timezone.utc).isoformat()
     )
@@ -635,8 +644,8 @@ async def create_purchase(purchase_data: PurchaseCreate):
     await db.lives.update_one(
         {"id": purchase_data.live_id},
         {"$inc": {
-            "total_sales": purchase_data.price,
-            "total_commissions": COMMISSION_FEE,
+            "total_sales": price_with_tax,
+            "total_commissions": commission_fee,
             "purchase_count": 1
         }}
     )
@@ -647,7 +656,7 @@ async def create_purchase(purchase_data: PurchaseCreate):
         customer_id=purchase_data.customer_id.upper(),
         notif_type="purchase_created",
         title="Compra Registrada",
-        message=f"Compraste {purchase_data.item_name} por ${purchase_data.price:.2f} + ${COMMISSION_FEE:.2f} comisión. Saldo restante: ${new_balance:.2f}"
+        message=f"Compraste {purchase_data.item_name} - Precio: ${purchase_data.price:.2f} + Tax: ${tax:.2f} = ${price_with_tax:.2f}. Comisión: ${commission_fee:.2f}. Saldo: ${new_balance:.2f}"
     )
     
     # Check low balance
@@ -656,7 +665,12 @@ async def create_purchase(purchase_data: PurchaseCreate):
     return {
         "message": "Compra registrada",
         "purchase_id": purchase.id,
+        "price": purchase_data.price,
+        "tax": tax,
+        "price_with_tax": price_with_tax,
+        "commission": commission_fee,
         "total": total,
+        "commission_deducted": commission_fee,
         "new_balance": new_balance,
         "customer_name": user["name"]
     }
