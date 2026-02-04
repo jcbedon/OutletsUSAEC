@@ -466,13 +466,21 @@ export default function AdminLive() {
                             <span className="font-medium">${parseFloat(purchaseForm.price || 0).toFixed(2)}</span>
                           </div>
                           <div className="flex justify-between text-sm">
-                            <span className="text-gray-600">Comisión:</span>
-                            <span className="font-medium">${COMMISSION.toFixed(2)}</span>
+                            <span className="text-gray-600">Tax Illinois (8.25%):</span>
+                            <span className="font-medium">${(parseFloat(purchaseForm.price || 0) * TAX_RATE).toFixed(2)}</span>
                           </div>
-                          <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t">
-                            <span>Total:</span>
-                            <span className="text-red-600">
-                              ${(parseFloat(purchaseForm.price || 0) + COMMISSION).toFixed(2)}
+                          <div className="flex justify-between text-sm font-bold text-blue-600">
+                            <span>Precio + Tax:</span>
+                            <span>${(parseFloat(purchaseForm.price || 0) * (1 + TAX_RATE)).toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm mt-2 pt-2 border-t border-dashed">
+                            <span className="text-yellow-600">Comisión ({selectedCustomer?.name || 'cliente'}):</span>
+                            <span className="font-bold text-yellow-600">${customerCommission.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t bg-yellow-50 -mx-3 px-3 py-2 rounded-b-xl">
+                            <span>Se descuenta del saldo:</span>
+                            <span className="text-yellow-600">
+                              ${customerCommission.toFixed(2)}
                             </span>
                           </div>
                         </div>
