@@ -130,9 +130,11 @@ class Purchase(BaseModel):
     customer_id: str
     item_name: str
     store: str
-    price: float
-    commission: float = COMMISSION_FEE
-    total: float = 0.0  # price + commission
+    price: float  # Base price
+    tax: float = 0.0  # Illinois tax 8.25%
+    price_with_tax: float = 0.0  # Price + tax (what customer pays for item)
+    commission: float = DEFAULT_COMMISSION_FEE  # Only this is deducted from wallet
+    total: float = 0.0  # price_with_tax + commission (for display/receipt)
     status: str = "confirmed"  # confirmed, adjusted, cancelled
     live_id: str
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
