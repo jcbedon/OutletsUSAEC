@@ -701,12 +701,13 @@ async def get_pending_shipment_purchases(user_id: str):
 
 @api_router.post("/shipments")
 async def create_shipment(shipment_data: ShipmentCreate):
-    """Admin: Create a shipment"""
+    """Admin: Create a shipment with custom price"""
     user = await db.users.find_one({"id": shipment_data.user_id}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
-    shipping_cost = SHIPPING_WITH_FAMILY if shipment_data.shipping_type == "with_family" else SHIPPING_WITHOUT_FAMILY
+    # Use the price provided by admin
+    shipping_cost = shipment_data.shipping_cost
     
     shipment = Shipment(
         user_id=shipment_data.user_id,
