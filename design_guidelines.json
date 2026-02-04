@@ -1,0 +1,138 @@
+{
+  "identity": {
+    "name": "OUTLETS USA EC",
+    "persona": "E1 - The Anti-AI Designer",
+    "tone": "High-Energy Retail, Trustworthy Logistics, Mobile-First Speed",
+    "aesthetic": "Tactical Pop",
+    "description": "A fusion of a high-speed trading desk and a friendly mobile wallet. It balances the urgency of live shopping with the calm trust of a banking app."
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Manrope, sans-serif",
+      "body": "DM Sans, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "weights": {
+      "headings": "800",
+      "subheadings": "600",
+      "body": "400",
+      "bold": "700"
+    },
+    "styles": {
+      "h1": "text-4xl md:text-5xl font-extrabold tracking-tight leading-none text-slate-900",
+      "h2": "text-3xl font-bold tracking-tight text-slate-900",
+      "h3": "text-xl font-bold tracking-tight text-slate-800",
+      "body": "text-base font-normal leading-relaxed text-slate-600",
+      "caption": "text-xs font-medium uppercase tracking-wider text-slate-500",
+      "price": "text-2xl font-black tracking-tight text-red-600",
+      "live_badge": "text-xs font-bold uppercase tracking-widest text-white bg-red-600 px-2 py-0.5 rounded-full animate-pulse"
+    },
+    "import_url": "https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;500;700&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;600;800&display=swap"
+  },
+  "colors": {
+    "primary": {
+      "DEFAULT": "#DC2626",
+      "hover": "#B91C1C",
+      "foreground": "#FFFFFF",
+      "50": "#FEF2F2",
+      "100": "#FEE2E2",
+      "500": "#EF4444",
+      "600": "#DC2626",
+      "900": "#7F1D1D"
+    },
+    "secondary": {
+      "DEFAULT": "#F3F4F6",
+      "foreground": "#1F2937",
+      "dark": "#111827"
+    },
+    "accent": {
+      "DEFAULT": "#10B981",
+      "foreground": "#FFFFFF",
+      "glow": "0 0 20px rgba(16, 185, 129, 0.5)"
+    },
+    "background": {
+      "app": "#F9FAFB",
+      "card": "#FFFFFF",
+      "modal": "#FFFFFF"
+    },
+    "border": {
+      "subtle": "#E5E7EB",
+      "strong": "#D1D5DB"
+    },
+    "status": {
+      "success": "#059669",
+      "warning": "#D97706",
+      "error": "#DC2626",
+      "info": "#2563EB"
+    }
+  },
+  "layout": {
+    "spacing": {
+      "container_padding": "p-4 md:p-8",
+      "section_gap": "gap-8",
+      "card_padding": "p-6"
+    },
+    "grid_system": {
+      "dashboard": "grid grid-cols-1 md:grid-cols-12 gap-6",
+      "live_panel": "grid grid-cols-1 md:grid-cols-2 gap-4 h-[calc(100vh-4rem)]",
+      "mobile_feed": "flex flex-col gap-4"
+    },
+    "containers": {
+      "main": "max-w-7xl mx-auto w-full",
+      "narrow": "max-w-md mx-auto w-full"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg shadow-red-600/20 transition-all active:scale-95",
+      "secondary": "bg-white hover:bg-gray-50 text-slate-900 border border-gray-200 font-semibold py-3 px-6 rounded-xl shadow-sm transition-all active:scale-95",
+      "ghost": "bg-transparent hover:bg-gray-100 text-slate-600 font-medium py-2 px-4 rounded-lg transition-colors",
+      "live_action": "bg-slate-900 hover:bg-slate-800 text-white font-black text-lg py-6 rounded-2xl shadow-xl active:scale-95 uppercase tracking-widest"
+    },
+    "cards": {
+      "base": "bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow",
+      "interactive": "bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all cursor-pointer",
+      "wallet": "bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-3xl shadow-2xl shadow-slate-900/30 p-8 relative overflow-hidden"
+    },
+    "inputs": {
+      "base": "bg-gray-50 border border-gray-200 text-slate-900 text-lg rounded-xl focus:ring-2 focus:ring-red-600/20 focus:border-red-600 block w-full p-4 transition-all placeholder:text-gray-400",
+      "live_entry": "bg-white border-2 border-slate-200 text-slate-900 text-3xl font-black text-center rounded-2xl focus:ring-4 focus:ring-red-600/10 focus:border-red-600 block w-full p-6 transition-all"
+    }
+  },
+  "visual_enhancers": {
+    "shadows": {
+      "soft": "0 4px 20px -2px rgba(0, 0, 0, 0.05)",
+      "glow": "0 0 15px rgba(220, 38, 38, 0.3)"
+    },
+    "borders": {
+      "glass": "1px solid rgba(255, 255, 255, 0.5)",
+      "subtle": "1px solid #F3F4F6"
+    },
+    "glassmorphism": {
+      "nav": "bg-white/80 backdrop-blur-lg border-t border-gray-200/50"
+    },
+    "animations": {
+      "hover_lift": "transition-transform duration-300 hover:-translate-y-1",
+      "click_press": "transition-transform duration-100 active:scale-95"
+    }
+  },
+  "assets": {
+    "logo": "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/2n5fsvku_outlets.jpg",
+    "images": {
+      "login_hero": "https://images.unsplash.com/photo-1713256452479-5a20056c0340?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHwyfHxoYXBweSUyMHBlcnNvbiUyMGxvb2tpbmclMjBhdCUyMHBob25lJTIwc2hvcHBpbmclMjBleGNpdGVtZW50fGVufDB8fHx8MTc3MDE2ODI5MXww&ixlib=rb-4.1.0&q=85",
+      "warehouse_bg": "https://images.unsplash.com/photo-1768796373360-95d80c5830fb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NTZ8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjB3YXJlaG91c2UlMjBsb2dpc3RpY3MlMjBwYWNrYWdlc3xlbnwwfHx8fDE3NzAxNjgyODZ8MA&ixlib=rb-4.1.0&q=85",
+      "empty_state": "https://images.unsplash.com/photo-1569484221992-2a453658fff3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NjZ8MHwxfHNlYXJjaHw0fHxoYXBweSUyMHBlcnNvbiUyMGxvb2tpbmclMjBhdCUyMHBob25lJTIwc2hvcHBpbmclMjBleGNpdGVtZW50fGVufDB8fHx8MTc3MDE2ODI5MXww&ixlib=rb-4.1.0&q=85"
+    },
+    "icons": "lucide-react"
+  },
+  "universal_guidelines": [
+    "MOBILE FIRST: All designs must be touch-friendly. Minimum touch target 44px.",
+    "SPEED IS KING: Avoid heavy animations in the 'Live Shopping' flow. Use instant state updates.",
+    "HIGH CONTRAST: Ensure text is legible on mobile screens outdoors (high brightness).",
+    "NO GENERIC ALERTS: Use 'Sonner' for toasts. Customize them to look like push notifications.",
+    "DATA-TESTID: Every interactive element must have a data-testid attribute.",
+    "EMPTY STATES: Never leave a blank screen. Use an illustration and a clear CTA.",
+    "INPUTS: Use 'inputmode' attributes correctly (numeric, decimal, email) for mobile keyboards."
+  ],
+  "instructions_to_main_agent": "You are building a high-speed PWA. Focus on the 'Live Shopping' Admin Panel and the 'Client Wallet'. The Admin Panel should feel like a calculator or POS - big buttons, instant feedback. The Client Wallet should feel premium. Use the provided images for the login and dashboard backgrounds. Use Shadcn components but override the default radius to 'rounded-xl' or 'rounded-2xl' for a friendlier mobile feel."
+}
