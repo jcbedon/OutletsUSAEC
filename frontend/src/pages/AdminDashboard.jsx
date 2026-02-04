@@ -15,7 +15,8 @@ import {
   Truck,
   BarChart3,
   LogOut,
-  Play
+  Play,
+  Gift
 } from "lucide-react";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/2n5fsvku_outlets.jpg";
