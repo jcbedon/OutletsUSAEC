@@ -96,8 +96,14 @@ export default function AdminShipments() {
   };
 
   const handleCreateShipment = async () => {
-    if (!selectedClient || selectedPurchases.length === 0 || !shipmentForm.shipping_type || !shipmentForm.address) {
+    if (!selectedClient || selectedPurchases.length === 0 || !shipmentForm.shipping_type || !shipmentForm.address || !shipmentForm.shipping_cost) {
       toast.error("Completa todos los campos requeridos");
+      return;
+    }
+
+    const cost = parseFloat(shipmentForm.shipping_cost);
+    if (isNaN(cost) || cost < 0) {
+      toast.error("Ingresa un costo de envío válido");
       return;
     }
 
@@ -106,6 +112,7 @@ export default function AdminShipments() {
         user_id: selectedClient.id,
         purchase_ids: selectedPurchases,
         shipping_type: shipmentForm.shipping_type,
+        shipping_cost: cost,
         address: shipmentForm.address,
         country: shipmentForm.country,
         phone: shipmentForm.phone,
@@ -119,6 +126,7 @@ export default function AdminShipments() {
       setSelectedPurchases([]);
       setShipmentForm({
         shipping_type: "",
+        shipping_cost: "",
         address: "",
         country: "",
         phone: "",
