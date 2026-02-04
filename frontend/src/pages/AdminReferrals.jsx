@@ -1,0 +1,220 @@
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { getReferralBonus, setReferralBonus, getReferralStats } from "@/lib/api";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { ArrowLeft, Gift, DollarSign, Users, Save, TrendingUp } from "lucide-react";
+
+const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/2n5fsvku_outlets.jpg";
+
+export default function AdminReferrals() {
+  const navigate = useNavigate();
+  const [currentBonus, setCurrentBonus] = useState(0);
+  const [newBonus, setNewBonus] = useState("");
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const [bonusRes, statsRes] = await Promise.all([
+        getReferralBonus(),
+        getReferralStats()
+      ]);
+      setCurrentBonus(bonusRes.data.referral_bonus);
+      setNewBonus(bonusRes.data.referral_bonus.toString());
+      setStats(statsRes.data);
+    } catch (error) {
+      toast.error("Error al cargar datos");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveBonus = async () => {
+    const amount = parseFloat(newBonus);
+    if (isNaN(amount) || amount < 0) {
+      toast.error("Ingresa un monto válido");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await setReferralBonus(amount);
+      setCurrentBonus(amount);
+      toast.success(`Bono actualizado a $${amount.toFixed(2)}`);
+    } catch (error) {
+      toast.error("Error al actualizar bono");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-red-600 border-t-transparent" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} data-testid="back-btn">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <img src={LOGO_URL} alt="Outlets USA EC" className="h-8 object-contain" />
+          <span className="font-bold text-slate-800">Programa de Referidos</span>
+        </div>
+      </div>
+
+      <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        {/* Current Bonus Setting */}
+        <Card className="rounded-xl">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                <Gift className="h-6 w-6 text-green-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-slate-800">Bono de Referido</h2>
+                <p className="text-sm text-gray-500">
+                  Este monto se acredita tanto al que refiere como al nuevo cliente
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-green-50 rounded-xl p-6 mb-6">
+              <p className="text-sm text-gray-600 mb-2">Bono actual:</p>
+              <p className="text-5xl font-extrabold text-green-600">
+                ${currentBonus.toFixed(2)} <span className="text-lg font-normal text-gray-500">USD</span>
+              </p>
+              <p className="text-xs text-gray-500 mt-2">
+                Cada referido exitoso genera ${(currentBonus * 2).toFixed(2)} en bonos totales
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <Label className="text-sm font-medium">Nuevo monto de bono (USD)</Label>
+              <div className="flex gap-3">
+                <div className="relative flex-1">
+                  <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    placeholder="5.00"
+                    value={newBonus}
+                    onChange={(e) => setNewBonus(e.target.value)}
+                    className="pl-10 h-14 text-2xl font-bold rounded-xl"
+                    data-testid="referral-bonus-input"
+                  />
+                </div>
+                <Button
+                  onClick={handleSaveBonus}
+                  disabled={saving}
+                  className="h-14 px-6 bg-green-600 hover:bg-green-700 font-bold rounded-xl"
+                  data-testid="save-bonus-btn"
+                >
+                  {saving ? (
+                    <span className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent" />
+                  ) : (
+                    <>
+                      <Save className="h-5 w-5 mr-2" />
+                      Guardar
+                    </>
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-gray-500">
+                Puedes poner $0 para desactivar el programa de referidos
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-4">
+          <Card className="rounded-xl">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                  <TrendingUp className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-extrabold text-slate-800">
+                    ${stats ? stats.total_bonus_paid.toFixed(2) : "0.00"}
+                  </p>
+                  <p className="text-xs text-gray-500">Bonos Pagados</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-xl">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
+                  <Users className="h-5 w-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-extrabold text-slate-800">
+                    {stats && stats.top_referrers ? stats.top_referrers.length : 0}
+                  </p>
+                  <p className="text-xs text-gray-500">Referidores</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Top Referrers */}
+        <Card className="rounded-xl">
+          <CardContent className="p-4">
+            <h3 className="font-bold text-slate-800 mb-4">Top Referidores</h3>
+            {stats && stats.top_referrers && stats.top_referrers.length > 0 ? (
+              <div className="space-y-3">
+                {stats.top_referrers.map((ref, i) => (
+                  <div key={ref.customer_id} className="flex items-center justify-between py-2 border-b last:border-0">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                        i === 0 ? "bg-yellow-100 text-yellow-700" :
+                        i === 1 ? "bg-gray-200 text-gray-700" :
+                        i === 2 ? "bg-orange-100 text-orange-700" :
+                        "bg-gray-100 text-gray-600"
+                      }`}>
+                        {i + 1}
+                      </div>
+                      <div>
+                        <Badge variant="outline" className="font-bold">#{ref.customer_id}</Badge>
+                        <span className="ml-2 text-sm text-gray-600">{ref.name}</span>
+                      </div>
+                    </div>
+                    <Badge className="bg-green-100 text-green-700">
+                      {ref.referral_count} referidos
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-center text-gray-500 py-8">
+                Aún no hay referidos registrados
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
