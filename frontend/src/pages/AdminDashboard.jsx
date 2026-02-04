@@ -19,7 +19,7 @@ import {
   Gift
 } from "lucide-react";
 
-const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/2n5fsvku_outlets.jpg";
+const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
