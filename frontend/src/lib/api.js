@@ -56,4 +56,9 @@ export const getLiveReport = (liveId) => api.get(`/admin/reports/live/${liveId}`
 export const getReportsSummary = () => api.get("/admin/reports/summary");
 export const seedAdmin = () => api.post("/admin/seed");
 
+// Settings - Referrals
+export const getReferralBonus = () => api.get("/admin/settings/referral-bonus");
+export const setReferralBonus = (amount) => api.put(`/admin/settings/referral-bonus?amount=${amount}`);
+export const getReferralStats = () => api.get("/admin/referrals");
+
 export default api;
