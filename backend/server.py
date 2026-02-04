@@ -213,6 +213,85 @@ async def check_low_balance(user_id: str, customer_id: str, balance: float):
             message=f"Tu saldo actual es ${balance:.2f} USD. Recarga para seguir comprando."
         )
 
+async def get_referral_bonus():
+    """Get current referral bonus from settings"""
+    settings = await db.settings.find_one({"key": "referral_bonus"}, {"_id": 0})
+    if settings:
+        return settings.get("value", DEFAULT_REFERRAL_BONUS)
+    return DEFAULT_REFERRAL_BONUS
+
+async def process_referral(referrer_customer_id: str, new_user_id: str, new_customer_id: str):
+    """Process referral bonus for both users"""
+    referrer = await db.users.find_one({"customer_id": referrer_customer_id.upper()}, {"_id": 0})
+    if not referrer:
+        return False
+    
+    bonus = await get_referral_bonus()
+    if bonus <= 0:
+        return False
+    
+    # Credit bonus to referrer
+    referrer_wallet = await db.wallets.find_one({"user_id": referrer["id"]}, {"_id": 0})
+    if referrer_wallet:
+        new_balance = referrer_wallet["available"] + bonus
+        await db.wallets.update_one(
+            {"user_id": referrer["id"]},
+            {"$set": {"available": new_balance, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        # Record transaction
+        tx = WalletTransaction(
+            user_id=referrer["id"],
+            customer_id=referrer_customer_id.upper(),
+            type="referral_bonus",
+            amount=bonus,
+            balance_after=new_balance,
+            description=f"Bono por referir a #{new_customer_id}",
+            status="approved",
+            approved_at=datetime.now(timezone.utc).isoformat()
+        )
+        await db.wallet_transactions.insert_one(tx.model_dump())
+        await create_notification(
+            user_id=referrer["id"],
+            customer_id=referrer_customer_id.upper(),
+            notif_type="referral_bonus",
+            title="¡Bono de Referido!",
+            message=f"Recibiste ${bonus:.2f} USD por referir a un nuevo cliente. ¡Gracias!"
+        )
+        # Update referral count
+        await db.users.update_one(
+            {"id": referrer["id"]},
+            {"$inc": {"referral_count": 1}}
+        )
+    
+    # Credit bonus to new user
+    new_wallet = await db.wallets.find_one({"user_id": new_user_id}, {"_id": 0})
+    if new_wallet:
+        new_balance = new_wallet["available"] + bonus
+        await db.wallets.update_one(
+            {"user_id": new_user_id},
+            {"$set": {"available": new_balance, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        tx = WalletTransaction(
+            user_id=new_user_id,
+            customer_id=new_customer_id,
+            type="referral_bonus",
+            amount=bonus,
+            balance_after=new_balance,
+            description=f"Bono de bienvenida por código de #{referrer_customer_id.upper()}",
+            status="approved",
+            approved_at=datetime.now(timezone.utc).isoformat()
+        )
+        await db.wallet_transactions.insert_one(tx.model_dump())
+        await create_notification(
+            user_id=new_user_id,
+            customer_id=new_customer_id,
+            notif_type="referral_bonus",
+            title="¡Bono de Bienvenida!",
+            message=f"Recibiste ${bonus:.2f} USD por usar un código de referido. ¡Disfruta!"
+        )
+    
+    return True
+
 # ==================== AUTH ENDPOINTS ====================
 
 @api_router.post("/auth/register")
@@ -229,6 +308,13 @@ async def register_user(user_data: UserCreate):
     if existing:
         raise HTTPException(status_code=400, detail="Usuario ya registrado con este WhatsApp o email")
     
+    # Validate referral code if provided
+    referred_by = None
+    if user_data.referral_code:
+        referrer = await db.users.find_one({"customer_id": user_data.referral_code.upper()}, {"_id": 0})
+        if referrer:
+            referred_by = user_data.referral_code.upper()
+    
     # Generate unique customer_id
     customer_id = generate_customer_id(user_data.name)
     while await db.users.find_one({"customer_id": customer_id}, {"_id": 0}):
@@ -236,6 +322,8 @@ async def register_user(user_data: UserCreate):
     
     user = User(
         customer_id=customer_id,
+        referral_code=customer_id,  # Same as customer_id for sharing
+        referred_by=referred_by,
         name=user_data.name,
         country=user_data.country,
         whatsapp=user_data.whatsapp,
@@ -263,10 +351,15 @@ async def register_user(user_data: UserCreate):
         message=f"Tu ID de cliente es #{customer_id}. Usa este ID para tus compras en vivo."
     )
     
+    # Process referral bonus if applicable
+    if referred_by:
+        await process_referral(referred_by, user.id, customer_id)
+    
     return {
         "message": "Usuario registrado exitosamente",
         "user_id": user.id,
-        "customer_id": customer_id
+        "customer_id": customer_id,
+        "referral_code": customer_id
     }
 
 @api_router.post("/auth/login")
