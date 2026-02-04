@@ -40,7 +40,7 @@ import {
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
 const STORES = ["Walmart", "Target", "Amazon", "Ross", "Marshalls", "TJ Maxx", "Burlington", "Otro"];
-const COMMISSION = 3.0;
+const TAX_RATE = 0.0825; // Illinois tax 8.25%
 
 export default function AdminLive() {
   const { user } = useAuth();
@@ -63,6 +63,7 @@ export default function AdminLive() {
   });
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerWallet, setCustomerWallet] = useState(null);
+  const [customerCommission, setCustomerCommission] = useState(3.0);
 
   const customerIdRef = useRef(null);
 
