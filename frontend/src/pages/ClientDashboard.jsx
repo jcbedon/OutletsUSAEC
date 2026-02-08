@@ -30,10 +30,11 @@ import {
   Check
 } from "lucide-react";
 
-const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
 export default function ClientDashboard() {
   const { user, logout } = useAuth();
+  const logoUrl = user?.tenant_logo || DEFAULT_LOGO;
   const navigate = useNavigate();
   const [wallet, setWallet] = useState(null);
   const [purchases, setPurchases] = useState([]);
@@ -152,7 +153,7 @@ export default function ClientDashboard() {
       <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div className="bg-white rounded-lg p-1">
-            <img src={LOGO_URL} alt="Outlets USA EC" className="h-12 object-contain logo-transparent" />
+            <img src={logoUrl} alt="Logo" className="h-12 object-contain logo-transparent" />
           </div>
           <Button 
             variant="ghost" 
