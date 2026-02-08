@@ -5,15 +5,36 @@ const API = `${BACKEND_URL}/api`;
 
 const api = axios.create({
   baseURL: API,
-  headers: {
-    "Content-Type": "application/json",
-  },
+  headers: { "Content-Type": "application/json" },
+});
+
+api.interceptors.request.use((config) => {
+  const stored = localStorage.getItem("outletsusa_user");
+  if (stored) {
+    const user = JSON.parse(stored);
+    if (user.token) {
+      config.headers.Authorization = `Bearer ${user.token}`;
+    }
+  }
+  return config;
 });
 
 // Auth
 export const registerUser = (data) => api.post("/auth/register", data);
 export const loginUser = (data) => api.post("/auth/login", data);
 export const getUser = (userId) => api.get(`/auth/user/${userId}`);
+
+// Superadmin
+export const seedSuperadmin = () => api.post("/superadmin/seed");
+export const getSuperadminStats = () => api.get("/superadmin/stats");
+export const listTenants = () => api.get("/superadmin/tenants");
+export const createTenant = (data) => api.post("/superadmin/tenants", data);
+export const updateTenantStatus = (tenantId, status) => api.put(`/superadmin/tenants/${tenantId}?status=${status}`);
+export const createAdminForTenant = (tenantId, data) => api.post(`/superadmin/tenants/${tenantId}/admin`, data);
+
+// Admin Tenant
+export const getMyTenant = () => api.get("/admin/tenant");
+export const uploadTenantLogo = (formData) => api.post("/admin/tenant/logo", formData, { headers: { "Content-Type": "multipart/form-data" } });
 
 // Wallet
 export const getWallet = (userId) => api.get(`/wallet/${userId}`);
@@ -39,9 +60,9 @@ export const getPendingShipmentPurchases = (userId) => api.get(`/purchases/pendi
 
 // Shipments
 export const createShipment = (data) => api.post("/shipments", data);
-export const updateTracking = (shipmentId, trackingNumber) => 
+export const updateTracking = (shipmentId, trackingNumber) =>
   api.put(`/shipments/${shipmentId}/tracking`, null, { params: { tracking_number: trackingNumber } });
-export const updateShipmentStatus = (shipmentId, status) => 
+export const updateShipmentStatus = (shipmentId, status) =>
   api.put(`/shipments/${shipmentId}/status`, null, { params: { status } });
 export const getUserShipments = (userId) => api.get(`/shipments/user/${userId}`);
 export const getAllShipments = (status) => api.get("/shipments", { params: { status } });
@@ -53,12 +74,11 @@ export const getUserNotifications = (userId) => api.get(`/notifications/${userId
 export const getAllClients = () => api.get("/admin/clients");
 export const getActiveClients = () => api.get("/admin/clients/active");
 export const createClient = (data) => api.post("/admin/clients/create", data);
-export const updateClientCommission = (userId, commissionFee) => 
+export const updateClientCommission = (userId, commissionFee) =>
   api.put(`/admin/clients/${userId}/commission?commission_fee=${commissionFee}`);
 export const getClientInfo = (customerId) => api.get(`/admin/clients/${customerId}/info`);
 export const getLiveReport = (liveId) => api.get(`/admin/reports/live/${liveId}`);
 export const getReportsSummary = () => api.get("/admin/reports/summary");
-export const seedAdmin = () => api.post("/admin/seed");
 
 // Settings - Referrals
 export const getReferralBonus = () => api.get("/admin/settings/referral-bonus");

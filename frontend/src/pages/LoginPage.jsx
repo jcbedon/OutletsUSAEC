@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/App";
-import { loginUser, seedAdmin } from "@/lib/api";
+import { loginUser, seedSuperadmin } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,27 +15,19 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    identifier: "",
-    password: "",
-  });
+  const [formData, setFormData] = useState({ identifier: "", password: "" });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-
     try {
       const response = await loginUser(formData);
       const userData = response.data;
-      
       login(userData);
-      toast.success(`¡Bienvenido, ${userData.name}!`);
-      
-      if (userData.role === "admin") {
-        navigate("/admin");
-      } else {
-        navigate("/dashboard");
-      }
+      toast.success(`Bienvenido, ${userData.name}!`);
+      if (userData.role === "superadmin") navigate("/superadmin");
+      else if (userData.role === "admin") navigate("/admin");
+      else navigate("/dashboard");
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al iniciar sesión");
     } finally {
@@ -43,18 +35,17 @@ export default function LoginPage() {
     }
   };
 
-  const handleSeedAdmin = async () => {
+  const handleSeedSuperadmin = async () => {
     try {
-      const response = await seedAdmin();
-      toast.success(`Admin creado: ${response.data.email} / ${response.data.password}`);
+      const response = await seedSuperadmin();
+      toast.success(`Superadmin creado: ${response.data.email} / ${response.data.password}`);
     } catch (error) {
-      toast.info(error.response?.data?.message || "Admin ya existe");
+      toast.info(error.response?.data?.message || "Superadmin ya existe");
     }
   };
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      {/* Header */}
       <div className="bg-white border-b border-gray-100 px-4 py-4">
         <div className="max-w-md mx-auto flex items-center justify-center">
           <div className="bg-white rounded-xl p-3">
@@ -63,7 +54,6 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 flex items-center justify-center p-4">
         <Card className="w-full max-w-md shadow-xl border-0 rounded-2xl overflow-hidden">
           <CardHeader className="bg-gradient-to-r from-red-600 to-red-700 text-white text-center pb-8 pt-6">
@@ -72,7 +62,7 @@ export default function LoginPage() {
             </div>
             <CardTitle className="text-2xl font-extrabold">Iniciar Sesión</CardTitle>
             <CardDescription className="text-red-100">
-              Ingresa con tu email, WhatsApp o ID de cliente
+              Plataforma SaaS - Live Shopping
             </CardDescription>
           </CardHeader>
 
@@ -88,8 +78,8 @@ export default function LoginPage() {
                     id="identifier"
                     data-testid="login-identifier-input"
                     type="text"
-                    placeholder="Ej: J4582, +593..."
-                    className="pl-10 h-12 rounded-xl bg-gray-50 border-gray-200 focus:ring-2 focus:ring-red-600/20"
+                    placeholder="Ej: admin@email.com, J4582..."
+                    className="pl-10 h-12 rounded-xl bg-gray-50 border-gray-200"
                     value={formData.identifier}
                     onChange={(e) => setFormData({ ...formData, identifier: e.target.value })}
                     required
@@ -98,9 +88,7 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-slate-700 font-medium">
-                  Contraseña
-                </Label>
+                <Label htmlFor="password" className="text-slate-700 font-medium">Contraseña</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                   <Input
@@ -108,7 +96,7 @@ export default function LoginPage() {
                     data-testid="login-password-input"
                     type="password"
                     placeholder="Tu contraseña"
-                    className="pl-10 h-12 rounded-xl bg-gray-50 border-gray-200 focus:ring-2 focus:ring-red-600/20"
+                    className="pl-10 h-12 rounded-xl bg-gray-50 border-gray-200"
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     required
@@ -127,9 +115,7 @@ export default function LoginPage() {
                     <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
                     Ingresando...
                   </span>
-                ) : (
-                  "Ingresar"
-                )}
+                ) : "Ingresar"}
               </Button>
             </form>
 
@@ -140,22 +126,21 @@ export default function LoginPage() {
                   Regístrate aquí
                 </Link>
               </p>
-              
               <button
-                onClick={handleSeedAdmin}
+                onClick={handleSeedSuperadmin}
+                data-testid="seed-superadmin-btn"
                 className="text-xs text-gray-400 hover:text-gray-600 underline"
               >
-                Crear usuario Admin (demo)
+                Crear Superadmin (demo)
               </button>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Footer */}
       <div className="bg-white border-t border-gray-100 px-4 py-3 text-center">
         <p className="text-xs text-gray-400">
-          © 2024 Outlets USA EC - Compras en Vivo desde USA
+          Outlets USA EC - Plataforma SaaS de Compras en Vivo
         </p>
       </div>
     </div>

@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/sonner";
 import { useState, useEffect, createContext, useContext } from "react";
 
-// Pages
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import ClientDashboard from "@/pages/ClientDashboard";
@@ -13,10 +12,9 @@ import AdminWallet from "@/pages/AdminWallet";
 import AdminShipments from "@/pages/AdminShipments";
 import AdminReports from "@/pages/AdminReports";
 import AdminReferrals from "@/pages/AdminReferrals";
+import SuperadminDashboard from "@/pages/SuperadminDashboard";
 
-// Auth Context
 const AuthContext = createContext(null);
-
 export const useAuth = () => useContext(AuthContext);
 
 const AuthProvider = ({ children }) => {
@@ -41,15 +39,22 @@ const AuthProvider = ({ children }) => {
     localStorage.removeItem("outletsusa_user");
   };
 
+  const updateTenantLogo = (logoUrl) => {
+    if (user) {
+      const updated = { ...user, tenant_logo: logoUrl };
+      setUser(updated);
+      localStorage.setItem("outletsusa_user", JSON.stringify(updated));
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, updateTenantLogo }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-// Protected Route Component
-const ProtectedRoute = ({ children, requiredRole }) => {
+const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -60,12 +65,12 @@ const ProtectedRoute = ({ children, requiredRole }) => {
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
+  if (!user) return <Navigate to="/login" replace />;
 
-  if (requiredRole && user.role !== requiredRole) {
-    return <Navigate to={user.role === "admin" ? "/admin" : "/dashboard"} replace />;
+  if (allowedRoles && !allowedRoles.includes(user.role)) {
+    if (user.role === "superadmin") return <Navigate to="/superadmin" replace />;
+    if (user.role === "admin") return <Navigate to="/admin" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;
@@ -76,79 +81,21 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          {/* Public Routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          
-          {/* Client Routes */}
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute requiredRole="client">
-                <ClientDashboard />
-              </ProtectedRoute>
-            }
-          />
-          
-          {/* Admin Routes */}
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <AdminDashboard />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/live"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <AdminLive />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/clients"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <AdminClients />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/wallet"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <AdminWallet />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/shipments"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <AdminShipments />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/reports"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <AdminReports />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/referrals"
-            element={
-              <ProtectedRoute requiredRole="admin">
-                <AdminReferrals />
-              </ProtectedRoute>
-            }
-          />
-          
-          {/* Default redirect */}
+
+          <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["client"]}><ClientDashboard /></ProtectedRoute>} />
+
+          <Route path="/superadmin" element={<ProtectedRoute allowedRoles={["superadmin"]}><SuperadminDashboard /></ProtectedRoute>} />
+
+          <Route path="/admin" element={<ProtectedRoute allowedRoles={["admin"]}><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/live" element={<ProtectedRoute allowedRoles={["admin"]}><AdminLive /></ProtectedRoute>} />
+          <Route path="/admin/clients" element={<ProtectedRoute allowedRoles={["admin"]}><AdminClients /></ProtectedRoute>} />
+          <Route path="/admin/wallet" element={<ProtectedRoute allowedRoles={["admin"]}><AdminWallet /></ProtectedRoute>} />
+          <Route path="/admin/shipments" element={<ProtectedRoute allowedRoles={["admin"]}><AdminShipments /></ProtectedRoute>} />
+          <Route path="/admin/reports" element={<ProtectedRoute allowedRoles={["admin"]}><AdminReports /></ProtectedRoute>} />
+          <Route path="/admin/referrals" element={<ProtectedRoute allowedRoles={["admin"]}><AdminReferrals /></ProtectedRoute>} />
+
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
