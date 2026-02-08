@@ -80,6 +80,8 @@ export const updateClientCommission = (userId, commissionFee) =>
 export const getClientInfo = (customerId) => api.get(`/admin/clients/${customerId}/info`);
 export const getLiveReport = (liveId) => api.get(`/admin/reports/live/${liveId}`);
 export const getReportsSummary = () => api.get("/admin/reports/summary");
+export const getClientsPurchasesReport = () => api.get("/admin/reports/clients-purchases");
+export const getAllPurchasesReport = () => api.get("/admin/reports/all-purchases");
 
 // Settings - Referrals
 export const getReferralBonus = () => api.get("/admin/settings/referral-bonus");
