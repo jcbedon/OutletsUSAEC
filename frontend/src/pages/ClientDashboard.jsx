@@ -503,6 +503,13 @@ export default function ClientDashboard() {
                           </div>
                         )}
 
+                        {shipment.additional_info && (
+                          <div className="bg-blue-50 rounded-lg p-3 mb-3">
+                            <p className="text-xs text-gray-500">Información adicional:</p>
+                            <p className="text-sm text-slate-700">{shipment.additional_info}</p>
+                          </div>
+                        )}
+
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-500">{shipment.purchase_ids.length} productos</span>
                           <span className="font-bold text-red-600">${shipment.shipping_cost.toFixed(2)}</span>
