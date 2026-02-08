@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/App";
 import { getPendingDeposits, approveDeposit } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,10 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ArrowLeft, Wallet, CheckCircle, Clock, DollarSign } from "lucide-react";
 
-const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
-
 export default function AdminWallet() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const logoUrl = user?.tenant_logo || "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
   const [pendingDeposits, setPendingDeposits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(null);

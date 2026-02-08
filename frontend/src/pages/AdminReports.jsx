@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/App";
 import { getReportsSummary, getLives, getLiveReport } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,10 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, BarChart3, DollarSign, Users, TrendingUp, Radio } from "lucide-react";
 
-const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
-
 export default function AdminReports() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const logoUrl = user?.tenant_logo || "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
   const [summary, setSummary] = useState(null);
   const [lives, setLives] = useState([]);
   const [selectedLiveId, setSelectedLiveId] = useState(null);
