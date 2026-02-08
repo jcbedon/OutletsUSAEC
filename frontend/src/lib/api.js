@@ -40,6 +40,7 @@ export const uploadTenantLogo = (formData) => api.post("/admin/tenant/logo", for
 export const getWallet = (userId) => api.get(`/wallet/${userId}`);
 export const getWalletByCustomerId = (customerId) => api.get(`/wallet/by-customer/${customerId}`);
 export const requestDeposit = (data) => api.post("/wallet/deposit-request", data);
+export const requestDepositWithProof = (formData) => api.post("/wallet/deposit-request-with-proof", formData, { headers: { "Content-Type": "multipart/form-data" } });
 export const approveDeposit = (transactionId) => api.post(`/wallet/approve-deposit/${transactionId}`);
 export const getWalletTransactions = (userId) => api.get(`/wallet/transactions/${userId}`);
 export const getPendingDeposits = () => api.get("/wallet/pending-deposits");
