@@ -38,9 +38,6 @@ export default function AdminShipments() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const logoUrl = user?.tenant_logo || LOGO_URL_DEFAULT;
-
-export default function AdminShipments() {
-  const navigate = useNavigate();
   const [shipments, setShipments] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
