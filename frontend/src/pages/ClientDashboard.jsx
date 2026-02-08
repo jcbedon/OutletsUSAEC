@@ -235,12 +235,43 @@ export default function ClientDashboard() {
                         data-testid="deposit-amount-input"
                       />
                     </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Comprobante de pago</label>
+                      <div className="mt-2">
+                        {depositProofPreview ? (
+                          <div className="relative rounded-xl overflow-hidden border-2 border-green-200 bg-green-50">
+                            <img src={depositProofPreview} alt="Comprobante" className="w-full max-h-48 object-contain" />
+                            <button
+                              onClick={() => { setDepositProof(null); setDepositProofPreview(null); }}
+                              className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                              data-testid="remove-proof-btn"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-red-400 hover:bg-red-50/50 transition-colors">
+                            <Camera className="h-8 w-8 text-gray-400 mb-2" />
+                            <span className="text-sm text-gray-500 font-medium">Subir screenshot del depósito</span>
+                            <span className="text-xs text-gray-400 mt-1">JPG, PNG o PDF</span>
+                            <input
+                              type="file"
+                              accept="image/*,.pdf"
+                              className="hidden"
+                              onChange={handleProofFileChange}
+                              data-testid="deposit-proof-input"
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </div>
                     <Button 
                       className="w-full h-12 bg-red-600 hover:bg-red-700 font-bold rounded-xl"
                       onClick={handleRequestDeposit}
+                      disabled={depositSubmitting}
                       data-testid="submit-deposit-btn"
                     >
-                      Enviar Solicitud
+                      {depositSubmitting ? "Enviando..." : "Enviar Solicitud"}
                     </Button>
                   </div>
                 </DialogContent>
