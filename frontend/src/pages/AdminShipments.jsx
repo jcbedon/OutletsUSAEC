@@ -87,6 +87,8 @@ export default function AdminShipments() {
       try {
         const response = await getPendingShipmentPurchases(clientId);
         setPendingPurchases(response.data);
+        // Auto-select all purchases
+        setSelectedPurchases(response.data.map(p => p.id));
         setShipmentForm({
           ...shipmentForm,
           country: client.country,
