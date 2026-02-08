@@ -616,18 +616,36 @@ async def get_client_info(customer_id: str, current_user: dict = Depends(get_cur
 
 # ==================== WALLET ENDPOINTS ====================
 
-@api_router.get("/wallet/{user_id}")
-async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user)):
+@api_router.get("/wallet/pending-deposits")
+async def get_pending_deposits(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
-    wallet = await db.wallets.find_one({"user_id": user_id, "tenant_id": tid}, {"_id": 0})
-    if not wallet:
-        raise HTTPException(status_code=404, detail="Wallet no encontrada")
-    return wallet
+    transactions = await db.wallet_transactions.find({"type": "deposit", "status": "pending", "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    result = []
+    for t in transactions:
+        user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
+        result.append({**t, "user_name": user["name"] if user else "Unknown"})
+    return result
 
 @api_router.get("/wallet/by-customer/{customer_id}")
 async def get_wallet_by_customer_id(customer_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
     wallet = await db.wallets.find_one({"customer_id": customer_id.upper(), "tenant_id": tid}, {"_id": 0})
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Wallet no encontrada")
+    return wallet
+
+@api_router.get("/wallet/transactions/{user_id}")
+async def get_wallet_transactions(user_id: str, current_user: dict = Depends(get_current_user)):
+    tid = current_user["tenant_id"]
+    transactions = await db.wallet_transactions.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
+    return transactions
+
+@api_router.get("/wallet/{user_id}")
+async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user)):
+    tid = current_user["tenant_id"]
+    wallet = await db.wallets.find_one({"user_id": user_id, "tenant_id": tid}, {"_id": 0})
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
     return wallet
@@ -663,24 +681,6 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
     await create_notification(tid, transaction["user_id"], transaction["customer_id"], "wallet_credited",
         "Saldo Acreditado", f"Se han acreditado ${transaction['amount']:.2f} USD. Saldo actual: ${new_balance:.2f} USD")
     return {"message": "Depósito aprobado", "new_balance": new_balance}
-
-@api_router.get("/wallet/transactions/{user_id}")
-async def get_wallet_transactions(user_id: str, current_user: dict = Depends(get_current_user)):
-    tid = current_user["tenant_id"]
-    transactions = await db.wallet_transactions.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
-    return transactions
-
-@api_router.get("/wallet/pending-deposits")
-async def get_pending_deposits(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="No autorizado")
-    tid = current_user["tenant_id"]
-    transactions = await db.wallet_transactions.find({"type": "deposit", "status": "pending", "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(100)
-    result = []
-    for t in transactions:
-        user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
-        result.append({**t, "user_name": user["name"] if user else "Unknown"})
-    return result
 
 # ==================== LIVE SHOPPING ENDPOINTS ====================
 
