@@ -7,7 +7,7 @@ import {
   getUserShipments, 
   getUserNotifications,
   getWalletTransactions,
-  requestDeposit 
+  requestDepositWithProof
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
