@@ -83,19 +83,36 @@ export default function ClientDashboard() {
       toast.error("Ingresa un monto válido");
       return;
     }
-
+    setDepositSubmitting(true);
     try {
-      await requestDeposit({
-        user_id: user.user_id,
-        amount: parseFloat(depositAmount),
-        description: "Solicitud de recarga"
-      });
+      const formData = new FormData();
+      formData.append("user_id", user.user_id);
+      formData.append("amount", parseFloat(depositAmount));
+      formData.append("description", "Solicitud de recarga");
+      if (depositProof) {
+        formData.append("file", depositProof);
+      }
+      await requestDepositWithProof(formData);
       toast.success("Solicitud de recarga enviada. Pendiente de aprobación.");
       setDepositDialogOpen(false);
       setDepositAmount("");
+      setDepositProof(null);
+      setDepositProofPreview(null);
       loadData();
     } catch (error) {
       toast.error("Error al solicitar recarga");
+    } finally {
+      setDepositSubmitting(false);
+    }
+  };
+
+  const handleProofFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setDepositProof(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setDepositProofPreview(reader.result);
+      reader.readAsDataURL(file);
     }
   };
 
