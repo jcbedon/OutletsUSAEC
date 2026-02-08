@@ -662,6 +662,34 @@ async def request_deposit(deposit: WalletDepositRequest, current_user: dict = De
     await db.wallet_transactions.insert_one(transaction.model_dump())
     return {"message": "Solicitud de recarga enviada. Pendiente de aprobación.", "transaction_id": transaction.id}
 
+@api_router.post("/wallet/deposit-request-with-proof")
+async def request_deposit_with_proof(
+    user_id: str = FastAPIForm(...),
+    amount: float = FastAPIForm(...),
+    description: str = FastAPIForm("Solicitud de recarga"),
+    file: UploadFile = File(None),
+    current_user: dict = Depends(get_current_user)
+):
+    tid = current_user["tenant_id"]
+    wallet = await db.wallets.find_one({"user_id": user_id, "tenant_id": tid}, {"_id": 0})
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Wallet no encontrada")
+    proof_url = None
+    if file and file.filename:
+        ext = file.filename.split(".")[-1] if "." in file.filename else "png"
+        filename = f"proof_{uuid.uuid4().hex[:8]}.{ext}"
+        filepath = UPLOAD_DIR / filename
+        with open(filepath, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+        proof_url = f"/api/uploads/{filename}"
+    transaction = WalletTransaction(tenant_id=tid, user_id=user_id, customer_id=wallet["customer_id"],
+        type="deposit", amount=amount, balance_after=wallet["available"],
+        description=description, status="pending")
+    tx_dict = transaction.model_dump()
+    tx_dict["proof_url"] = proof_url
+    await db.wallet_transactions.insert_one(tx_dict)
+    return {"message": "Solicitud de recarga enviada. Pendiente de aprobación.", "transaction_id": transaction.id}
+
 @api_router.post("/wallet/approve-deposit/{transaction_id}")
 async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "admin":
