@@ -1,77 +1,72 @@
-# OUTLETS USA EC - TikTok Live Shopping Platform
+# PRD - OUTLETS USA EC - SaaS Live Shopping Platform
 
-## Original Problem Statement
-Web App PWA (mobile-first) para negocio de TikTok Live Shopping con:
-- Wallet con recargas y descuentos automáticos
-- Compras en vivo durante transmisiones de TikTok
-- Envíos internacionales desde USA (precio configurable)
-- Notificaciones automáticas por WhatsApp Cloud API
-- Sistema de referidos con bonos configurables
+## Problem Statement
+Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (tenant) manages their own clients, live shopping sessions, wallets, purchases, shipments, and referrals with full data isolation.
 
-## Architecture
+## Core Architecture
 - **Frontend**: React + Tailwind CSS + Shadcn UI
-- **Backend**: FastAPI (Python)
+- **Backend**: FastAPI + Motor (async MongoDB)
 - **Database**: MongoDB
-- **Auth**: Simple authentication (email/whatsapp/customer_id + password)
+- **Auth**: Custom JWT-based with 3 roles (superadmin, admin, client)
+- **Multi-Tenant**: All data scoped by `tenant_id`
 
-## User Personas
-1. **Cliente**: Compra productos de USA durante Lives de TikTok
-2. **Admin**: Gestiona ventas en vivo, wallets, envíos, referidos
+## Roles
+1. **SUPERADMIN**: Global admin. Creates/manages tenants and their admins.
+2. **ADMIN**: Tenant-scoped. Manages clients, live sessions, wallets, shipments, referrals. Can upload tenant logo and create clients.
+3. **CLIENT**: Tenant-scoped. Views wallet, purchases, shipments, notifications.
 
-## Core Requirements (Static)
-- ID de cliente: Letra inicial + 4 dígitos (ej: J4582)
-- Comisión fija: $3 USD por compra
-- Umbral saldo bajo: $9 USD
-- Moneda: USD
+## Business Logic
+- Tax: 8.25% (Illinois tax) applied to item price
+- Commission: Configurable per client (default $3.00)
+- Display total = price + tax + commission
+- **Only commission is deducted from client wallet** (not the full price)
+- Referral bonus: Configurable per tenant
 
-## What's Been Implemented (Feb 4, 2026)
+## Implemented Features (Feb 2026)
+- [x] Multi-tenant architecture with tenant_id isolation
+- [x] JWT authentication with 3 roles
+- [x] Superadmin dashboard (create/list/suspend tenants)
+- [x] Tenant creation with auto-admin creation
+- [x] Admin dashboard with stats, quick actions
+- [x] Admin: Create clients with custom commission + initial balance
+- [x] Admin: Client management (search, edit commission)
+- [x] Admin: Live shopping session CRUD
+- [x] Admin: Purchase registration with tax + commission calc
+- [x] Admin: Wallet deposit requests + approvals
+- [x] Admin: Shipment management with tracking
+- [x] Admin: Referral bonus configuration
+- [x] Admin: Reports & statistics (per tenant)
+- [x] Admin: Logo upload for tenant branding
+- [x] Client: Dashboard with wallet, purchases, shipments, notifications
+- [x] Client: Self-registration with tenant slug code
+- [x] Dynamic logo across all pages (from tenant settings)
+- [x] Role-based routing (superadmin/admin/client)
 
-### Backend (FastAPI)
-- ✅ Auth: Registro, Login (email/whatsapp/customer_id)
-- ✅ Wallet: Crear, recargar, aprobar depósitos, transacciones
-- ✅ Lives: Crear, iniciar, finalizar sesiones
-- ✅ Purchases: Registro rápido durante lives con comisión automática
-- ✅ Shipments: Crear con precio personalizable, tracking, estados
-- ✅ Referrals: Código de referido, bonos configurables por admin
-- ✅ Notifications: Sistema preparado para WhatsApp (MOCKED)
-- ✅ Reports: Resumen de ventas, top clientes, estadísticas referidos
+## DB Collections
+- `tenants`: id, business_name, slug, owner_name, email, logo_url, status
+- `users`: id, tenant_id, customer_id, name, role, commission_fee, etc.
+- `wallets`: id, tenant_id, user_id, available, reserved
+- `wallet_transactions`: id, tenant_id, user_id, type, amount, status
+- `lives`: id, tenant_id, title, status, total_sales, total_commissions
+- `purchases`: id, tenant_id, user_id, item_name, price, tax, commission, total
+- `shipments`: id, tenant_id, user_id, purchase_ids, status, tracking
+- `notifications`: id, tenant_id, user_id, type, title, message
+- `settings`: tenant_id, key, value (e.g., referral_bonus)
 
-### Frontend (React)
-- ✅ Login/Register pages (con campo de código referido)
-- ✅ Client Dashboard (wallet, compras, historial, envíos, notificaciones)
-- ✅ **Botón "Invita y Gana"** - Compartir por WhatsApp
-- ✅ Admin Dashboard (stats, acciones rápidas)
-- ✅ Admin Live Shopping (formulario rápido de compras)
-- ✅ Admin Clients (listado con saldos)
-- ✅ Admin Wallet (aprobar recargas)
-- ✅ Admin Shipments (crear con precio personalizado, tracking, estados)
-- ✅ **Admin Referidos** - Configurar bono de referido
-- ✅ Admin Reports (resumen, top clientes, por live)
+## Key Credentials
+- Superadmin: superadmin@outletsusaec.com / super123
+- Tenant slug example: outlets-usa
 
-### Nuevas Funcionalidades (Fase 2)
-- ✅ **Sistema de Referidos**: Ambos (referidor y nuevo cliente) reciben bono
-- ✅ **Bono Configurable**: Admin define cuánto dar por referido ($0 desactiva)
-- ✅ **Precio de Envío Flexible**: Admin escribe el precio que desee por cada cliente
+## P1 - Backlog
+- [ ] WhatsApp Cloud API integration (requires user credentials)
+- [ ] PWA manifest + service worker for mobile install
+- [ ] Superadmin: edit tenant details
+- [ ] Superadmin: view tenant admins list
+- [ ] Client: request deposit from dashboard
+- [ ] Admin: bulk import clients
 
-### Design
-- ✅ Colores: Rojo (#DC2626) + Gris claro (#F3F4F6)
-- ✅ Logo: Outlets USA EC integrado
-- ✅ Mobile-first responsive
-- ✅ Fuentes: Manrope (headings) + DM Sans (body)
-
-## Prioritized Backlog
-
-### P0 - Critical
-- [ ] WhatsApp Cloud API: Configurar credenciales cuando estén disponibles
-
-### P1 - Important
-- [ ] PWA manifest y service worker para instalación
-- [ ] Validación de formularios más robusta
-
-### P2 - Nice to Have
-- [ ] Notificaciones push browser
-- [ ] Exportar reportes a PDF/Excel
-
-## Next Tasks
-1. Configurar WhatsApp Cloud API cuando el usuario tenga las credenciales
-2. Agregar PWA manifest para instalación móvil
+## P2 - Future
+- [ ] Multi-language support
+- [ ] Dashboard analytics charts
+- [ ] Export reports to CSV/PDF
+- [ ] Email notifications
