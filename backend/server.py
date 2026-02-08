@@ -952,6 +952,45 @@ async def get_reports_summary(current_user: dict = Depends(get_current_user)):
         "pending_shipments": pending_shipments, "top_customers": top_customers
     }
 
+@api_router.get("/admin/reports/clients-purchases")
+async def get_all_clients_purchases_report(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    clients = await db.users.find({"role": "client", "tenant_id": tid}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    result = []
+    for client in clients:
+        purchases = await db.purchases.find({"user_id": client["id"], "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(500)
+        wallet = await db.wallets.find_one({"user_id": client["id"], "tenant_id": tid}, {"_id": 0})
+        total_spent = sum(p.get("total", 0) for p in purchases)
+        total_commission = sum(p.get("commission", 0) for p in purchases)
+        result.append({
+            "client": {
+                "id": client["id"], "customer_id": client["customer_id"],
+                "name": client["name"], "whatsapp": client["whatsapp"],
+                "country": client["country"], "commission_fee": client.get("commission_fee", 3)
+            },
+            "wallet_balance": wallet["available"] if wallet else 0,
+            "purchases": purchases,
+            "purchase_count": len(purchases),
+            "total_spent": total_spent,
+            "total_commission": total_commission
+        })
+    return sorted(result, key=lambda x: x["total_spent"], reverse=True)
+
+@api_router.get("/admin/reports/all-purchases")
+async def get_all_purchases_report(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    purchases = await db.purchases.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    for p in purchases:
+        user = await db.users.find_one({"id": p["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
+        p["client_name"] = user["name"] if user else "Unknown"
+        live = await db.lives.find_one({"id": p.get("live_id")}, {"_id": 0, "title": 1})
+        p["live_title"] = live["title"] if live else "N/A"
+    return purchases
+
 # ==================== SETTINGS ====================
 
 @api_router.get("/admin/settings/referral-bonus")
