@@ -35,6 +35,8 @@ function TopReferrerItem({ ref, index }) {
 
 export default function AdminReferrals() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const logoUrl = user?.tenant_logo || "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
   const [currentBonus, setCurrentBonus] = useState(0);
   const [newBonus, setNewBonus] = useState("");
   const [stats, setStats] = useState(null);
@@ -95,7 +97,7 @@ export default function AdminReferrals() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="bg-white rounded-lg p-1">
-            <img src={LOGO_URL} alt="Outlets USA EC" className="h-10 object-contain logo-transparent" />
+            <img src={logoUrl} alt="Logo" className="h-10 object-contain logo-transparent" />
           </div>
           <span className="font-bold text-slate-800">Programa de Referidos</span>
         </div>
