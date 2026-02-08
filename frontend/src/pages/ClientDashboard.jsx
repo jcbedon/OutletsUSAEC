@@ -44,6 +44,9 @@ export default function ClientDashboard() {
   const [loading, setLoading] = useState(true);
   const [depositAmount, setDepositAmount] = useState("");
   const [depositDialogOpen, setDepositDialogOpen] = useState(false);
+  const [depositProof, setDepositProof] = useState(null);
+  const [depositProofPreview, setDepositProofPreview] = useState(null);
+  const [depositSubmitting, setDepositSubmitting] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
