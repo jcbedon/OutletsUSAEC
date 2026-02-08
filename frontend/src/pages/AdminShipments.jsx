@@ -489,7 +489,37 @@ export default function AdminShipments() {
                             )}
                           </div>
 
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 items-center">
+                            {/* Status Selector */}
+                            <div className="flex-1">
+                              <Select
+                                value={shipment.status}
+                                onValueChange={(value) => handleUpdateStatus(shipment.id, value)}
+                                data-testid={`status-select-${shipment.id}`}
+                              >
+                                <SelectTrigger className="h-10 rounded-lg">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="preparing">
+                                    <span className="flex items-center gap-2">
+                                      <Clock className="h-4 w-4 text-yellow-600" /> Preparación
+                                    </span>
+                                  </SelectItem>
+                                  <SelectItem value="in_transit">
+                                    <span className="flex items-center gap-2">
+                                      <Truck className="h-4 w-4 text-blue-600" /> En Tránsito
+                                    </span>
+                                  </SelectItem>
+                                  <SelectItem value="delivered">
+                                    <span className="flex items-center gap-2">
+                                      <CheckCircle className="h-4 w-4 text-green-600" /> Completado
+                                    </span>
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
                             {/* Tracking Button */}
                             <Dialog 
                               open={trackingDialogOpen === shipment.id} 
@@ -499,7 +529,7 @@ export default function AdminShipments() {
                               }}
                             >
                               <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" className="flex-1 rounded-lg">
+                                <Button variant="outline" size="sm" className="rounded-lg" data-testid={`tracking-btn-${shipment.id}`}>
                                   <Edit className="h-4 w-4 mr-1" />
                                   Tracking
                                 </Button>
@@ -524,28 +554,6 @@ export default function AdminShipments() {
                                 </div>
                               </DialogContent>
                             </Dialog>
-
-                            {/* Status Buttons */}
-                            {shipment.status === "preparing" && (
-                              <Button 
-                                size="sm" 
-                                className="flex-1 bg-blue-600 hover:bg-blue-700 rounded-lg"
-                                onClick={() => handleUpdateStatus(shipment.id, "in_transit")}
-                              >
-                                <Truck className="h-4 w-4 mr-1" />
-                                En Tránsito
-                              </Button>
-                            )}
-                            {shipment.status === "in_transit" && (
-                              <Button 
-                                size="sm" 
-                                className="flex-1 bg-green-600 hover:bg-green-700 rounded-lg"
-                                onClick={() => handleUpdateStatus(shipment.id, "delivered")}
-                              >
-                                <CheckCircle className="h-4 w-4 mr-1" />
-                                Entregado
-                              </Button>
-                            )}
                           </div>
                         </CardContent>
                       </Card>
