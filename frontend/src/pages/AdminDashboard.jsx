@@ -16,13 +16,16 @@ import {
   BarChart3,
   LogOut,
   Play,
-  Gift
+  Gift,
+  Upload
 } from "lucide-react";
+import { uploadTenantLogo } from "@/lib/api";
 
-const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
 export default function AdminDashboard() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateTenantLogo } = useAuth();
+  const logoUrl = user?.tenant_logo || DEFAULT_LOGO;
   const navigate = useNavigate();
   const [summary, setSummary] = useState(null);
   const [activeLive, setActiveLive] = useState(null);
@@ -110,13 +113,33 @@ export default function AdminDashboard() {
       {/* Header */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="bg-white rounded-lg p-1">
-            <img src={LOGO_URL} alt="Outlets USA EC" className="h-12 object-contain logo-transparent" />
-          </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-gray-600 hidden sm:block">
-              Admin: {user?.name}
-            </span>
+            <div className="bg-white rounded-lg p-1">
+              <img src={logoUrl} alt="Logo" className="h-12 object-contain logo-transparent" />
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-sm font-bold text-slate-800">{user?.tenant_name || "Admin"}</p>
+              <p className="text-xs text-gray-500">{user?.name}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="cursor-pointer" data-testid="upload-logo-btn">
+              <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const formData = new FormData();
+                formData.append("file", file);
+                try {
+                  const res = await uploadTenantLogo(formData);
+                  const fullUrl = `${process.env.REACT_APP_BACKEND_URL}${res.data.logo_url}`;
+                  updateTenantLogo(fullUrl);
+                  toast.success("Logo actualizado");
+                } catch { toast.error("Error al subir logo"); }
+              }} />
+              <div className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-100">
+                <Upload className="h-3 w-3" /> Logo
+              </div>
+            </label>
             <Button 
               variant="ghost" 
               size="sm" 

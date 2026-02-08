@@ -37,14 +37,13 @@ import {
   Zap
 } from "lucide-react";
 
-const LOGO_URL = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
-
 const STORES = ["Walmart", "Target", "Amazon", "Ross", "Marshalls", "TJ Maxx", "Burlington", "Otro"];
 const TAX_RATE = 0.0825; // Illinois tax 8.25%
 
 export default function AdminLive() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const logoUrl = user?.tenant_logo || "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
   const [activeLive, setActiveLive] = useState(null);
   const [lives, setLives] = useState([]);
   const [purchases, setPurchases] = useState([]);
@@ -236,7 +235,7 @@ export default function AdminLive() {
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div className="bg-white rounded-lg p-1">
-              <img src={LOGO_URL} alt="Outlets USA EC" className="h-10 object-contain logo-transparent" />
+              <img src={logoUrl} alt="Logo" className="h-10 object-contain logo-transparent" />
             </div>
           </div>
           
