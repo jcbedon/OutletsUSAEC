@@ -780,31 +780,31 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
     tax = round(purchase_data.price * ILLINOIS_TAX_RATE, 2)
     price_with_tax = round(purchase_data.price + tax, 2)
     total = round(price_with_tax + commission_fee, 2)
-    if wallet["available"] < commission_fee:
+    if wallet["available"] < total:
         raise HTTPException(status_code=400,
-            detail=f"Saldo insuficiente para comisión. Disponible: ${wallet['available']:.2f}, Comisión: ${commission_fee:.2f}")
+            detail=f"Saldo insuficiente. Disponible: ${wallet['available']:.2f}, Total compra: ${total:.2f}")
     purchase = Purchase(tenant_id=tid, user_id=user["id"], customer_id=purchase_data.customer_id.upper(),
         item_name=purchase_data.item_name, store=purchase_data.store, price=purchase_data.price,
         tax=tax, price_with_tax=price_with_tax, commission=commission_fee, total=total, live_id=purchase_data.live_id)
     await db.purchases.insert_one(purchase.model_dump())
-    new_balance = wallet["available"] - commission_fee
+    new_balance = wallet["available"] - total
     await db.wallets.update_one({"user_id": user["id"], "tenant_id": tid},
         {"$set": {"available": new_balance, "updated_at": datetime.now(timezone.utc).isoformat()}})
     transaction = WalletTransaction(tenant_id=tid, user_id=user["id"], customer_id=purchase_data.customer_id.upper(),
-        type="purchase", amount=-commission_fee, balance_after=new_balance,
-        description=f"Comisión: {purchase_data.item_name} ({purchase_data.store})", status="approved",
+        type="purchase", amount=-total, balance_after=new_balance,
+        description=f"Compra: {purchase_data.item_name} ({purchase_data.store}) - Total: ${total:.2f}", status="approved",
         approved_at=datetime.now(timezone.utc).isoformat())
     await db.wallet_transactions.insert_one(transaction.model_dump())
     await db.lives.update_one({"id": purchase_data.live_id, "tenant_id": tid},
         {"$inc": {"total_sales": price_with_tax, "total_commissions": commission_fee, "purchase_count": 1}})
     await create_notification(tid, user["id"], purchase_data.customer_id.upper(), "purchase_created",
         "Compra Registrada",
-        f"Compraste {purchase_data.item_name} - Precio: ${purchase_data.price:.2f} + Tax: ${tax:.2f} = ${price_with_tax:.2f}. Comisión: ${commission_fee:.2f}. Saldo: ${new_balance:.2f}")
+        f"Compraste {purchase_data.item_name} - Precio: ${purchase_data.price:.2f} + Tax: ${tax:.2f} + Comisión: ${commission_fee:.2f} = Total: ${total:.2f}. Saldo: ${new_balance:.2f}")
     await check_low_balance(tid, user["id"], purchase_data.customer_id.upper(), new_balance)
     return {
         "message": "Compra registrada", "purchase_id": purchase.id, "price": purchase_data.price,
         "tax": tax, "price_with_tax": price_with_tax, "commission": commission_fee, "total": total,
-        "commission_deducted": commission_fee, "new_balance": new_balance, "customer_name": user["name"]
+        "amount_deducted": total, "new_balance": new_balance, "customer_name": user["name"]
     }
 
 @api_router.get("/purchases/user/{user_id}")
