@@ -82,11 +82,11 @@ export default function SuperadminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-slate-900 text-white sticky top-0 z-50">
+    <div className="app-bg">
+      <div className="sticky top-0 z-50" style={{ background: '#1E3A5F' }}>
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ background: '#2ECC71' }}>
               <Shield className="h-5 w-5" />
             </div>
             <div>
@@ -104,8 +104,8 @@ export default function SuperadminDashboard() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <Card className="rounded-xl" data-testid="stat-tenants">
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
-                <Building className="h-5 w-5 text-indigo-600" />
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(30,58,95,0.1)' }}>
+                <Building className="h-5 w-5" style={{ color: '#1E3A5F' }} />
               </div>
               <div>
                 <p className="text-2xl font-extrabold text-slate-800">{stats?.tenant_count || 0}</p>
@@ -115,8 +115,8 @@ export default function SuperadminDashboard() {
           </Card>
           <Card className="rounded-xl" data-testid="stat-active-tenants">
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
-                <Power className="h-5 w-5 text-green-600" />
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(46,204,113,0.1)' }}>
+                <Power className="h-5 w-5" style={{ color: '#2ECC71' }} />
               </div>
               <div>
                 <p className="text-2xl font-extrabold text-slate-800">{stats?.active_tenants || 0}</p>
@@ -126,8 +126,8 @@ export default function SuperadminDashboard() {
           </Card>
           <Card className="rounded-xl" data-testid="stat-admins">
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                <UserPlus className="h-5 w-5 text-blue-600" />
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(30,58,95,0.1)' }}>
+                <UserPlus className="h-5 w-5" style={{ color: '#1E3A5F' }} />
               </div>
               <div>
                 <p className="text-2xl font-extrabold text-slate-800">{stats?.total_admins || 0}</p>
@@ -137,8 +137,8 @@ export default function SuperadminDashboard() {
           </Card>
           <Card className="rounded-xl" data-testid="stat-total-clients">
             <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
-                <Users className="h-5 w-5 text-orange-600" />
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(46,204,113,0.1)' }}>
+                <Users className="h-5 w-5" style={{ color: '#2ECC71' }} />
               </div>
               <div>
                 <p className="text-2xl font-extrabold text-slate-800">{stats?.total_clients || 0}</p>
@@ -152,7 +152,7 @@ export default function SuperadminDashboard() {
           <h2 className="text-lg font-bold text-slate-800">Negocios (Tenants)</h2>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-indigo-600 hover:bg-indigo-700 rounded-xl" data-testid="create-tenant-btn">
+              <Button className="rounded-xl" data-testid="create-tenant-btn" style={{ background: '#2ECC71', color: 'white' }}>
                 <Plus className="h-4 w-4 mr-2" /> Nuevo Tenant
               </Button>
             </DialogTrigger>
@@ -216,7 +216,7 @@ export default function SuperadminDashboard() {
                 </div>
 
                 <Button onClick={handleCreateTenant} disabled={submitting} data-testid="submit-create-tenant-btn"
-                  className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 font-bold rounded-xl">
+                  className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}>
                   {submitting ? "Creando..." : "Crear Tenant + Admin"}
                 </Button>
               </div>
@@ -246,7 +246,7 @@ export default function SuperadminDashboard() {
                             {tenant.status === "active" ? "Activo" : "Suspendido"}
                           </Badge>
                         </div>
-                        <p className="text-sm text-gray-500">Slug: <span className="font-mono font-medium text-indigo-600">{tenant.slug}</span></p>
+                        <p className="text-sm text-gray-500">Slug: <span className="font-mono font-medium" style={{ color: '#1E3A5F' }}>{tenant.slug}</span></p>
                         <div className="flex gap-4 mt-2 text-sm text-gray-500">
                           <span>{tenant.owner_name || "Sin propietario"}</span>
                           <span>{tenant.admin_count || 0} admins</span>
