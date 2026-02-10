@@ -61,8 +61,8 @@ export default function AdminWallet() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
+    <div className="app-bg">
+      <div className="sticky top-0 z-50 border-b" style={{ background: 'rgba(255,255,255,0.95)', borderColor: '#E5E7EB' }}>
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} data-testid="back-btn">
             <ArrowLeft className="h-5 w-5" />
@@ -161,8 +161,9 @@ export default function AdminWallet() {
                       <Button
                         onClick={() => handleApprove(deposit.id)}
                         disabled={approving === deposit.id}
-                        className="w-full h-12 bg-green-600 hover:bg-green-700 font-bold rounded-xl"
+                        className="w-full h-12 font-bold rounded-xl"
                         data-testid={`approve-deposit-${deposit.id}`}
+                        style={{ background: '#2ECC71', color: 'white' }}
                       >
                         {approving === deposit.id ? (
                           <span className="flex items-center gap-2">
