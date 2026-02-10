@@ -334,6 +334,26 @@ export default function AdminShipments() {
                       </p>
                     </div>
 
+                    {/* Total Cost Display */}
+                    {selectedPurchases.length > 0 && (
+                      <div className="bg-gradient-to-r from-[#1E3A5F] to-[#2a4a73] rounded-xl p-4 text-white">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-medium">Total a Recargar:</span>
+                          <span className="text-2xl font-extrabold" data-testid="total-shipment-cost">
+                            ${(
+                              pendingPurchases
+                                .filter(p => selectedPurchases.includes(p.id))
+                                .reduce((sum, p) => sum + (p.total_price || (p.price + (p.tax || 0) + (p.commission || 0))), 0) +
+                              (parseFloat(shipmentForm.shipping_cost) || 0)
+                            ).toFixed(2)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-white/70 text-right">
+                          (Precio incluye: Impuestos, comisión y envío)
+                        </p>
+                      </div>
+                    )}
+
                     {/* Address */}
                     <div>
                       <Label>Dirección Completa</Label>
