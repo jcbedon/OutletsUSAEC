@@ -11,7 +11,9 @@ import {
   getLivePurchases,
   getActiveClients,
   getWalletByCustomerId,
-  getClientInfo
+  getClientInfo,
+  updatePurchase,
+  deletePurchase
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,7 +36,11 @@ import {
   Store,
   CheckCircle,
   AlertTriangle,
-  Zap
+  Zap,
+  Edit,
+  Trash2,
+  Save,
+  X
 } from "lucide-react";
 
 const STORES = ["Walmart", "Target", "Amazon", "Ross", "Marshalls", "TJ Maxx", "Burlington", "Otro"];
