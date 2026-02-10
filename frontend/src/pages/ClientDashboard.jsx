@@ -191,7 +191,7 @@ export default function ClientDashboard() {
 
       {/* Wallet Card */}
       <div className="max-w-lg mx-auto px-4 pt-4">
-        <Card className="wallet-gradient text-white rounded-3xl shadow-2xl overflow-hidden" data-testid="wallet-card">
+        <Card className="text-white rounded-3xl shadow-2xl overflow-hidden" data-testid="wallet-card" style={{ background: 'linear-gradient(135deg, #1E3A5F, #2a4f7f)' }}>
           <CardContent className="p-6">
             <div className="flex justify-between items-start mb-6">
               <div>
