@@ -478,10 +478,10 @@ export default function AdminLive() {
                             <span className="text-yellow-600">Comisión ({selectedCustomer?.name || 'cliente'}):</span>
                             <span className="font-bold text-yellow-600">${customerCommission.toFixed(2)}</span>
                           </div>
-                          <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t bg-yellow-50 -mx-3 px-3 py-2 rounded-b-xl">
+                          <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t bg-red-50 -mx-3 px-3 py-2 rounded-b-xl">
                             <span>Se descuenta del saldo:</span>
-                            <span className="text-yellow-600">
-                              ${customerCommission.toFixed(2)}
+                            <span className="text-red-600">
+                              ${(parseFloat(purchaseForm.price || 0) * (1 + TAX_RATE) + customerCommission).toFixed(2)}
                             </span>
                           </div>
                         </div>
