@@ -561,35 +561,60 @@ export default function AdminLive() {
                     ) : (
                       <div className="space-y-3">
                         {purchases.map((purchase) => (
-                          <Card 
-                            key={purchase.id} 
-                            className="rounded-xl border-gray-100"
-                            data-testid="live-purchase-item"
-                          >
+                          <Card key={purchase.id} className="rounded-xl border-gray-100" data-testid="live-purchase-item">
                             <CardContent className="p-3">
-                              <div className="flex justify-between items-start">
-                                <div>
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <Badge variant="outline" className="font-bold">
-                                      #{purchase.customer_id}
-                                    </Badge>
-                                    <span className="text-xs text-gray-400">
-                                      {new Date(purchase.created_at).toLocaleTimeString('es-ES', {
-                                        hour: '2-digit',
-                                        minute: '2-digit'
-                                      })}
-                                    </span>
+                              {editingPurchase === purchase.id ? (
+                                <div className="space-y-2">
+                                  <Input value={editForm.item_name} onChange={(e) => setEditForm({...editForm, item_name: e.target.value})}
+                                    placeholder="Producto" className="h-9 rounded-lg text-sm" data-testid="edit-item-name" />
+                                  <div className="flex gap-2">
+                                    <Input value={editForm.store} onChange={(e) => setEditForm({...editForm, store: e.target.value})}
+                                      placeholder="Tienda" className="h-9 rounded-lg text-sm flex-1" />
+                                    <Input type="number" step="0.01" value={editForm.price}
+                                      onChange={(e) => setEditForm({...editForm, price: e.target.value})}
+                                      placeholder="Precio" className="h-9 rounded-lg text-sm w-24" data-testid="edit-price" />
                                   </div>
-                                  <p className="font-medium text-slate-800">{purchase.item_name}</p>
-                                  <p className="text-sm text-gray-500">{purchase.store}</p>
+                                  <div className="flex gap-2">
+                                    <Button size="sm" onClick={() => handleSaveEdit(purchase.id)}
+                                      className="flex-1 h-8 rounded-lg" style={{ background: '#2ECC71', color: 'white' }} data-testid="save-edit-btn">
+                                      <Save className="h-3 w-3 mr-1" /> Guardar
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={() => setEditingPurchase(null)} className="h-8 rounded-lg">
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  </div>
                                 </div>
-                                <div className="text-right">
-                                  <p className="font-bold text-red-600">${purchase.total.toFixed(2)}</p>
-                                  <p className="text-xs text-gray-400">
-                                    ${purchase.price.toFixed(2)} + ${purchase.commission.toFixed(2)}
-                                  </p>
+                              ) : (
+                                <div>
+                                  <div className="flex justify-between items-start">
+                                    <div>
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <Badge variant="outline" className="font-bold">#{purchase.customer_id}</Badge>
+                                        <span className="text-xs text-gray-400">
+                                          {new Date(purchase.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                      </div>
+                                      <p className="font-medium text-slate-800">{purchase.item_name}</p>
+                                      <p className="text-sm text-gray-500">{purchase.store}</p>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="font-bold" style={{ color: '#1E3A5F' }}>${purchase.total.toFixed(2)}</p>
+                                      <p className="text-xs text-gray-400">${purchase.price.toFixed(2)} + ${purchase.commission.toFixed(2)}</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100">
+                                    <Button size="sm" variant="outline" onClick={() => handleEditPurchase(purchase)}
+                                      className="h-7 text-xs rounded-lg flex-1" data-testid={`edit-purchase-${purchase.id}`}>
+                                      <Edit className="h-3 w-3 mr-1" /> Editar
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={() => handleDeletePurchase(purchase.id)}
+                                      className="h-7 text-xs rounded-lg flex-1 text-red-600 border-red-200 hover:bg-red-50"
+                                      data-testid={`delete-purchase-${purchase.id}`}>
+                                      <Trash2 className="h-3 w-3 mr-1" /> Eliminar
+                                    </Button>
+                                  </div>
                                 </div>
-                              </div>
+                              )}
                             </CardContent>
                           </Card>
                         ))}
