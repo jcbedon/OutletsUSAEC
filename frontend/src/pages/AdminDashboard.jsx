@@ -120,7 +120,7 @@ export default function AdminDashboard() {
       <div className="max-w-4xl mx-auto px-4 py-6">
         {/* Active Live Banner */}
         {activeLive && (
-          <Card className="mb-6 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-2xl overflow-hidden border-0">
+          <Card className="mb-6 text-white rounded-2xl overflow-hidden border-0" style={{ background: 'linear-gradient(135deg, #1E3A5F, #2a4f7f)' }}>
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -134,7 +134,7 @@ export default function AdminDashboard() {
                 </div>
                 <Button 
                   onClick={() => navigate("/admin/live")}
-                  className="bg-white text-red-600 hover:bg-gray-100 font-bold"
+                  className="font-bold" style={{ background: '#2ECC71', color: 'white' }}
                   data-testid="go-to-live-btn"
                 >
                   <Play className="h-4 w-4 mr-2" />
@@ -150,8 +150,8 @@ export default function AdminDashboard() {
           <Card className="rounded-xl" data-testid="stat-clients">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                  <Users className="h-5 w-5 text-blue-600" />
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(30,58,95,0.1)' }}>
+                  <Users className="h-5 w-5" style={{ color: '#1E3A5F' }} />
                 </div>
                 <div>
                   <p className="text-2xl font-extrabold text-slate-800">{summary?.client_count || 0}</p>
@@ -164,8 +164,8 @@ export default function AdminDashboard() {
           <Card className="rounded-xl" data-testid="stat-sales">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
-                  <DollarSign className="h-5 w-5 text-green-600" />
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(46,204,113,0.1)' }}>
+                  <DollarSign className="h-5 w-5" style={{ color: '#2ECC71' }} />
                 </div>
                 <div>
                   <p className="text-2xl font-extrabold text-slate-800">
