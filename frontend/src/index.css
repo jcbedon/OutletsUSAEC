@@ -1,180 +1,140 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;500;700&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;600;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+    --primary: #1E3A5F;
+    --primary-light: #2a4f7f;
+    --primary-dark: #152b47;
+    --secondary: #F2F4F7;
+    --accent: #2ECC71;
+    --accent-dark: #27ae60;
+    --text: #2B2B2B;
+    --text-light: #6B7280;
+    --bg-image: url('https://customer-assets.emergentagent.com/job_7b20d46a-11cd-4fdd-a926-59e2d88120ca/artifacts/eb1xw1ey_download.png');
+}
+
 body {
-    margin: 0;
-    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    background-color: #F9FAFB;
+    font-family: 'Inter', sans-serif;
+    color: var(--text);
+    background-color: var(--secondary);
 }
 
-h1, h2, h3, h4, h5, h6 {
-    font-family: 'Manrope', sans-serif;
+/* Global background */
+.app-bg {
+    min-height: 100vh;
+    background-image: var(--bg-image);
+    background-size: cover;
+    background-position: center;
+    background-attachment: fixed;
+    position: relative;
 }
 
-code {
-    font-family: 'JetBrains Mono', source-code-pro, Menlo, Monaco, Consolas, monospace;
+.app-bg::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: rgba(242, 244, 247, 0.88);
+    z-index: 0;
+}
+
+.app-bg > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Logo transparency helper */
+.logo-transparent {
+    mix-blend-mode: multiply;
+    filter: contrast(1.1);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #c1c7d0; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #a0a8b4; }
+
+/* Button primary override */
+.btn-primary {
+    background-color: var(--primary) !important;
+    color: white !important;
+}
+.btn-primary:hover {
+    background-color: var(--primary-light) !important;
+}
+
+.btn-accent {
+    background-color: var(--accent) !important;
+    color: white !important;
+}
+.btn-accent:hover {
+    background-color: var(--accent-dark) !important;
+}
+
+/* Card glass effect */
+.card-glass {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+/* Header bar */
+.header-bar {
+    background: var(--primary);
+    color: white;
+}
+
+/* Stat card */
+.stat-card {
+    background: white;
+    border-radius: 16px;
+    border: 1px solid #E5E7EB;
+    transition: box-shadow 0.2s;
+}
+.stat-card:hover {
+    box-shadow: 0 4px 16px rgba(30, 58, 95, 0.08);
 }
 
 @layer base {
     :root {
-        --background: 210 20% 98%;
-        --foreground: 222.2 84% 4.9%;
+        --background: 0 0% 100%;
+        --foreground: 0 0% 17%;
         --card: 0 0% 100%;
-        --card-foreground: 222.2 84% 4.9%;
+        --card-foreground: 0 0% 17%;
         --popover: 0 0% 100%;
-        --popover-foreground: 222.2 84% 4.9%;
-        --primary: 0 84% 50%;
+        --popover-foreground: 0 0% 17%;
+        --primary: 213 52% 24%;
         --primary-foreground: 0 0% 100%;
-        --secondary: 220 14% 96%;
-        --secondary-foreground: 222.2 47.4% 11.2%;
-        --muted: 220 14% 96%;
-        --muted-foreground: 215.4 16.3% 46.9%;
-        --accent: 160 84% 39%;
+        --secondary: 216 18% 96%;
+        --secondary-foreground: 0 0% 17%;
+        --muted: 216 18% 96%;
+        --muted-foreground: 220 9% 46%;
+        --accent: 145 63% 49%;
         --accent-foreground: 0 0% 100%;
-        --destructive: 0 84% 50%;
+        --destructive: 0 84% 60%;
         --destructive-foreground: 0 0% 100%;
         --border: 220 13% 91%;
         --input: 220 13% 91%;
-        --ring: 0 84% 50%;
-        --chart-1: 0 84% 50%;
-        --chart-2: 160 84% 39%;
-        --chart-3: 220 70% 50%;
-        --chart-4: 43 74% 66%;
-        --chart-5: 27 87% 67%;
+        --ring: 213 52% 24%;
         --radius: 0.75rem;
     }
-    .dark {
-        --background: 222.2 84% 4.9%;
-        --foreground: 210 40% 98%;
-        --card: 222.2 84% 4.9%;
-        --card-foreground: 210 40% 98%;
-        --popover: 222.2 84% 4.9%;
-        --popover-foreground: 210 40% 98%;
-        --primary: 0 84% 50%;
-        --primary-foreground: 0 0% 100%;
-        --secondary: 217.2 32.6% 17.5%;
-        --secondary-foreground: 210 40% 98%;
-        --muted: 217.2 32.6% 17.5%;
-        --muted-foreground: 215 20.2% 65.1%;
-        --accent: 160 84% 39%;
-        --accent-foreground: 0 0% 100%;
-        --destructive: 0 62.8% 30.6%;
-        --destructive-foreground: 210 40% 98%;
-        --border: 217.2 32.6% 17.5%;
-        --input: 217.2 32.6% 17.5%;
-        --ring: 0 84% 50%;
-        --chart-1: 0 84% 50%;
-        --chart-2: 160 60% 45%;
-        --chart-3: 30 80% 55%;
-        --chart-4: 280 65% 60%;
-        --chart-5: 340 75% 55%;
-    }
 }
 
 @layer base {
-    * {
-        @apply border-border;
+    * { @apply border-border; }
+    body { @apply bg-background text-foreground; }
+}
+
+/* Fix radix visual edits */
+@media all {
+    [data-radix-popper-content-wrapper] {
+        z-index: 50 !important;
     }
-    body {
-        @apply bg-background text-foreground;
-    }
-}
-
-/* Custom scrollbar */
-::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-}
-
-::-webkit-scrollbar-track {
-    background: #f1f5f9;
-    border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
-    border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
-}
-
-/* PWA touch optimizations */
-* {
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-}
-
-/* Live badge animation */
-@keyframes pulse-live {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.5;
-    }
-}
-
-.animate-pulse-live {
-    animation: pulse-live 1.5s ease-in-out infinite;
-}
-
-/* Card hover effect */
-.card-hover {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.card-hover:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
-}
-
-/* Active press effect */
-.press-effect:active {
-    transform: scale(0.97);
-}
-
-/* Wallet card gradient */
-.wallet-gradient {
-    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-}
-
-/* Status badges */
-.status-preparing {
-    background-color: #fef3c7;
-    color: #92400e;
-}
-
-.status-in_transit {
-    background-color: #dbeafe;
-    color: #1e40af;
-}
-
-.status-delivered {
-    background-color: #d1fae5;
-    color: #065f46;
-}
-
-/* Logo transparent background fix */
-.logo-transparent {
-    mix-blend-mode: multiply;
-    background: transparent;
-}
-
-/* For dark backgrounds, use screen blend mode */
-.logo-transparent-light {
-    mix-blend-mode: screen;
-    filter: invert(1);
-}
-
-@layer base {
-    [data-debug-wrapper="true"] {
+    [data-state="open"][data-radix-scroll-area-viewport],
+    [data-visual-edit-wrapper="true"] {
         display: contents !important;
     }
 }
