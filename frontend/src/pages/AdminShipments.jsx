@@ -206,7 +206,7 @@ export default function AdminShipments() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="app-bg">
       {/* Header */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -228,7 +228,7 @@ export default function AdminShipments() {
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button 
-                className="bg-red-600 hover:bg-red-700 font-bold rounded-xl"
+                className="font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
                 data-testid="create-shipment-btn"
               >
                 <Plus className="h-4 w-4 mr-2" />
@@ -379,7 +379,7 @@ export default function AdminShipments() {
 
                     <Button
                       onClick={handleCreateShipment}
-                      className="w-full h-12 bg-red-600 hover:bg-red-700 font-bold rounded-xl"
+                      className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
                       disabled={selectedPurchases.length === 0}
                       data-testid="submit-shipment-btn"
                     >
@@ -549,7 +549,7 @@ export default function AdminShipments() {
                                   />
                                   <Button 
                                     onClick={() => handleUpdateTracking(shipment.id)}
-                                    className="w-full h-12 bg-red-600 hover:bg-red-700 rounded-xl"
+                                    className="w-full h-12 rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
                                   >
                                     Guardar
                                   </Button>

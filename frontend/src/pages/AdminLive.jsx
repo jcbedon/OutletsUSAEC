@@ -215,7 +215,7 @@ export default function AdminLive() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="app-bg">
       {/* Header */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -234,7 +234,7 @@ export default function AdminLive() {
           </div>
           
           {activeLive && (
-            <Badge className="bg-red-600 text-white animate-pulse text-sm px-3 py-1">
+            <Badge className="text-white animate-pulse text-sm px-3 py-1" style={{ background: '#2ECC71' }}>
               <Radio className="h-3 w-3 mr-2 inline" />
               EN VIVO
             </Badge>
@@ -255,7 +255,7 @@ export default function AdminLive() {
                 <Dialog open={createLiveDialogOpen} onOpenChange={setCreateLiveDialogOpen}>
                   <DialogTrigger asChild>
                     <Button 
-                      className="bg-red-600 hover:bg-red-700 font-bold rounded-xl h-12 px-6"
+                      className="font-bold rounded-xl h-12 px-6" style={{ background: '#1E3A5F', color: 'white' }}
                       data-testid="create-live-btn"
                     >
                       <Plus className="h-5 w-5 mr-2" />
@@ -278,7 +278,7 @@ export default function AdminLive() {
                         />
                       </div>
                       <Button 
-                        className="w-full h-12 bg-red-600 hover:bg-red-700 font-bold rounded-xl"
+                        className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
                         onClick={handleCreateLive}
                         data-testid="submit-create-live-btn"
                       >
@@ -327,7 +327,7 @@ export default function AdminLive() {
             {/* Purchase Form - LEFT */}
             <div className="space-y-4">
               {/* Live Header */}
-              <Card className="bg-gradient-to-r from-red-600 to-red-700 text-white rounded-2xl border-0">
+              <Card className="text-white rounded-2xl border-0" style={{ background: 'linear-gradient(135deg, #1E3A5F, #2a4f7f)' }}>
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
