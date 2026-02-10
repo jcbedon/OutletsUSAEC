@@ -214,6 +214,38 @@ export default function AdminLive() {
     }
   };
 
+  const handleEditPurchase = (purchase) => {
+    setEditingPurchase(purchase.id);
+    setEditForm({ item_name: purchase.item_name, store: purchase.store, price: purchase.price.toString() });
+  };
+
+  const handleSaveEdit = async (purchaseId) => {
+    try {
+      const data = {};
+      const orig = purchases.find(p => p.id === purchaseId);
+      if (editForm.item_name !== orig.item_name) data.item_name = editForm.item_name;
+      if (editForm.store !== orig.store) data.store = editForm.store;
+      if (parseFloat(editForm.price) !== orig.price) data.price = parseFloat(editForm.price);
+      if (Object.keys(data).length === 0) { setEditingPurchase(null); return; }
+      await updatePurchase(purchaseId, data);
+      toast.success("Compra actualizada");
+      setEditingPurchase(null);
+      loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al editar");
+    }
+  };
+
+  const handleDeletePurchase = async (purchaseId) => {
+    try {
+      await deletePurchase(purchaseId);
+      toast.success("Compra eliminada y saldo reembolsado");
+      loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al eliminar");
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
