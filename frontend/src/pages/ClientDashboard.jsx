@@ -170,7 +170,7 @@ export default function ClientDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-20">
+    <div className="app-bg pb-20">
       {/* Header */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
@@ -266,7 +266,7 @@ export default function ClientDashboard() {
                       </div>
                     </div>
                     <Button 
-                      className="w-full h-12 bg-red-600 hover:bg-red-700 font-bold rounded-xl"
+                      className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
                       onClick={handleRequestDeposit}
                       disabled={depositSubmitting}
                       data-testid="submit-deposit-btn"
