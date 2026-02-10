@@ -104,8 +104,8 @@ export default function AdminClients() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
+    <div className="app-bg">
+      <div className="sticky top-0 z-50 border-b" style={{ background: 'rgba(255,255,255,0.95)', borderColor: '#E5E7EB' }}>
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} data-testid="back-btn">
             <ArrowLeft className="h-5 w-5" />
@@ -116,7 +116,7 @@ export default function AdminClients() {
           <span className="font-bold text-slate-800 flex-1">Clientes</span>
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-red-600 hover:bg-red-700 rounded-xl" data-testid="open-create-client-btn">
+              <Button className="rounded-xl" data-testid="open-create-client-btn" style={{ background: '#1E3A5F', color: 'white' }}>
                 <UserPlus className="h-4 w-4 mr-2" /> Crear Cliente
               </Button>
             </DialogTrigger>
@@ -165,7 +165,7 @@ export default function AdminClients() {
                   </div>
                 </div>
                 <Button onClick={handleCreateClient} disabled={submitting} data-testid="submit-create-client-btn"
-                  className="w-full h-12 bg-red-600 hover:bg-red-700 font-bold rounded-xl">
+                  className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}>
                   {submitting ? "Creando..." : "Crear Cliente"}
                 </Button>
               </div>
@@ -273,7 +273,7 @@ export default function AdminClients() {
                               </div>
                             </div>
                             <Button onClick={handleSaveCommission}
-                              className="w-full h-12 bg-red-600 hover:bg-red-700 font-bold rounded-xl" data-testid="save-commission-btn">
+                              className="w-full h-12 font-bold rounded-xl" data-testid="save-commission-btn" style={{ background: '#1E3A5F', color: 'white' }}>
                               <Save className="h-5 w-5 mr-2" /> Guardar Comisión
                             </Button>
                           </div>
