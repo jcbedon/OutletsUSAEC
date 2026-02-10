@@ -470,7 +470,7 @@ export default function AdminLive() {
                             <span className="text-yellow-600">Comisión ({selectedCustomer?.name || 'cliente'}):</span>
                             <span className="font-bold text-yellow-600">${customerCommission.toFixed(2)}</span>
                           </div>
-                          <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t bg-red-50 -mx-3 px-3 py-2 rounded-b-xl">
+                          <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t -mx-3 px-3 py-2 rounded-b-xl" style={{ background: 'rgba(30,58,95,0.05)' }}>
                             <span>Se descuenta del saldo:</span>
                             <span className="text-red-600">
                               ${(parseFloat(purchaseForm.price || 0) * (1 + TAX_RATE) + customerCommission).toFixed(2)}
@@ -483,7 +483,8 @@ export default function AdminLive() {
                     {/* Submit Button */}
                     <Button
                       type="submit"
-                      className="w-full h-16 bg-slate-900 hover:bg-slate-800 text-white font-black text-xl rounded-2xl shadow-xl active:scale-95 transition-transform"
+                      className="w-full h-16 text-white font-black text-xl rounded-2xl shadow-xl active:scale-95 transition-transform"
+                      style={{ background: '#1E3A5F' }}
                       disabled={submitting}
                       data-testid="submit-purchase-btn"
                     >
