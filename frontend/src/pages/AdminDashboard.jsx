@@ -64,48 +64,12 @@ export default function AdminDashboard() {
   }
 
   const menuItems = [
-    { 
-      icon: Radio, 
-      label: "Live Shopping", 
-      path: "/admin/live", 
-      color: "bg-red-600",
-      description: "Gestionar ventas en vivo"
-    },
-    { 
-      icon: Users, 
-      label: "Clientes", 
-      path: "/admin/clients", 
-      color: "bg-blue-600",
-      description: "Ver y gestionar clientes"
-    },
-    { 
-      icon: Wallet, 
-      label: "Recargas", 
-      path: "/admin/wallet", 
-      color: "bg-green-600",
-      description: "Aprobar depósitos"
-    },
-    { 
-      icon: Truck, 
-      label: "Envíos", 
-      path: "/admin/shipments", 
-      color: "bg-purple-600",
-      description: "Gestionar envíos"
-    },
-    { 
-      icon: Gift, 
-      label: "Referidos", 
-      path: "/admin/referrals", 
-      color: "bg-emerald-600",
-      description: "Configurar bonos"
-    },
-    { 
-      icon: BarChart3, 
-      label: "Reportes", 
-      path: "/admin/reports", 
-      color: "bg-orange-600",
-      description: "Ver estadísticas"
-    },
+    { icon: Radio, label: "Live Shopping", path: "/admin/live", color: "#1E3A5F", description: "Gestionar ventas en vivo" },
+    { icon: Users, label: "Clientes", path: "/admin/clients", color: "#2a4f7f", description: "Ver y gestionar clientes" },
+    { icon: Wallet, label: "Recargas", path: "/admin/wallet", color: "#2ECC71", description: "Aprobar depósitos" },
+    { icon: Truck, label: "Envíos", path: "/admin/shipments", color: "#1E3A5F", description: "Gestionar envíos" },
+    { icon: Gift, label: "Referidos", path: "/admin/referrals", color: "#27ae60", description: "Configurar bonos" },
+    { icon: BarChart3, label: "Reportes", path: "/admin/reports", color: "#2a4f7f", description: "Ver estadísticas" },
   ];
 
   return (
