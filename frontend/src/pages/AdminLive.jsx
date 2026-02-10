@@ -164,9 +164,11 @@ export default function AdminLive() {
       return;
     }
 
-    // Only check if wallet has enough for commission (not the item price)
-    if (customerWallet && customerWallet.available < customerCommission) {
-      toast.error(`Saldo insuficiente para comisión. Disponible: $${customerWallet.available.toFixed(2)}, Comisión: $${customerCommission.toFixed(2)}`);
+    // Check if wallet has enough for total (price + tax + commission)
+    const tax = Math.round(price * 0.0825 * 100) / 100;
+    const total = Math.round((price + tax + customerCommission) * 100) / 100;
+    if (customerWallet && customerWallet.available < total) {
+      toast.error(`Saldo insuficiente. Disponible: $${customerWallet.available.toFixed(2)}, Total compra: $${total.toFixed(2)}`);
       return;
     }
 
