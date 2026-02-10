@@ -184,7 +184,7 @@ export default function AdminLive() {
       });
 
       toast.success(
-        `✓ ${result.data.customer_name}: ${purchaseForm.item_name} - Precio: $${result.data.price_with_tax.toFixed(2)} (Comisión: $${result.data.commission.toFixed(2)})`,
+        `${result.data.customer_name}: ${purchaseForm.item_name} - Total: $${result.data.total.toFixed(2)} (Saldo: $${result.data.new_balance.toFixed(2)})`,
         { duration: 3000 }
       );
 
