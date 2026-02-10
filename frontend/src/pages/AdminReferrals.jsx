@@ -140,7 +140,7 @@ export default function AdminReferrals() {
                 <Button
                   onClick={handleSaveBonus}
                   disabled={saving}
-                  className="h-14 px-6 bg-green-600 hover:bg-green-700 font-bold rounded-xl"
+                  className="h-14 px-6 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
                   data-testid="save-bonus-btn"
                 >
                   <Save className="h-5 w-5 mr-2" />
