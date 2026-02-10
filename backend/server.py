@@ -826,6 +826,73 @@ async def get_pending_shipment_purchases(user_id: str, current_user: dict = Depe
         shipped_ids.update(s.get("purchase_ids", []))
     return [p for p in all_purchases if p["id"] not in shipped_ids]
 
+
+class PurchaseUpdate(BaseModel):
+    item_name: Optional[str] = None
+    store: Optional[str] = None
+    price: Optional[float] = None
+
+@api_router.put("/purchases/{purchase_id}")
+async def update_purchase(purchase_id: str, data: PurchaseUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    purchase = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0})
+    if not purchase:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+    updates = {}
+    new_price = data.price if data.price is not None else purchase["price"]
+    if data.item_name is not None:
+        updates["item_name"] = data.item_name
+    if data.store is not None:
+        updates["store"] = data.store
+    if data.price is not None:
+        tax = round(new_price * ILLINOIS_TAX_RATE, 2)
+        price_with_tax = round(new_price + tax, 2)
+        commission = purchase["commission"]
+        total = round(price_with_tax + commission, 2)
+        old_total = purchase["total"]
+        diff = total - old_total
+        updates.update({"price": new_price, "tax": tax, "price_with_tax": price_with_tax, "total": total})
+        # Adjust wallet balance
+        wallet = await db.wallets.find_one({"user_id": purchase["user_id"], "tenant_id": tid}, {"_id": 0})
+        if wallet:
+            new_balance = wallet["available"] - diff
+            await db.wallets.update_one({"user_id": purchase["user_id"], "tenant_id": tid},
+                {"$set": {"available": new_balance, "updated_at": datetime.now(timezone.utc).isoformat()}})
+        # Adjust live totals
+        await db.lives.update_one({"id": purchase["live_id"], "tenant_id": tid},
+            {"$inc": {"total_sales": round(price_with_tax - purchase.get("price_with_tax", 0), 2)}})
+    if updates:
+        await db.purchases.update_one({"id": purchase_id, "tenant_id": tid}, {"$set": updates})
+    updated = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0})
+    return updated
+
+@api_router.delete("/purchases/{purchase_id}")
+async def delete_purchase(purchase_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    purchase = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0})
+    if not purchase:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+    # Refund total to wallet
+    wallet = await db.wallets.find_one({"user_id": purchase["user_id"], "tenant_id": tid}, {"_id": 0})
+    if wallet:
+        new_balance = wallet["available"] + purchase["total"]
+        await db.wallets.update_one({"user_id": purchase["user_id"], "tenant_id": tid},
+            {"$set": {"available": new_balance, "updated_at": datetime.now(timezone.utc).isoformat()}})
+        tx = WalletTransaction(tenant_id=tid, user_id=purchase["user_id"], customer_id=purchase["customer_id"],
+            type="refund", amount=purchase["total"], balance_after=new_balance,
+            description=f"Reembolso: {purchase['item_name']} eliminado", status="approved",
+            approved_at=datetime.now(timezone.utc).isoformat())
+        await db.wallet_transactions.insert_one(tx.model_dump())
+    # Adjust live totals
+    await db.lives.update_one({"id": purchase["live_id"], "tenant_id": tid},
+        {"$inc": {"total_sales": -purchase.get("price_with_tax", 0), "total_commissions": -purchase["commission"], "purchase_count": -1}})
+    await db.purchases.delete_one({"id": purchase_id, "tenant_id": tid})
+    return {"message": "Compra eliminada y saldo reembolsado"}
+
 # ==================== SHIPMENT ENDPOINTS ====================
 
 @api_router.post("/shipments")
