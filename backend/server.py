@@ -780,9 +780,6 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
     tax = round(purchase_data.price * ILLINOIS_TAX_RATE, 2)
     price_with_tax = round(purchase_data.price + tax, 2)
     total = round(price_with_tax + commission_fee, 2)
-    if wallet["available"] < total:
-        raise HTTPException(status_code=400,
-            detail=f"Saldo insuficiente. Disponible: ${wallet['available']:.2f}, Total compra: ${total:.2f}")
     purchase = Purchase(tenant_id=tid, user_id=user["id"], customer_id=purchase_data.customer_id.upper(),
         item_name=purchase_data.item_name, store=purchase_data.store, price=purchase_data.price,
         tax=tax, price_with_tax=price_with_tax, commission=commission_fee, total=total, live_id=purchase_data.live_id)
