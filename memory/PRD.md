@@ -41,6 +41,7 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] Admin: Reports module with export to PDF/Excel (by client, by live, all purchases)
 - [x] Admin: Logo upload for tenant branding
 - [x] Client: Dashboard with wallet, purchases, shipments (tracking visible), notifications
+- [x] Client: "Total a Recargar" display showing sum of purchases + shipping costs with informational label
 - [x] Client: Upload proof of deposit (screenshot) for recharge requests
 - [x] Client: Self-registration with tenant slug code
 - [x] Dynamic logo across all pages (from tenant settings)
