@@ -193,11 +193,17 @@ export default function ClientDashboard() {
       <div className="max-w-lg mx-auto px-4 pt-4">
         <Card className="text-white rounded-3xl shadow-2xl overflow-hidden" data-testid="wallet-card" style={{ background: 'linear-gradient(135deg, #1E3A5F, #2a4f7f)' }}>
           <CardContent className="p-6">
-            <div className="flex justify-between items-start mb-6">
+            <div className="flex justify-between items-start mb-4">
               <div>
                 <p className="text-white/70 text-sm font-medium">Tu Saldo</p>
                 <p className="text-4xl font-extrabold mt-1" data-testid="wallet-balance">
-                  ${wallet?.available?.toFixed(2) || "0.00"}
+                  ${(
+                    purchases.reduce((sum, p) => sum + (p.total_price || (p.price + (p.tax || 0) + (p.commission || 0))), 0) +
+                    shipments.reduce((sum, s) => sum + (s.shipping_cost || 0), 0)
+                  ).toFixed(2)}
+                </p>
+                <p className="text-white/60 text-xs mt-1">
+                  (Precio incluye: Impuestos, comisión y envío)
                 </p>
               </div>
               <div className="text-right">
@@ -207,21 +213,15 @@ export default function ClientDashboard() {
               </div>
             </div>
 
-            {/* Total a Recargar */}
+            {/* Total + Envío desglose */}
             {(purchases.length > 0 || shipments.length > 0) && (
-              <div className="bg-white/10 rounded-xl p-4 mb-4">
+              <div className="bg-white/10 rounded-xl p-3 mb-4">
                 <div className="flex justify-between items-center">
-                  <p className="text-white/80 text-sm font-medium">Total a Recargar:</p>
-                  <p className="text-2xl font-extrabold" data-testid="total-to-recharge">
-                    ${(
-                      purchases.reduce((sum, p) => sum + (p.total_price || (p.price + (p.tax || 0) + (p.commission || 0))), 0) +
-                      shipments.reduce((sum, s) => sum + (s.shipping_cost || 0), 0)
-                    ).toFixed(2)}
+                  <p className="text-white/80 text-sm font-medium">Total + Envío:</p>
+                  <p className="text-lg font-bold" data-testid="total-breakdown">
+                    ${purchases.reduce((sum, p) => sum + (p.total_price || (p.price + (p.tax || 0) + (p.commission || 0))), 0).toFixed(2)} + ${shipments.reduce((sum, s) => sum + (s.shipping_cost || 0), 0).toFixed(2)}
                   </p>
                 </div>
-                <p className="text-white/60 text-xs mt-1 text-right">
-                  (Precio incluye: Impuestos, comisión y envío)
-                </p>
               </div>
             )}
 
