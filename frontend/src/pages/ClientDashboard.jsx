@@ -207,6 +207,24 @@ export default function ClientDashboard() {
               </div>
             </div>
 
+            {/* Total a Recargar */}
+            {(purchases.length > 0 || shipments.length > 0) && (
+              <div className="bg-white/10 rounded-xl p-4 mb-4">
+                <div className="flex justify-between items-center">
+                  <p className="text-white/80 text-sm font-medium">Total a Recargar:</p>
+                  <p className="text-2xl font-extrabold" data-testid="total-to-recharge">
+                    ${(
+                      purchases.reduce((sum, p) => sum + (p.total_price || (p.price + (p.tax || 0) + (p.commission || 0))), 0) +
+                      shipments.reduce((sum, s) => sum + (s.shipping_cost || 0), 0)
+                    ).toFixed(2)}
+                  </p>
+                </div>
+                <p className="text-white/60 text-xs mt-1 text-right">
+                  (Precio incluye: Impuestos, comisión y envío)
+                </p>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <Dialog open={depositDialogOpen} onOpenChange={setDepositDialogOpen}>
                 <DialogTrigger asChild>
