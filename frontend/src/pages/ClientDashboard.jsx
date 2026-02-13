@@ -163,7 +163,7 @@ export default function ClientDashboard() {
     );
   };
 
-  // Function to get shipment status for a purchase
+  // Function to get shipment status for a purchase by ID
   const getShipmentStatusForPurchase = (purchaseId) => {
     const shipment = shipments.find(s => s.purchase_ids && s.purchase_ids.includes(purchaseId));
     if (shipment) {
@@ -172,17 +172,38 @@ export default function ClientDashboard() {
     return "waiting"; // En Espera if not in any shipment
   };
 
+  // Function to find purchase by item name from transaction description
+  const findPurchaseByDescription = (description) => {
+    // Transaction description format: "Compra: {item_name} ({store}) - Total: ${total}"
+    const match = description.match(/Compra:\s*([^(]+)\s*\(/);
+    if (match) {
+      const itemName = match[1].trim();
+      return purchases.find(p => p.item_name === itemName);
+    }
+    return null;
+  };
+
   // Function to get shipment status badge for transactions
   const getTransactionShipmentBadge = (tx) => {
     // For deposits, show the transaction status
-    if (tx.type === 'deposit') {
+    if (tx.type === 'deposit' || tx.type === 'referral_bonus' || tx.type === 'initial_balance') {
       return getStatusBadge(tx.status);
     }
     
     // For purchases, check shipment status
-    if (tx.purchase_id) {
-      const shipmentStatus = getShipmentStatusForPurchase(tx.purchase_id);
-      return getStatusBadge(shipmentStatus);
+    if (tx.type === 'purchase') {
+      // First try by purchase_id if available
+      if (tx.purchase_id) {
+        const shipmentStatus = getShipmentStatusForPurchase(tx.purchase_id);
+        return getStatusBadge(shipmentStatus);
+      }
+      
+      // Fallback: find purchase by description
+      const purchase = findPurchaseByDescription(tx.description);
+      if (purchase) {
+        const shipmentStatus = getShipmentStatusForPurchase(purchase.id);
+        return getStatusBadge(shipmentStatus);
+      }
     }
     
     // Default to waiting
