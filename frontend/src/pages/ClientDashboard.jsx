@@ -174,8 +174,13 @@ export default function ClientDashboard() {
 
   // Function to find purchase by item name from transaction description
   const findPurchaseByDescription = (description) => {
-    // Transaction description format: "Compra: {item_name} ({store}) - Total: ${total}"
-    const match = description.match(/Compra:\s*([^(]+)\s*\(/);
+    // Transaction description formats:
+    // - "Compra: {item_name} ({store}) - Total: ${total}"
+    // - "Comisión: {item_name} ({store})"
+    let match = description.match(/Compra:\s*([^(]+)\s*\(/);
+    if (!match) {
+      match = description.match(/Comisión:\s*([^(]+)\s*\(/);
+    }
     if (match) {
       const itemName = match[1].trim();
       return purchases.find(p => p.item_name === itemName);
