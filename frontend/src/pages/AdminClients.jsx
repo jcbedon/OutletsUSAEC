@@ -271,37 +271,11 @@ export default function AdminClients() {
                           Comisión: <span className="font-bold text-yellow-600">${(client.commission_fee || 3).toFixed(2)}</span>
                         </span>
                       </div>
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="rounded-lg"
-                            onClick={() => handleEditCommission(client)}
-                            data-testid={`edit-commission-${client.customer_id}`}>
-                            <Edit className="h-4 w-4 mr-1" /> Editar
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="rounded-2xl">
-                          <DialogHeader><DialogTitle>Editar Comisión - #{client.customer_id}</DialogTitle></DialogHeader>
-                          <div className="space-y-4 pt-4">
-                            <div>
-                              <Label>Cliente</Label>
-                              <p className="font-bold text-lg">{client.name}</p>
-                            </div>
-                            <div>
-                              <Label>Comisión por compra (USD)</Label>
-                              <div className="relative mt-2">
-                                <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-                                <Input type="number" step="0.01" min="0" placeholder="3.00" value={newCommission}
-                                  onChange={(e) => setNewCommission(e.target.value)}
-                                  className="pl-10 h-14 text-2xl font-bold rounded-xl" data-testid="commission-input" />
-                              </div>
-                            </div>
-                            <Button onClick={handleSaveCommission}
-                              className="w-full h-12 font-bold rounded-xl" data-testid="save-commission-btn" style={{ background: '#1E3A5F', color: 'white' }}>
-                              <Save className="h-5 w-5 mr-2" /> Guardar Comisión
-                            </Button>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                      <Button variant="outline" size="sm" className="rounded-lg"
+                        onClick={() => handleOpenEditDialog(client)}
+                        data-testid={`edit-client-${client.customer_id}`}>
+                        <Edit className="h-4 w-4 mr-1" /> Editar
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -309,6 +283,103 @@ export default function AdminClients() {
             </div>
           )}
         </ScrollArea>
+
+        {/* Edit Client Dialog */}
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent className="rounded-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Edit className="h-5 w-5" />
+                Editar Cliente - #{editingClient?.customer_id}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <div>
+                <Label>Nombre *</Label>
+                <Input 
+                  placeholder="Nombre completo" 
+                  className="rounded-xl mt-1"
+                  value={editForm.name} 
+                  onChange={(e) => setEdit("name", e.target.value)} 
+                  data-testid="edit-client-name"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>WhatsApp *</Label>
+                  <Input 
+                    placeholder="+593..." 
+                    className="rounded-xl mt-1"
+                    value={editForm.whatsapp} 
+                    onChange={(e) => setEdit("whatsapp", e.target.value)}
+                    data-testid="edit-client-whatsapp"
+                  />
+                </div>
+                <div>
+                  <Label>País</Label>
+                  <Input 
+                    placeholder="Ecuador" 
+                    className="rounded-xl mt-1"
+                    value={editForm.country} 
+                    onChange={(e) => setEdit("country", e.target.value)} 
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input 
+                  type="email" 
+                  placeholder="email@..." 
+                  className="rounded-xl mt-1"
+                  value={editForm.email} 
+                  onChange={(e) => setEdit("email", e.target.value)} 
+                />
+              </div>
+              <div>
+                <Label>Comisión (USD)</Label>
+                <Input 
+                  type="number" 
+                  step="0.01" 
+                  min="0" 
+                  placeholder="3.00" 
+                  className="rounded-xl mt-1"
+                  value={editForm.commission_fee} 
+                  onChange={(e) => setEdit("commission_fee", parseFloat(e.target.value) || 0)} 
+                />
+              </div>
+              
+              {/* Password Section */}
+              <div className="border-t pt-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Key className="h-4 w-4 text-orange-500" />
+                  <Label className="text-orange-600 font-medium">Cambiar Contraseña</Label>
+                </div>
+                <Input 
+                  type="password" 
+                  placeholder="Nueva contraseña (dejar vacío para no cambiar)" 
+                  className="rounded-xl"
+                  value={editForm.new_password} 
+                  onChange={(e) => setEdit("new_password", e.target.value)}
+                  data-testid="edit-client-password"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Solo completa este campo si deseas asignar una nueva contraseña
+                </p>
+              </div>
+
+              <Button 
+                onClick={handleSaveClient} 
+                disabled={submitting}
+                className="w-full h-12 font-bold rounded-xl" 
+                style={{ background: '#1E3A5F', color: 'white' }}
+                data-testid="save-client-btn"
+              >
+                <Save className="h-5 w-5 mr-2" />
+                {submitting ? "Guardando..." : "Guardar Cambios"}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
