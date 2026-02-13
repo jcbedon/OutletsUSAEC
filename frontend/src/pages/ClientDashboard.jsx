@@ -476,7 +476,7 @@ export default function ClientDashboard() {
                           <div className="text-right">
                             <p className="font-bold text-red-600">${purchase.price.toFixed(2)}</p>
                             <p className="text-xs text-gray-400">+${purchase.commission.toFixed(2)} com.</p>
-                            {getStatusBadge(purchase.status)}
+                            {getStatusBadge(getShipmentStatusForPurchase(purchase.id))}
                           </div>
                         </div>
                       </CardContent>
