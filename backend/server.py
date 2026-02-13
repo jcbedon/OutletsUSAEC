@@ -603,6 +603,45 @@ async def update_client_commission(user_id: str, commission_fee: float, current_
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     return {"message": f"Comisión actualizada a ${commission_fee:.2f}", "commission_fee": commission_fee}
 
+class ClientUpdate(BaseModel):
+    name: Optional[str] = None
+    whatsapp: Optional[str] = None
+    country: Optional[str] = None
+    email: Optional[str] = None
+    new_password: Optional[str] = None
+    commission_fee: Optional[float] = None
+
+@api_router.put("/admin/clients/{user_id}")
+async def update_client(user_id: str, data: ClientUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    updates = {}
+    if data.name:
+        updates["name"] = data.name
+    if data.whatsapp:
+        updates["whatsapp"] = data.whatsapp
+    if data.country:
+        updates["country"] = data.country
+    if data.email is not None:
+        updates["email"] = data.email
+    if data.commission_fee is not None and data.commission_fee >= 0:
+        updates["commission_fee"] = data.commission_fee
+    if data.new_password:
+        updates["password_hash"] = pwd_context.hash(data.new_password)
+    
+    if updates:
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db.users.update_one({"id": user_id, "tenant_id": tid}, {"$set": updates})
+    
+    updated_user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0, "password_hash": 0})
+    return {"message": "Cliente actualizado exitosamente", "user": updated_user}
+
 @api_router.get("/admin/clients/{customer_id}/info")
 async def get_client_info(customer_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "admin":
