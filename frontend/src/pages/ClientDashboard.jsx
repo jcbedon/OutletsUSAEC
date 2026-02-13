@@ -505,7 +505,7 @@ export default function ClientDashboard() {
                             <p className="text-xs text-gray-400">
                               Saldo: ${tx.balance_after.toFixed(2)}
                             </p>
-                            {getStatusBadge(tx.status)}
+                            {getTransactionShipmentBadge(tx)}
                           </div>
                         </div>
                       </CardContent>
