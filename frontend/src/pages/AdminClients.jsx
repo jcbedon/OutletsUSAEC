@@ -59,23 +59,43 @@ export default function AdminClients() {
     }
   };
 
-  const handleEditCommission = (client) => {
+  const handleOpenEditDialog = (client) => {
     setEditingClient(client);
-    setNewCommission((client.commission_fee || 3).toString());
+    setEditForm({
+      name: client.name || "",
+      whatsapp: client.whatsapp || "",
+      country: client.country || "",
+      email: client.email || "",
+      commission_fee: client.commission_fee || 3,
+      new_password: ""
+    });
+    setEditDialogOpen(true);
   };
 
-  const handleSaveCommission = async () => {
-    const commission = parseFloat(newCommission);
-    if (isNaN(commission) || commission < 0) { toast.error("Valor inválido"); return; }
+  const handleSaveClient = async () => {
+    if (!editForm.name || !editForm.whatsapp) {
+      toast.error("Nombre y WhatsApp son requeridos");
+      return;
+    }
+    setSubmitting(true);
     try {
-      await updateClientCommission(editingClient.id, commission);
-      toast.success(`Comisión de ${editingClient.name} actualizada a $${commission.toFixed(2)}`);
+      const dataToSend = { ...editForm };
+      if (!dataToSend.new_password) {
+        delete dataToSend.new_password;
+      }
+      await updateClient(editingClient.id, dataToSend);
+      toast.success(`Cliente ${editForm.name} actualizado exitosamente`);
+      setEditDialogOpen(false);
       setEditingClient(null);
       loadClients();
     } catch (error) {
-      toast.error("Error al actualizar comisión");
+      toast.error(error.response?.data?.detail || "Error al actualizar cliente");
+    } finally {
+      setSubmitting(false);
     }
   };
+
+  const setEdit = (key, val) => setEditForm({ ...editForm, [key]: val });
 
   const handleCreateClient = async () => {
     if (!newClient.name || !newClient.whatsapp || !newClient.password) {
