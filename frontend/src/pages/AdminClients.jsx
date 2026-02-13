@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getAllClients, updateClientCommission, createClient } from "@/lib/api";
+import { getAllClients, updateClientCommission, createClient, updateClient } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Users, Search, Phone, Globe, Wallet, DollarSign, Edit, Save, UserPlus } from "lucide-react";
+import { ArrowLeft, Users, Search, Phone, Globe, Wallet, DollarSign, Edit, Save, UserPlus, Key } from "lucide-react";
 
 export default function AdminClients() {
   const navigate = useNavigate();
@@ -20,7 +20,10 @@ export default function AdminClients() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [editingClient, setEditingClient] = useState(null);
-  const [newCommission, setNewCommission] = useState("");
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "", whatsapp: "", country: "", email: "", commission_fee: 3, new_password: ""
+  });
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [newClient, setNewClient] = useState({
