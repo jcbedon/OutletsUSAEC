@@ -95,6 +95,7 @@ class WalletTransaction(BaseModel):
     status: str = "pending"
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     approved_at: Optional[str] = None
+    purchase_id: Optional[str] = None
 
 class Live(BaseModel):
     model_config = ConfigDict(extra="ignore")
