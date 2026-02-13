@@ -79,6 +79,7 @@ export const getActiveClients = () => api.get("/admin/clients/active");
 export const createClient = (data) => api.post("/admin/clients/create", data);
 export const updateClientCommission = (userId, commissionFee) =>
   api.put(`/admin/clients/${userId}/commission?commission_fee=${commissionFee}`);
+export const updateClient = (userId, data) => api.put(`/admin/clients/${userId}`, data);
 export const getClientInfo = (customerId) => api.get(`/admin/clients/${customerId}/info`);
 export const getLiveReport = (liveId) => api.get(`/admin/reports/live/${liveId}`);
 export const getReportsSummary = () => api.get("/admin/reports/summary");
