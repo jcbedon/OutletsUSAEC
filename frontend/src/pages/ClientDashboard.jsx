@@ -144,21 +144,49 @@ export default function ClientDashboard() {
       delivered: "bg-green-100 text-green-800",
       confirmed: "bg-green-100 text-green-800",
       pending: "bg-yellow-100 text-yellow-800",
-      approved: "bg-green-100 text-green-800"
+      approved: "bg-green-100 text-green-800",
+      waiting: "bg-gray-100 text-gray-800"
     };
     const labels = {
-      preparing: "Preparando",
+      preparing: "Preparación",
       in_transit: "En Tránsito",
       delivered: "Entregado",
       confirmed: "Confirmada",
       pending: "Pendiente",
-      approved: "Aprobado"
+      approved: "Aprobado",
+      waiting: "En Espera"
     };
     return (
       <Badge className={`${styles[status] || "bg-gray-100 text-gray-800"} font-medium`}>
         {labels[status] || status}
       </Badge>
     );
+  };
+
+  // Function to get shipment status for a purchase
+  const getShipmentStatusForPurchase = (purchaseId) => {
+    const shipment = shipments.find(s => s.purchase_ids && s.purchase_ids.includes(purchaseId));
+    if (shipment) {
+      return shipment.status;
+    }
+    return "waiting"; // En Espera if not in any shipment
+  };
+
+  // Function to get shipment status badge for transactions
+  const getTransactionShipmentBadge = (tx) => {
+    // For deposits, show the transaction status
+    if (tx.type === 'deposit') {
+      return getStatusBadge(tx.status);
+    }
+    
+    // For purchases, check shipment status
+    if (tx.purchase_id) {
+      const shipmentStatus = getShipmentStatusForPurchase(tx.purchase_id);
+      return getStatusBadge(shipmentStatus);
+    }
+    
+    // Default to waiting
+    return getStatusBadge("waiting");
   };
 
   if (loading) {
