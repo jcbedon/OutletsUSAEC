@@ -791,7 +791,7 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
     transaction = WalletTransaction(tenant_id=tid, user_id=user["id"], customer_id=purchase_data.customer_id.upper(),
         type="purchase", amount=-total, balance_after=new_balance,
         description=f"Compra: {purchase_data.item_name} ({purchase_data.store}) - Total: ${total:.2f}", status="approved",
-        approved_at=datetime.now(timezone.utc).isoformat())
+        approved_at=datetime.now(timezone.utc).isoformat(), purchase_id=purchase.id)
     await db.wallet_transactions.insert_one(transaction.model_dump())
     await db.lives.update_one({"id": purchase_data.live_id, "tenant_id": tid},
         {"$inc": {"total_sales": price_with_tax, "total_commissions": commission_fee, "purchase_count": 1}})
