@@ -862,8 +862,19 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
 @api_router.get("/purchases/user/{user_id}")
 async def get_user_purchases(user_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
+    # Get user's current commission rate
+    user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0})
+    current_commission = user.get("commission_fee", DEFAULT_COMMISSION_FEE) if user else DEFAULT_COMMISSION_FEE
     purchases = await db.purchases.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
-    return purchases
+    # Recalculate totals using current commission
+    result = []
+    for p in purchases:
+        p_copy = dict(p)
+        p_copy["commission"] = current_commission
+        p_copy["total"] = round(p.get("price", 0) + p.get("tax", 0) + current_commission, 2)
+        p_copy["total_price"] = p_copy["total"]
+        result.append(p_copy)
+    return result
 
 @api_router.get("/purchases/live/{live_id}")
 async def get_live_purchases(live_id: str, current_user: dict = Depends(get_current_user)):
