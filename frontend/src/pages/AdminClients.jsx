@@ -22,7 +22,7 @@ export default function AdminClients() {
   const [editingClient, setEditingClient] = useState(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState({
-    name: "", whatsapp: "", country: "", email: "", commission_fee: 3, new_password: ""
+    name: "", whatsapp: "", country: "", email: "", new_password: ""
   });
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
