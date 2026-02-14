@@ -237,7 +237,12 @@ export default function AdminReports() {
     const t = "Compras - " + data.client.name;
     const h = ["Producto", "Tienda", "Precio", "Tax", "Comisión", "Total", "Fecha"];
     const r = data.purchases.map(p => [p.item_name, p.store, fmtMoney(p.price), fmtMoney(p.tax), fmtMoney(p.commission), fmtMoney(p.total), fmtDate(p.created_at)]);
-    r.push(["TOTALES", "", fmtMoney(data.total_spent - data.total_commission), "", fmtMoney(data.total_commission), fmtMoney(data.total_spent), ""]);
+    const totalPurchases = data.total_spent || 0;
+    const totalShipping = data.total_shipping || 0;
+    const totalToRecharge = totalPurchases + totalShipping;
+    r.push(["TOTALES COMPRAS", "", fmtMoney(totalPurchases - data.total_commission), "", fmtMoney(data.total_commission), fmtMoney(totalPurchases), ""]);
+    r.push(["TOTAL ENVÍOS", "", "", "", "", fmtMoney(totalShipping), ""]);
+    r.push(["TOTAL A RECARGAR", "", "", "", "", fmtMoney(totalToRecharge), ""]);
     if (type === "pdf") doExportPDF(t, tenantName, h, r, "compras_" + data.client.customer_id + ".pdf");
     else doExportXLS(t, h, r, "compras_" + data.client.customer_id + ".xlsx");
   }, [clientsReport, tenantName]);
