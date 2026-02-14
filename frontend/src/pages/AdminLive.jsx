@@ -193,7 +193,7 @@ export default function AdminLive() {
   const handleSubmitPurchase = async (e) => {
     e.preventDefault();
     
-    if (!purchaseForm.customer_id || !purchaseForm.item_name || !purchaseForm.store || !purchaseForm.price) {
+    if (!purchaseForm.customer_id || !purchaseForm.item_name || !purchaseForm.price) {
       toast.error("Completa todos los campos");
       return;
     }
@@ -210,7 +210,7 @@ export default function AdminLive() {
       const result = await createPurchase({
         customer_id: purchaseForm.customer_id,
         item_name: purchaseForm.item_name,
-        store: purchaseForm.store,
+        store: selectedLive.store || "Sin tienda",
         price: price,
         live_id: selectedLive.id
       });
@@ -224,7 +224,6 @@ export default function AdminLive() {
       setPurchaseForm({
         customer_id: "",
         item_name: "",
-        store: purchaseForm.store, // Keep store selected
         price: ""
       });
       setSelectedCustomer(null);
