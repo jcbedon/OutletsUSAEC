@@ -119,11 +119,16 @@ export default function AdminLive() {
       toast.error("Ingresa un título para el Live");
       return;
     }
+    if (!newLiveStore.trim()) {
+      toast.error("Ingresa el nombre de la tienda");
+      return;
+    }
 
     try {
-      await createLive({ title: newLiveTitle });
+      await createLive({ title: newLiveTitle, store: newLiveStore });
       toast.success("Live creado");
       setNewLiveTitle("");
+      setNewLiveStore("");
       setCreateLiveDialogOpen(false);
       loadData();
     } catch (error) {
