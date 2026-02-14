@@ -249,8 +249,11 @@ export default function AdminReports() {
 
   const exportClientsResumen = useCallback((type) => {
     if (!clientsReport.length) return;
-    const h = ["ID", "Nombre", "WhatsApp", "País", "Comisión", "Compras", "Total", "Comisiones", "Saldo"];
-    const r = clientsReport.map(c => [c.client.customer_id, c.client.name, c.client.whatsapp, c.client.country, fmtMoney(c.client.commission_fee), c.purchase_count, fmtMoney(c.total_spent), fmtMoney(c.total_commission), fmtMoney(c.wallet_balance)]);
+    const h = ["ID", "Nombre", "WhatsApp", "País", "Compras", "Total Compras", "Total Envío", "Total a Recargar", "Comisiones", "Saldo"];
+    const r = clientsReport.map(c => {
+      const totalToRecharge = (c.total_spent || 0) + (c.total_shipping || 0);
+      return [c.client.customer_id, c.client.name, c.client.whatsapp, c.client.country, c.purchase_count, fmtMoney(c.total_spent), fmtMoney(c.total_shipping || 0), fmtMoney(totalToRecharge), fmtMoney(c.total_commission), fmtMoney(c.wallet_balance)];
+    });
     if (type === "pdf") doExportPDF("Reporte Clientes", tenantName, h, r, "reporte_clientes.pdf");
     else doExportXLS("Reporte Clientes", h, r, "reporte_clientes.xlsx");
   }, [clientsReport, tenantName]);
