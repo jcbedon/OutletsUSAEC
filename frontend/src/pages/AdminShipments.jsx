@@ -50,6 +50,7 @@ export default function AdminShipments() {
   const [selectedClient, setSelectedClient] = useState(null);
   const [pendingPurchases, setPendingPurchases] = useState([]);
   const [selectedPurchases, setSelectedPurchases] = useState([]);
+  const [clientSearch, setClientSearch] = useState("");
   const [shipmentForm, setShipmentForm] = useState({
     shipping_type: "",
     shipping_cost: "",
@@ -58,6 +59,13 @@ export default function AdminShipments() {
     phone: "",
     additional_info: ""
   });
+
+  // Filter and sort clients
+  const sortedClients = [...clients].sort((a, b) => a.name.localeCompare(b.name));
+  const filteredClients = sortedClients.filter(client => 
+    client.name.toLowerCase().includes(clientSearch.toLowerCase()) ||
+    client.customer_id.toLowerCase().includes(clientSearch.toLowerCase())
+  );
 
   useEffect(() => {
     loadData();
