@@ -65,7 +65,6 @@ export default function AdminLive() {
   const [purchaseForm, setPurchaseForm] = useState({
     customer_id: "",
     item_name: "",
-    store: "",
     price: ""
   });
   const [selectedCustomer, setSelectedCustomer] = useState(null);
