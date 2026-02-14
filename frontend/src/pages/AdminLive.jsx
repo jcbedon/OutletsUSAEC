@@ -350,6 +350,17 @@ export default function AdminLive() {
                           data-testid="live-title-input"
                         />
                       </div>
+                      <div>
+                        <Label>Tienda *</Label>
+                        <Input
+                          placeholder="Ej: Walmart, Target, Amazon..."
+                          value={newLiveStore}
+                          onChange={(e) => setNewLiveStore(e.target.value)}
+                          className="h-12 rounded-xl mt-2"
+                          data-testid="live-store-input"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Todas las compras de este Live serán de esta tienda</p>
+                      </div>
                       <Button 
                         className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
                         onClick={handleCreateLive}
