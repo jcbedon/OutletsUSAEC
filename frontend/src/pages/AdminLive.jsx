@@ -198,7 +198,7 @@ export default function AdminLive() {
         item_name: purchaseForm.item_name,
         store: purchaseForm.store,
         price: price,
-        live_id: activeLive.id
+        live_id: selectedLive.id
       });
 
       toast.success(
