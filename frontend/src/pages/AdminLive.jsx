@@ -58,6 +58,7 @@ export default function AdminLive() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [newLiveTitle, setNewLiveTitle] = useState("");
+  const [newLiveStore, setNewLiveStore] = useState("");
   const [createLiveDialogOpen, setCreateLiveDialogOpen] = useState(false);
 
   // Purchase form state
