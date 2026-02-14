@@ -773,7 +773,7 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
 async def create_live(live_data: LiveCreate, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="No autorizado")
-    live = Live(tenant_id=current_user["tenant_id"], title=live_data.title)
+    live = Live(tenant_id=current_user["tenant_id"], title=live_data.title, store=live_data.store)
     await db.lives.insert_one(live.model_dump())
     return {"message": "Live creado", "live_id": live.id}
 
