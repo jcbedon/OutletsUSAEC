@@ -605,25 +605,6 @@ export default function AdminLive() {
                       </div>
                     </div>
 
-                    {/* Store */}
-                    <div>
-                      <Label className="text-sm font-medium">Tienda</Label>
-                      <Select
-                        value={purchaseForm.store}
-                        onValueChange={(value) => setPurchaseForm({ ...purchaseForm, store: value })}
-                      >
-                        <SelectTrigger className="h-12 rounded-xl mt-1" data-testid="purchase-store">
-                          <Store className="h-5 w-5 text-gray-400 mr-2" />
-                          <SelectValue placeholder="Seleccionar tienda" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {STORES.map((store) => (
-                            <SelectItem key={store} value={store}>{store}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
                     {/* Price */}
                     <div>
                       <Label className="text-sm font-medium">Precio (USD)</Label>
