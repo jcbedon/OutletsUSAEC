@@ -143,10 +143,15 @@ export default function AdminLive() {
 
   const handleEndLive = async () => {
     try {
-      await endLive(activeLive.id);
+      await endLive(selectedLive.id);
       toast.success("Live finalizado");
-      setPurchases([]);
-      loadData();
+      // Reload to update status
+      const livesRes = await getLives();
+      setLives(livesRes.data);
+      setActiveLive(null);
+      // Keep selectedLive but update its status
+      const updatedLive = livesRes.data.find(l => l.id === selectedLive.id);
+      if (updatedLive) setSelectedLive(updatedLive);
     } catch (error) {
       toast.error("Error al finalizar Live");
     }
