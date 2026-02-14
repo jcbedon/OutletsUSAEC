@@ -256,11 +256,17 @@ export default function AdminClients() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className={`px-3 py-2 rounded-xl ${client.wallet_balance > 0 ? 'bg-green-50' : 'bg-gray-50'}`}>
-                          <p className="text-xs text-gray-500">Saldo</p>
-                          <p className={`text-xl font-bold ${client.wallet_balance > 0 ? 'text-green-600' : 'text-gray-400'}`}>
-                            ${client.wallet_balance?.toFixed(2) || '0.00'}
+                        <div className={`px-3 py-2 rounded-xl ${client.total_to_recharge > 0 ? 'bg-blue-50' : 'bg-gray-50'}`}>
+                          <p className="text-xs text-gray-500">Total a Recargar</p>
+                          <p className={`text-xl font-bold ${client.total_to_recharge > 0 ? 'text-blue-600' : 'text-gray-400'}`}
+                            data-testid={`total-recharge-${client.customer_id}`}>
+                            ${client.total_to_recharge?.toFixed(2) || '0.00'}
                           </p>
+                          {(client.total_purchases > 0 || client.total_shipping > 0) && (
+                            <p className="text-xs text-gray-400 mt-1">
+                              ${client.total_purchases?.toFixed(2) || '0.00'} + ${client.total_shipping?.toFixed(2) || '0.00'} envío
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
