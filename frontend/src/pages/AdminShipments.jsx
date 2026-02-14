@@ -248,21 +248,49 @@ export default function AdminShipments() {
                 <DialogTitle>Crear Nuevo Envío</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-4">
-                {/* Client Select */}
+                {/* Client Select with Search */}
                 <div>
                   <Label>Cliente</Label>
                   <Select onValueChange={handleClientSelect}>
-                    <SelectTrigger className="h-12 rounded-xl mt-1" data-testid="select-client">
-                      <SelectValue placeholder="Seleccionar cliente" />
+                    <SelectTrigger className="h-12 rounded-xl mt-1 text-slate-800" data-testid="select-client">
+                      <SelectValue placeholder="Seleccionar cliente" className="text-slate-800" />
                     </SelectTrigger>
-                    <SelectContent>
-                      {clients.map((client) => (
-                        <SelectItem key={client.id} value={client.id}>
-                          #{client.customer_id} - {client.name}
-                        </SelectItem>
-                      ))}
+                    <SelectContent className="max-h-80">
+                      {/* Search Input */}
+                      <div className="p-2 border-b sticky top-0 bg-white">
+                        <Input
+                          placeholder="Buscar cliente..."
+                          value={clientSearch}
+                          onChange={(e) => setClientSearch(e.target.value)}
+                          className="h-10 rounded-lg"
+                          data-testid="client-search-input"
+                        />
+                      </div>
+                      <div className="max-h-60 overflow-y-auto">
+                        {filteredClients.length === 0 ? (
+                          <div className="p-4 text-center text-gray-500 text-sm">
+                            No se encontraron clientes
+                          </div>
+                        ) : (
+                          filteredClients.map((client) => (
+                            <SelectItem 
+                              key={client.id} 
+                              value={client.id}
+                              className="text-slate-800 cursor-pointer hover:bg-gray-100"
+                            >
+                              <span className="font-medium text-slate-800">#{client.customer_id}</span>
+                              <span className="text-slate-600 ml-2">{client.name}</span>
+                            </SelectItem>
+                          ))
+                        )}
+                      </div>
                     </SelectContent>
                   </Select>
+                  {selectedClient && (
+                    <div className="mt-2 p-2 bg-blue-50 rounded-lg text-sm text-blue-800">
+                      Seleccionado: <span className="font-bold">#{selectedClient.customer_id} - {selectedClient.name}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Pending Purchases */}
