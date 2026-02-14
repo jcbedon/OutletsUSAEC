@@ -217,11 +217,14 @@ export default function AdminLive() {
       setCustomerWallet(null);
 
       // Refresh purchases
-      const purchasesRes = await getLivePurchases(activeLive.id);
+      const purchasesRes = await getLivePurchases(selectedLive.id);
       setPurchases(purchasesRes.data);
 
-      // Refresh active live stats
-      loadData();
+      // Refresh lives to update stats
+      const livesRes = await getLives();
+      setLives(livesRes.data);
+      const updatedLive = livesRes.data.find(l => l.id === selectedLive.id);
+      if (updatedLive) setSelectedLive(updatedLive);
 
       // Focus back to customer ID
       customerIdRef.current?.focus();
