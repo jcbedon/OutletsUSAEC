@@ -135,7 +135,16 @@ export default function AdminLive() {
     try {
       await startLive(liveId);
       toast.success("¡LIVE INICIADO!");
-      loadData();
+      // Reload lives and select the started one
+      const livesRes = await getLives();
+      setLives(livesRes.data);
+      const startedLive = livesRes.data.find(l => l.id === liveId);
+      if (startedLive) {
+        setActiveLive(startedLive);
+        setSelectedLive(startedLive);
+        const purchasesRes = await getLivePurchases(liveId);
+        setPurchases(purchasesRes.data);
+      }
     } catch (error) {
       toast.error("Error al iniciar Live");
     }
