@@ -176,6 +176,7 @@ class UserRegister(BaseModel):
 
 class LiveCreate(BaseModel):
     title: str
+    store: Optional[str] = None
 
 class PurchaseCreate(BaseModel):
     customer_id: str
