@@ -270,13 +270,7 @@ export default function AdminClients() {
                         </div>
                       </div>
                     </div>
-                    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <DollarSign className="h-4 w-4 text-yellow-600" />
-                        <span className="text-sm text-gray-600">
-                          Comisión: <span className="font-bold text-yellow-600">${(client.commission_fee || 3).toFixed(2)}</span>
-                        </span>
-                      </div>
+                    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-end">
                       <Button variant="outline" size="sm" className="rounded-lg"
                         onClick={() => handleOpenEditDialog(client)}
                         data-testid={`edit-client-${client.customer_id}`}>
