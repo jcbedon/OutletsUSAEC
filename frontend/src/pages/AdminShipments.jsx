@@ -137,6 +137,7 @@ export default function AdminShipments() {
       setSelectedClient(null);
       setPendingPurchases([]);
       setSelectedPurchases([]);
+      setClientSearch("");
       setShipmentForm({
         shipping_type: "",
         shipping_cost: "",
