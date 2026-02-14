@@ -255,15 +255,15 @@ export default function AdminClients() {
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className={`px-3 py-2 rounded-xl ${client.total_to_recharge > 0 ? 'bg-blue-50' : 'bg-gray-50'}`}>
-                          <p className="text-xs text-gray-500">Total a Recargar</p>
-                          <p className={`text-xl font-bold ${client.total_to_recharge > 0 ? 'text-blue-600' : 'text-gray-400'}`}
-                            data-testid={`total-recharge-${client.customer_id}`}>
-                            ${client.total_to_recharge?.toFixed(2) || '0.00'}
+                        <div className={`px-3 py-2 rounded-xl ${client.pending_balance < 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+                          <p className="text-xs text-gray-500">Saldo Pendiente</p>
+                          <p className={`text-xl font-bold ${client.pending_balance < 0 ? 'text-red-600' : 'text-green-600'}`}
+                            data-testid={`pending-balance-${client.customer_id}`}>
+                            {client.pending_balance < 0 ? '-' : '+'}${Math.abs(client.pending_balance || 0).toFixed(2)}
                           </p>
                           {(client.total_purchases > 0 || client.total_shipping > 0) && (
                             <p className="text-xs text-gray-400 mt-1">
-                              ${client.total_purchases?.toFixed(2) || '0.00'} + ${client.total_shipping?.toFixed(2) || '0.00'} envío
+                              Compras: ${client.total_purchases?.toFixed(2)} | Envío: ${client.total_shipping?.toFixed(2)}
                             </p>
                           )}
                         </div>
