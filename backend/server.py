@@ -548,7 +548,19 @@ async def get_all_clients(current_user: dict = Depends(get_current_user)):
     result = []
     for user in users:
         wallet = await db.wallets.find_one({"user_id": user["id"], "tenant_id": tid}, {"_id": 0})
-        result.append({**user, "wallet_balance": wallet["available"] if wallet else 0})
+        # Get total purchases (price + tax + commission)
+        purchases = await db.purchases.find({"user_id": user["id"], "tenant_id": tid}, {"_id": 0}).to_list(1000)
+        total_purchases = sum(p.get("total", p.get("price", 0) + p.get("tax", 0) + p.get("commission", 0)) for p in purchases)
+        # Get total shipping costs from all shipments for this client
+        shipments = await db.shipments.find({"client_id": user["id"], "tenant_id": tid}, {"_id": 0}).to_list(1000)
+        total_shipping = sum(s.get("shipping_cost", 0) for s in shipments)
+        result.append({
+            **user, 
+            "wallet_balance": wallet["available"] if wallet else 0,
+            "total_purchases": round(total_purchases, 2),
+            "total_shipping": round(total_shipping, 2),
+            "total_to_recharge": round(total_purchases + total_shipping, 2)
+        })
     return result
 
 @api_router.post("/admin/clients/create")
