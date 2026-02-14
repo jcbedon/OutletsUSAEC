@@ -102,6 +102,7 @@ class Live(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     tenant_id: Optional[str] = None
     title: str
+    store: Optional[str] = None
     status: str = "inactive"
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     started_at: Optional[str] = None
