@@ -91,7 +91,9 @@ export default function AdminLive() {
       setLives(livesRes.data);
       setActiveClients(clientsRes.data);
 
+      // If there's an active live, select it by default
       if (activeLiveRes.data) {
+        setSelectedLive(activeLiveRes.data);
         const purchasesRes = await getLivePurchases(activeLiveRes.data.id);
         setPurchases(purchasesRes.data);
       }
@@ -99,6 +101,16 @@ export default function AdminLive() {
       toast.error("Error al cargar datos");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSelectLive = async (live) => {
+    setSelectedLive(live);
+    try {
+      const purchasesRes = await getLivePurchases(live.id);
+      setPurchases(purchasesRes.data);
+    } catch (error) {
+      toast.error("Error al cargar compras del live");
     }
   };
 
