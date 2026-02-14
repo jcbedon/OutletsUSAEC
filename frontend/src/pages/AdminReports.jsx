@@ -110,7 +110,8 @@ function PurchaseTable({ purchases, showClient, showLive }) {
 }
 
 function ClientRow({ cr, isExpanded, onToggle, onExport }) {
-  const totalToRecharge = (cr.total_spent || 0) + (cr.total_shipping || 0);
+  const pendingBalance = cr.pending_balance || 0;
+  const needsRecharge = pendingBalance < 0;
   return (
     <Card className="rounded-xl">
       <CardContent className="p-4">
@@ -127,9 +128,11 @@ function ClientRow({ cr, isExpanded, onToggle, onExport }) {
           <div className="flex items-center gap-4">
             <div className="text-right">
               <p className="text-xs text-gray-500">{cr.purchase_count} compras</p>
-              <p className="font-bold text-blue-600">{fmtMoney(totalToRecharge)}</p>
+              <p className={`font-bold ${needsRecharge ? 'text-red-600' : 'text-green-600'}`}>
+                {needsRecharge ? '-' : '+'}${Math.abs(pendingBalance).toFixed(2)}
+              </p>
               <p className="text-xs text-gray-400">
-                {fmtMoney(cr.total_spent)} + {fmtMoney(cr.total_shipping || 0)} envío
+                Compras: {fmtMoney(cr.total_spent)} | Envío: {fmtMoney(cr.total_shipping || 0)}
               </p>
             </div>
             <div className="text-right">
@@ -164,15 +167,16 @@ function ClientRow({ cr, isExpanded, onToggle, onExport }) {
                 </div>
               </div>
             )}
-            {/* Grand Total */}
-            <div className="mt-3 bg-blue-50 rounded-lg p-3">
+            {/* Pending Balance */}
+            <div className={`mt-3 rounded-lg p-3 ${needsRecharge ? 'bg-red-50' : 'bg-green-50'}`}>
               <div className="flex justify-between items-center">
-                <span className="text-sm font-semibold text-blue-800">Total a Recargar:</span>
+                <span className={`text-sm font-semibold ${needsRecharge ? 'text-red-800' : 'text-green-800'}`}>
+                  Saldo Pendiente:
+                </span>
                 <div className="text-right">
-                  <span className="font-bold text-blue-600 text-lg">{fmtMoney(totalToRecharge)}</span>
-                  <p className="text-xs text-blue-500">
-                    {fmtMoney(cr.total_spent)} + {fmtMoney(cr.total_shipping || 0)} envío
-                  </p>
+                  <span className={`font-bold text-lg ${needsRecharge ? 'text-red-600' : 'text-green-600'}`}>
+                    {needsRecharge ? '-' : '+'}${Math.abs(pendingBalance).toFixed(2)}
+                  </span>
                 </div>
               </div>
             </div>
