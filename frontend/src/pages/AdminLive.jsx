@@ -507,6 +507,10 @@ export default function AdminLive() {
                         )}
                       </div>
                       <h2 className="text-xl font-bold">{selectedLive.title}</h2>
+                      <p className="text-sm text-blue-200 mt-1">
+                        <Store className="h-3 w-3 inline mr-1" />
+                        {selectedLive.store || "Sin tienda definida"}
+                      </p>
                     </div>
                     <div className="flex gap-2">
                       <Button 
