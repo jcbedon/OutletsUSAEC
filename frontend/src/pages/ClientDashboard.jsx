@@ -247,37 +247,61 @@ export default function ClientDashboard() {
       <div className="max-w-lg mx-auto px-4 pt-4">
         <Card className="text-white rounded-3xl shadow-2xl overflow-hidden" data-testid="wallet-card" style={{ background: 'linear-gradient(135deg, #1E3A5F, #2a4f7f)' }}>
           <CardContent className="p-6">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <p className="text-white/70 text-sm font-medium">Tu Saldo</p>
-                <p className="text-4xl font-extrabold mt-1" data-testid="wallet-balance">
-                  ${(
-                    purchases.reduce((sum, p) => sum + (p.total_price || (p.price + (p.tax || 0) + (p.commission || 0))), 0) +
-                    shipments.reduce((sum, s) => sum + (s.shipping_cost || 0), 0)
-                  ).toFixed(2)}
-                </p>
-                <p className="text-white/60 text-xs mt-1">
-                  (Precio incluye: Impuestos, comisión y envío)
-                </p>
-              </div>
-              <div className="text-right">
-                <Badge className="bg-white/20 text-white border-0 font-bold text-lg px-3 py-1">
-                  #{user?.customer_id}
-                </Badge>
-              </div>
-            </div>
+            {(() => {
+              const totalPurchases = purchases.reduce((sum, p) => sum + (p.total_price || (p.price + (p.tax || 0) + (p.commission || 0))), 0);
+              const totalShipping = shipments.reduce((sum, s) => sum + (s.shipping_cost || 0), 0);
+              const totalDebt = totalPurchases + totalShipping;
+              const currentBalance = wallet?.available || 0;
+              const pendingBalance = currentBalance - totalDebt;
+              const needsRecharge = pendingBalance < 0;
+              
+              return (
+                <>
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <p className="text-white/70 text-sm font-medium">Tu Saldo</p>
+                      <p className={`text-4xl font-extrabold mt-1 ${needsRecharge ? 'text-red-400' : 'text-green-400'}`} data-testid="wallet-balance">
+                        {needsRecharge ? '-' : ''}${Math.abs(pendingBalance).toFixed(2)}
+                      </p>
+                      <p className="text-white/60 text-xs mt-1">
+                        {needsRecharge ? '(Debes recargar este monto)' : '(Saldo a favor)'}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <Badge className="bg-white/20 text-white border-0 font-bold text-lg px-3 py-1">
+                        #{user?.customer_id}
+                      </Badge>
+                    </div>
+                  </div>
 
-            {/* Total + Envío desglose */}
-            {(purchases.length > 0 || shipments.length > 0) && (
-              <div className="bg-white/10 rounded-xl p-3 mb-4">
-                <div className="flex justify-between items-center">
-                  <p className="text-white/80 text-sm font-medium">Total + Envío:</p>
-                  <p className="text-lg font-bold" data-testid="total-breakdown">
-                    ${purchases.reduce((sum, p) => sum + (p.total_price || (p.price + (p.tax || 0) + (p.commission || 0))), 0).toFixed(2)} + ${shipments.reduce((sum, s) => sum + (s.shipping_cost || 0), 0).toFixed(2)}
-                  </p>
-                </div>
-              </div>
-            )}
+                  {/* Desglose detallado */}
+                  <div className="bg-white/10 rounded-xl p-3 mb-4 space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <p className="text-white/70">Total Compras:</p>
+                      <p className="font-medium">${totalPurchases.toFixed(2)}</p>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <p className="text-white/70">Total Envíos:</p>
+                      <p className="font-medium">${totalShipping.toFixed(2)}</p>
+                    </div>
+                    <div className="flex justify-between items-center text-sm border-t border-white/20 pt-2">
+                      <p className="text-white/70">Total a Pagar:</p>
+                      <p className="font-bold">${totalDebt.toFixed(2)}</p>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <p className="text-white/70">Saldo Recargado:</p>
+                      <p className="font-medium text-green-300">${currentBalance.toFixed(2)}</p>
+                    </div>
+                    <div className="flex justify-between items-center text-sm border-t border-white/20 pt-2">
+                      <p className="text-white/80 font-medium">Saldo Pendiente:</p>
+                      <p className={`font-bold text-lg ${needsRecharge ? 'text-red-400' : 'text-green-400'}`}>
+                        {needsRecharge ? '-' : '+'}${Math.abs(pendingBalance).toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
 
             <div className="flex gap-3">
               <Dialog open={depositDialogOpen} onOpenChange={setDepositDialogOpen}>
