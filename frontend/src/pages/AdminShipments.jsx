@@ -30,7 +30,8 @@ import {
   MapPin,
   Phone,
   Edit,
-  Navigation
+  Navigation,
+  Search
 } from "lucide-react";
 
 const LOGO_URL_DEFAULT = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
