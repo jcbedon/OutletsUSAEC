@@ -390,6 +390,10 @@ export default function AdminLive() {
                           <CardContent className="p-4 flex items-center justify-between">
                             <div>
                               <p className="font-bold text-slate-800">{live.title}</p>
+                              <p className="text-sm text-blue-600 font-medium">
+                                <Store className="h-3 w-3 inline mr-1" />
+                                {live.store || "Sin tienda"}
+                              </p>
                               <p className="text-sm text-gray-500">
                                 {live.purchase_count || 0} compras • ${(live.total_sales || 0).toFixed(2)} ventas
                               </p>
