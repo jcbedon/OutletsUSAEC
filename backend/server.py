@@ -633,7 +633,7 @@ async def update_client(user_id: str, data: ClientUpdate, current_user: dict = D
     if data.commission_fee is not None and data.commission_fee >= 0:
         updates["commission_fee"] = data.commission_fee
     if data.new_password:
-        updates["password_hash"] = pwd_context.hash(data.new_password)
+        updates["password_hash"] = hash_password(data.new_password)
     
     if updates:
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
