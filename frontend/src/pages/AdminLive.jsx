@@ -51,6 +51,7 @@ export default function AdminLive() {
   const navigate = useNavigate();
   const logoUrl = user?.tenant_logo || "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
   const [activeLive, setActiveLive] = useState(null);
+  const [selectedLive, setSelectedLive] = useState(null); // Live currently being viewed/edited
   const [lives, setLives] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [activeClients, setActiveClients] = useState([]);
