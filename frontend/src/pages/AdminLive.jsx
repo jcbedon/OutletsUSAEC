@@ -304,14 +304,14 @@ export default function AdminLive() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-4">
-        {/* No Active Live */}
-        {!activeLive && (
+        {/* No Selected Live - Show list of all lives */}
+        {!selectedLive && (
           <div className="space-y-6">
             <Card className="rounded-2xl border-dashed border-2 border-gray-300">
               <CardContent className="p-8 text-center">
                 <Radio className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <h2 className="text-xl font-bold text-gray-700 mb-2">No hay Live activo</h2>
-                <p className="text-gray-500 mb-6">Crea o inicia un Live para comenzar a registrar compras</p>
+                <h2 className="text-xl font-bold text-gray-700 mb-2">Selecciona o crea un Live</h2>
+                <p className="text-gray-500 mb-6">Puedes crear uno nuevo o continuar con uno existente</p>
                 
                 <Dialog open={createLiveDialogOpen} onOpenChange={setCreateLiveDialogOpen}>
                   <DialogTrigger asChild>
@@ -351,39 +351,109 @@ export default function AdminLive() {
               </CardContent>
             </Card>
 
-            {/* Inactive Lives */}
-            {lives.filter(l => l.status === "inactive").length > 0 && (
-              <div>
-                <h2 className="text-lg font-bold text-slate-800 mb-4">Lives Pendientes</h2>
-                <div className="space-y-3">
-                  {lives.filter(l => l.status === "inactive").map((live) => (
-                    <Card key={live.id} className="rounded-xl">
-                      <CardContent className="p-4 flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-slate-800">{live.title}</p>
-                          <p className="text-sm text-gray-500">
-                            Creado: {new Date(live.created_at).toLocaleDateString('es-ES')}
-                          </p>
-                        </div>
-                        <Button 
-                          onClick={() => handleStartLive(live.id)}
-                          className="bg-green-600 hover:bg-green-700 font-bold rounded-xl"
-                          data-testid={`start-live-${live.id}`}
-                        >
-                          <Play className="h-4 w-4 mr-2" />
-                          Iniciar
-                        </Button>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
+            {/* All Lives - Grouped by status */}
+            {lives.length > 0 && (
+              <div className="space-y-6">
+                {/* Active Lives */}
+                {lives.filter(l => l.status === "active").length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                      <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                      Lives Activos
+                    </h2>
+                    <div className="space-y-3">
+                      {lives.filter(l => l.status === "active").map((live) => (
+                        <Card key={live.id} className="rounded-xl border-green-200 bg-green-50/50">
+                          <CardContent className="p-4 flex items-center justify-between">
+                            <div>
+                              <p className="font-bold text-slate-800">{live.title}</p>
+                              <p className="text-sm text-gray-500">
+                                {live.purchase_count || 0} compras • ${(live.total_sales || 0).toFixed(2)} ventas
+                              </p>
+                            </div>
+                            <Button 
+                              onClick={() => handleSelectLive(live)}
+                              className="bg-green-600 hover:bg-green-700 font-bold rounded-xl"
+                              data-testid={`select-live-${live.id}`}
+                            >
+                              <Play className="h-4 w-4 mr-2" />
+                              Continuar
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Inactive Lives (not started) */}
+                {lives.filter(l => l.status === "inactive").length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-800 mb-4">Lives Pendientes</h2>
+                    <div className="space-y-3">
+                      {lives.filter(l => l.status === "inactive").map((live) => (
+                        <Card key={live.id} className="rounded-xl">
+                          <CardContent className="p-4 flex items-center justify-between">
+                            <div>
+                              <p className="font-bold text-slate-800">{live.title}</p>
+                              <p className="text-sm text-gray-500">
+                                Creado: {new Date(live.created_at).toLocaleDateString('es-ES')}
+                              </p>
+                            </div>
+                            <Button 
+                              onClick={() => handleStartLive(live.id)}
+                              className="bg-blue-600 hover:bg-blue-700 font-bold rounded-xl"
+                              data-testid={`start-live-${live.id}`}
+                            >
+                              <Play className="h-4 w-4 mr-2" />
+                              Iniciar
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Ended Lives */}
+                {lives.filter(l => l.status === "ended").length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-800 mb-4">Lives Finalizados</h2>
+                    <div className="space-y-3">
+                      {lives.filter(l => l.status === "ended").map((live) => (
+                        <Card key={live.id} className="rounded-xl bg-gray-50">
+                          <CardContent className="p-4 flex items-center justify-between">
+                            <div>
+                              <p className="font-bold text-slate-800">{live.title}</p>
+                              <p className="text-sm text-gray-500">
+                                {live.purchase_count || 0} compras • ${(live.total_sales || 0).toFixed(2)} ventas
+                              </p>
+                              <p className="text-xs text-gray-400">
+                                Finalizado: {new Date(live.ended_at || live.created_at).toLocaleDateString('es-ES')}
+                              </p>
+                            </div>
+                            <Button 
+                              onClick={() => handleSelectLive(live)}
+                              variant="outline"
+                              className="font-bold rounded-xl"
+                              data-testid={`open-live-${live.id}`}
+                            >
+                              <Edit className="h-4 w-4 mr-2" />
+                              Abrir
+                            </Button>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
 
-        {/* Active Live - Purchase Mode */}
-        {activeLive && (
+        {/* Selected Live - Purchase Mode */}
+        {selectedLive && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Purchase Form - LEFT */}
             <div className="space-y-4">
