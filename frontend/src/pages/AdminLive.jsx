@@ -43,7 +43,6 @@ import {
   X
 } from "lucide-react";
 
-const STORES = ["Walmart", "Target", "Amazon", "Ross", "Marshalls", "TJ Maxx", "Burlington", "Otro"];
 const TAX_RATE = 0.0825; // Illinois tax 8.25%
 
 export default function AdminLive() {
