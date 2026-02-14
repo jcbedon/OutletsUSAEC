@@ -1081,19 +1081,32 @@ async def get_all_clients_purchases_report(current_user: dict = Depends(get_curr
     for client in clients:
         purchases = await db.purchases.find({"user_id": client["id"], "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(500)
         wallet = await db.wallets.find_one({"user_id": client["id"], "tenant_id": tid}, {"_id": 0})
-        total_spent = sum(p.get("total", 0) for p in purchases)
-        total_commission = sum(p.get("commission", 0) for p in purchases)
+        shipments = await db.shipments.find({"user_id": client["id"], "tenant_id": tid}, {"_id": 0}).to_list(1000)
+        current_commission = client.get("commission_fee", DEFAULT_COMMISSION_FEE)
+        # Recalculate totals using current commission rate
+        total_spent = sum(p.get("price", 0) + p.get("tax", 0) + current_commission for p in purchases)
+        total_commission = current_commission * len(purchases)
+        total_shipping = sum(s.get("shipping_cost", 0) for s in shipments)
+        # Update each purchase with recalculated values for display
+        purchases_with_current_commission = []
+        for p in purchases:
+            p_copy = dict(p)
+            p_copy["commission"] = current_commission
+            p_copy["total"] = p.get("price", 0) + p.get("tax", 0) + current_commission
+            purchases_with_current_commission.append(p_copy)
         result.append({
             "client": {
                 "id": client["id"], "customer_id": client["customer_id"],
                 "name": client["name"], "whatsapp": client["whatsapp"],
-                "country": client["country"], "commission_fee": client.get("commission_fee", 3)
+                "country": client["country"], "commission_fee": current_commission
             },
             "wallet_balance": wallet["available"] if wallet else 0,
-            "purchases": purchases,
+            "purchases": purchases_with_current_commission,
             "purchase_count": len(purchases),
-            "total_spent": total_spent,
-            "total_commission": total_commission
+            "total_spent": round(total_spent, 2),
+            "total_commission": round(total_commission, 2),
+            "total_shipping": round(total_shipping, 2),
+            "total_to_recharge": round(total_spent + total_shipping, 2)
         })
     return sorted(result, key=lambda x: x["total_spent"], reverse=True)
 
