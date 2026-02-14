@@ -425,11 +425,11 @@ export default function AdminLive() {
                 )}
 
                 {/* Ended Lives */}
-                {lives.filter(l => l.status === "ended").length > 0 && (
+                {lives.filter(l => l.status === "ended" || l.status === "completed").length > 0 && (
                   <div>
                     <h2 className="text-lg font-bold text-slate-800 mb-4">Lives Finalizados</h2>
                     <div className="space-y-3">
-                      {lives.filter(l => l.status === "ended").map((live) => (
+                      {lives.filter(l => l.status === "ended" || l.status === "completed").map((live) => (
                         <Card key={live.id} className="rounded-xl bg-gray-50">
                           <CardContent className="p-4 flex items-center justify-between">
                             <div>
