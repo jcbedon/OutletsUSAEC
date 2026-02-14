@@ -335,18 +335,6 @@ export default function AdminClients() {
                   onChange={(e) => setEdit("email", e.target.value)} 
                 />
               </div>
-              <div>
-                <Label>Comisión (USD)</Label>
-                <Input 
-                  type="number" 
-                  step="0.01" 
-                  min="0" 
-                  placeholder="3.00" 
-                  className="rounded-xl mt-1"
-                  value={editForm.commission_fee} 
-                  onChange={(e) => setEdit("commission_fee", parseFloat(e.target.value) || 0)} 
-                />
-              </div>
               
               {/* Password Section */}
               <div className="border-t pt-4">
