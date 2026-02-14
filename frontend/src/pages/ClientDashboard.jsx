@@ -250,9 +250,9 @@ export default function ClientDashboard() {
             {(() => {
               const totalPurchases = purchases.reduce((sum, p) => sum + (p.total_price || (p.price + (p.tax || 0) + (p.commission || 0))), 0);
               const totalShipping = shipments.reduce((sum, s) => sum + (s.shipping_cost || 0), 0);
-              const totalDebt = totalPurchases + totalShipping;
               const currentBalance = wallet?.available || 0;
-              const pendingBalance = currentBalance - totalDebt;
+              // El saldo del wallet ya tiene descontadas las compras, solo restamos envíos
+              const pendingBalance = currentBalance - totalShipping;
               const needsRecharge = pendingBalance < 0;
               
               return (
@@ -283,14 +283,6 @@ export default function ClientDashboard() {
                     <div className="flex justify-between items-center text-sm">
                       <p className="text-white/70">Total Envíos:</p>
                       <p className="font-medium">${totalShipping.toFixed(2)}</p>
-                    </div>
-                    <div className="flex justify-between items-center text-sm border-t border-white/20 pt-2">
-                      <p className="text-white/70">Total a Pagar:</p>
-                      <p className="font-bold">${totalDebt.toFixed(2)}</p>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <p className="text-white/70">Saldo Recargado:</p>
-                      <p className="font-medium text-green-300">${currentBalance.toFixed(2)}</p>
                     </div>
                     <div className="flex justify-between items-center text-sm border-t border-white/20 pt-2">
                       <p className="text-white/80 font-medium">Saldo Pendiente:</p>
