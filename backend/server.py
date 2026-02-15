@@ -1088,9 +1088,13 @@ async def get_reports_summary(current_user: dict = Depends(get_current_user)):
     pending_shipments = await db.shipments.count_documents({"status": {"$ne": "delivered"}, "tenant_id": tid})
     top_customers = await db.purchases.aggregate([
         {"$match": {"tenant_id": tid}},
-        {"$group": {"_id": "$customer_id", "total_spent": {"$sum": "$total"}, "purchase_count": {"$sum": 1}}},
+        {"$group": {"_id": "$customer_id", "user_id": {"$first": "$user_id"}, "total_spent": {"$sum": "$total"}, "purchase_count": {"$sum": 1}}},
         {"$sort": {"total_spent": -1}}, {"$limit": 10}
     ]).to_list(10)
+    # Add client names to top customers
+    for customer in top_customers:
+        user = await db.users.find_one({"customer_id": customer["_id"], "tenant_id": tid}, {"_id": 0, "name": 1})
+        customer["name"] = user["name"] if user else "Sin nombre"
     return {
         "total_sales": total_sales[0]["total"] if total_sales else 0,
         "total_commissions": total_commissions[0]["total"] if total_commissions else 0,
