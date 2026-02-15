@@ -465,6 +465,57 @@ export default function AdminShipments() {
                       />
                     </div>
 
+                    {/* Attachments */}
+                    <div>
+                      <Label className="flex items-center gap-2">
+                        <Paperclip className="h-4 w-4" />
+                        Archivos Adjuntos (opcional)
+                      </Label>
+                      <p className="text-xs text-gray-500 mb-2">Pruebas de envío, fotos de paquetes, etc.</p>
+                      
+                      <div className="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center">
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*,video/*,.pdf"
+                          onChange={handleFileSelect}
+                          className="hidden"
+                          id="attachment-input"
+                          data-testid="attachment-input"
+                        />
+                        <label 
+                          htmlFor="attachment-input" 
+                          className="cursor-pointer flex flex-col items-center"
+                        >
+                          <ImageIcon className="h-8 w-8 text-gray-400 mb-2" />
+                          <span className="text-sm text-gray-600">Click para agregar archivos</span>
+                          <span className="text-xs text-gray-400">Imágenes, videos o PDF</span>
+                        </label>
+                      </div>
+
+                      {/* Preview selected files */}
+                      {attachmentFiles.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {attachmentFiles.map((file, index) => (
+                            <div key={index} className="flex items-center justify-between bg-gray-100 rounded-lg p-2">
+                              <div className="flex items-center gap-2">
+                                <ImageIcon className="h-4 w-4 text-gray-500" />
+                                <span className="text-sm text-gray-700 truncate max-w-[200px]">{file.name}</span>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeAttachment(index)}
+                                className="h-6 w-6 p-0"
+                              >
+                                <X className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     <Button
                       onClick={handleCreateShipment}
                       className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
