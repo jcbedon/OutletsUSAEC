@@ -69,6 +69,13 @@ export const updateShipmentStatus = (shipmentId, status) =>
   api.put(`/shipments/${shipmentId}/status`, null, { params: { status } });
 export const getUserShipments = (userId) => api.get(`/shipments/user/${userId}`);
 export const getAllShipments = (status) => api.get("/shipments", { params: { status } });
+export const uploadShipmentAttachment = (shipmentId, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return api.post(`/shipments/${shipmentId}/attachments`, formData, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
+};
 
 // Notifications
 export const getUserNotifications = (userId) => api.get(`/notifications/${userId}`);
