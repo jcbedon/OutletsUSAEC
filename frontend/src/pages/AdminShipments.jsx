@@ -7,7 +7,8 @@ import {
   updateTracking,
   getAllClients,
   getPendingShipmentPurchases,
-  createShipment
+  createShipment,
+  uploadShipmentAttachment
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,10 @@ import {
   Phone,
   Edit,
   Navigation,
-  Search
+  Search,
+  Paperclip,
+  X,
+  Image as ImageIcon
 } from "lucide-react";
 
 const LOGO_URL_DEFAULT = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
