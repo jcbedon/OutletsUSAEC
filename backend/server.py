@@ -1022,6 +1022,37 @@ async def update_shipment_status(shipment_id: str, status: str, current_user: di
             "Envío Entregado!", "Tu pedido ha sido entregado. Gracias por tu compra!")
     return {"message": f"Estado actualizado a {status}"}
 
+@api_router.post("/shipments/{shipment_id}/attachments")
+async def upload_shipment_attachment(shipment_id: str, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    shipment = await db.shipments.find_one({"id": shipment_id, "tenant_id": tid}, {"_id": 0})
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Envío no encontrado")
+    
+    # Save file
+    upload_dir = Path("uploads/shipments")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    file_ext = Path(file.filename).suffix
+    filename = f"{shipment_id}_{uuid.uuid4().hex[:8]}{file_ext}"
+    file_path = upload_dir / filename
+    
+    with open(file_path, "wb") as f:
+        content = await file.read()
+        f.write(content)
+    
+    file_url = f"/uploads/shipments/{filename}"
+    
+    # Add to shipment attachments
+    current_attachments = shipment.get("attachments", [])
+    current_attachments.append(file_url)
+    
+    await db.shipments.update_one({"id": shipment_id, "tenant_id": tid},
+        {"$set": {"attachments": current_attachments, "updated_at": datetime.now(timezone.utc).isoformat()}})
+    
+    return {"message": "Archivo adjuntado", "file_url": file_url, "attachments": current_attachments}
+
 @api_router.get("/shipments/user/{user_id}")
 async def get_user_shipments(user_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
