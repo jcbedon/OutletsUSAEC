@@ -127,7 +127,7 @@ export default function AdminShipments() {
     }
 
     try {
-      await createShipment({
+      const response = await createShipment({
         user_id: selectedClient.id,
         purchase_ids: selectedPurchases,
         shipping_type: shipmentForm.shipping_type,
@@ -138,12 +138,28 @@ export default function AdminShipments() {
         additional_info: shipmentForm.additional_info
       });
       
-      toast.success("Envío creado exitosamente");
+      const shipmentId = response.data.shipment_id;
+      
+      // Upload attachments if any
+      if (attachmentFiles.length > 0) {
+        for (const file of attachmentFiles) {
+          try {
+            await uploadShipmentAttachment(shipmentId, file);
+          } catch (err) {
+            console.error("Error uploading attachment:", err);
+          }
+        }
+        toast.success(`Envío creado con ${attachmentFiles.length} archivo(s) adjunto(s)`);
+      } else {
+        toast.success("Envío creado exitosamente");
+      }
+      
       setCreateDialogOpen(false);
       setSelectedClient(null);
       setPendingPurchases([]);
       setSelectedPurchases([]);
       setClientSearch("");
+      setAttachmentFiles([]);
       setShipmentForm({
         shipping_type: "",
         shipping_cost: "",
@@ -156,6 +172,15 @@ export default function AdminShipments() {
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al crear envío");
     }
+  };
+
+  const handleFileSelect = (e) => {
+    const files = Array.from(e.target.files);
+    setAttachmentFiles([...attachmentFiles, ...files]);
+  };
+
+  const removeAttachment = (index) => {
+    setAttachmentFiles(attachmentFiles.filter((_, i) => i !== index));
   };
 
   const handleUpdateStatus = async (shipmentId, newStatus) => {
