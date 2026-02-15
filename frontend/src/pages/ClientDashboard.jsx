@@ -29,7 +29,9 @@ import {
   Copy,
   Check,
   Camera,
-  X
+  X,
+  Paperclip,
+  Eye
 } from "lucide-react";
 
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
