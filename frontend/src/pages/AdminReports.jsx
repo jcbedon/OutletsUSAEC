@@ -84,7 +84,12 @@ function PurchaseTable({ purchases, showClient, showLive }) {
       <tbody>
         {purchases.map((p, i) => (
           <tr key={i} className="border-b hover:bg-gray-50">
-            {showClient && <td className="p-2 font-medium">#{p.customer_id}</td>}
+            {showClient && (
+              <td className="p-2">
+                <span className="font-medium">#{p.customer_id}</span>
+                {p.client_name && <span className="text-gray-500 text-sm ml-1">- {p.client_name}</span>}
+              </td>
+            )}
             <td className="p-2">{p.item_name}</td>
             <td className="p-2">{p.store}</td>
             <td className="p-2 text-right">{fmtMoney(p.price)}</td>
