@@ -56,6 +56,7 @@ export default function AdminShipments() {
   const [pendingPurchases, setPendingPurchases] = useState([]);
   const [selectedPurchases, setSelectedPurchases] = useState([]);
   const [clientSearch, setClientSearch] = useState("");
+  const [attachmentFiles, setAttachmentFiles] = useState([]);
   const [shipmentForm, setShipmentForm] = useState({
     shipping_type: "",
     shipping_cost: "",
