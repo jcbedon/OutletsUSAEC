@@ -143,6 +143,7 @@ class Shipment(BaseModel):
     additional_info: Optional[str] = None
     tracking_number: Optional[str] = None
     status: str = "preparing"
+    attachments: List[str] = []
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
