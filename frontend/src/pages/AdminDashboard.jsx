@@ -258,8 +258,8 @@ export default function AdminDashboard() {
                           {index + 1}
                         </div>
                         <div>
-                          <p className="font-bold text-slate-800">#{customer._id}</p>
-                          <p className="text-xs text-gray-500">{customer.purchase_count} compras</p>
+                          <p className="font-bold text-slate-800">{customer.name}</p>
+                          <p className="text-xs text-gray-500">#{customer._id} • {customer.purchase_count} compras</p>
                         </div>
                       </div>
                       <p className="font-bold text-green-600">${customer.total_spent.toFixed(2)}</p>
