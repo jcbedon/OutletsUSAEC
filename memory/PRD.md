@@ -35,6 +35,9 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] Admin: Purchase registration with tax + commission calc
 - [x] Admin: Edit/Delete purchases from Live module
 - [x] Admin: Wallet deposit requests + approvals with screenshot proof
+- [x] Admin: **Reject pending deposit requests** (NEW - Feb 16, 2026)
+- [x] Admin: **Global deposit history** - view all deposits from all clients with search/filters (NEW - Feb 16, 2026)
+- [x] Admin: **Manual balance adjustment** - subtract money with custom reason (NEW - Feb 16, 2026)
 - [x] Admin: Shipment management with tracking and status (Preparación, En Tránsito, Completado)
 - [x] Admin: Shipment cost added to total recharge amount with informational label
 - [x] Admin: Referral bonus configuration
@@ -52,16 +55,28 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - `tenants`: id, business_name, slug, owner_name, email, logo_url, status
 - `users`: id, tenant_id, customer_id, name, role, commission_fee, etc.
 - `wallets`: id, tenant_id, user_id, available, reserved
-- `wallet_transactions`: id, tenant_id, user_id, type, amount, status
+- `wallet_transactions`: id, tenant_id, user_id, type, amount, status, proof_url
 - `lives`: id, tenant_id, title, status, total_sales, total_commissions
 - `purchases`: id, tenant_id, user_id, item_name, price, tax, commission, total
-- `shipments`: id, tenant_id, user_id, purchase_ids, status, tracking
+- `shipments`: id, tenant_id, user_id, purchase_ids, status, tracking, attachments
 - `notifications`: id, tenant_id, user_id, type, title, message
 - `settings`: tenant_id, key, value (e.g., referral_bonus)
 
+## Key API Endpoints (Wallet Module)
+- `GET /api/wallet/pending-deposits` - Get pending deposit requests
+- `GET /api/wallet/all-deposits` - Get all deposits (history) with user names
+- `POST /api/wallet/approve-deposit/{id}` - Approve a pending deposit
+- `POST /api/wallet/reject-deposit/{id}` - Reject a pending deposit
+- `POST /api/wallet/admin-adjustment` - Manual balance adjustment (subtract)
+
 ## Key Credentials
 - Superadmin: superadmin@outletsusaec.com / super123
+- Admin (Outlets USA EC): admin@outletsusaec.com / admin123
+- Client (Juan Perez): J2934 / client123
 - Tenant slug example: outlets-usa
+
+## P0 - In Progress
+- [ ] Shipment media attachments - allow admins to upload proof files to shipments
 
 ## P1 - Backlog
 - [ ] WhatsApp Cloud API integration (requires user credentials)
