@@ -800,20 +800,6 @@ async def reject_deposit(transaction_id: str, current_user: dict = Depends(get_c
         "Recarga Rechazada", f"Tu solicitud de recarga por ${transaction['amount']:.2f} USD ha sido rechazada. Contacta al administrador para más información.")
     return {"message": "Depósito rechazado"}
 
-@api_router.get("/wallet/all-deposits")
-async def get_all_deposits(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
-        raise HTTPException(status_code=403, detail="No autorizado")
-    tid = current_user["tenant_id"]
-    transactions = await db.wallet_transactions.find(
-        {"type": "deposit", "tenant_id": tid}, {"_id": 0}
-    ).sort("created_at", -1).to_list(500)
-    result = []
-    for t in transactions:
-        user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
-        result.append({**t, "user_name": user["name"] if user else "Unknown"})
-    return result
-
 class AdminBalanceAdjustment(BaseModel):
     user_id: str
     amount: float
