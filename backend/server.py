@@ -688,6 +688,20 @@ async def get_pending_deposits(current_user: dict = Depends(get_current_user)):
         result.append({**t, "user_name": user["name"] if user else "Unknown"})
     return result
 
+@api_router.get("/wallet/all-deposits")
+async def get_all_deposits(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    transactions = await db.wallet_transactions.find(
+        {"type": "deposit", "tenant_id": tid}, {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    result = []
+    for t in transactions:
+        user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
+        result.append({**t, "user_name": user["name"] if user else "Unknown"})
+    return result
+
 @api_router.get("/wallet/by-customer/{customer_id}")
 async def get_wallet_by_customer_id(customer_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
