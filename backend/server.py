@@ -770,6 +770,73 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
         "Saldo Acreditado", f"Se han acreditado ${transaction['amount']:.2f} USD. Saldo actual: ${new_balance:.2f} USD")
     return {"message": "Depósito aprobado", "new_balance": new_balance}
 
+@api_router.post("/wallet/reject-deposit/{transaction_id}")
+async def reject_deposit(transaction_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    transaction = await db.wallet_transactions.find_one({"id": transaction_id, "tenant_id": tid}, {"_id": 0})
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transacción no encontrada")
+    if transaction["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Transacción ya procesada")
+    await db.wallet_transactions.update_one({"id": transaction_id, "tenant_id": tid},
+        {"$set": {"status": "rejected", "approved_at": datetime.now(timezone.utc).isoformat()}})
+    await create_notification(tid, transaction["user_id"], transaction["customer_id"], "deposit_rejected",
+        "Recarga Rechazada", f"Tu solicitud de recarga por ${transaction['amount']:.2f} USD ha sido rechazada. Contacta al administrador para más información.")
+    return {"message": "Depósito rechazado"}
+
+@api_router.get("/wallet/all-deposits")
+async def get_all_deposits(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    transactions = await db.wallet_transactions.find(
+        {"type": "deposit", "tenant_id": tid}, {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    result = []
+    for t in transactions:
+        user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
+        result.append({**t, "user_name": user["name"] if user else "Unknown"})
+    return result
+
+class AdminBalanceAdjustment(BaseModel):
+    user_id: str
+    amount: float
+    description: str
+
+@api_router.post("/wallet/admin-adjustment")
+async def admin_balance_adjustment(data: AdminBalanceAdjustment, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    if data.amount <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
+    wallet = await db.wallets.find_one({"user_id": data.user_id, "tenant_id": tid}, {"_id": 0})
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Wallet no encontrada")
+    user = await db.users.find_one({"id": data.user_id, "tenant_id": tid}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    new_balance = wallet["available"] - data.amount
+    await db.wallets.update_one({"user_id": data.user_id, "tenant_id": tid},
+        {"$set": {"available": new_balance, "updated_at": datetime.now(timezone.utc).isoformat()}})
+    tx = WalletTransaction(
+        tenant_id=tid,
+        user_id=data.user_id,
+        customer_id=user["customer_id"],
+        type="admin_adjustment",
+        amount=-data.amount,
+        balance_after=new_balance,
+        description=data.description,
+        status="approved",
+        approved_at=datetime.now(timezone.utc).isoformat()
+    )
+    await db.wallet_transactions.insert_one(tx.model_dump())
+    await create_notification(tid, data.user_id, user["customer_id"], "balance_adjustment",
+        "Ajuste de Balance", f"Se ha realizado un ajuste de -${data.amount:.2f} USD en tu cuenta. Motivo: {data.description}")
+    return {"message": "Ajuste realizado", "new_balance": new_balance, "amount_deducted": data.amount}
+
 # ==================== LIVE SHOPPING ENDPOINTS ====================
 
 @api_router.post("/lives")
