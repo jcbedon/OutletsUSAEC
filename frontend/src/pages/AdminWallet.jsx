@@ -244,6 +244,9 @@ export default function AdminWallet() {
                   <DollarSign className="h-5 w-5 text-red-600" />
                   Ajuste de Balance
                 </DialogTitle>
+                <DialogDescription>
+                  Restar dinero del wallet de un cliente con un motivo personalizado.
+                </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
