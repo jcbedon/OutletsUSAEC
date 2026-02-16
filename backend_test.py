@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 
 class OutletsUSAAPITester:
-    def __init__(self, base_url="https://shopper-platform-1.preview.emergentagent.com/api"):
+    def __init__(self, base_url="https://admin-wallet-pro.preview.emergentagent.com/api"):
         self.base_url = base_url
         self.admin_token = None
         self.client_token = None

@@ -1,224 +1,189 @@
 <analysis>**original_problem_statement:**
-The user initially requested a Progressive Web App (PWA) for a TikTok Live Shopping business. The core features included a client wallet, live purchase registration, international shipping management, and automated WhatsApp notifications. The application was to be built for two roles: ADMIN and CLIENT.
+The user is building a SaaS platform for personal shoppers and has requested a series of features and bug fixes.
 
-Over time, the requirements evolved to include:
-- A referral system with admin-configurable bonuses.
-- Admin-configurable shipping costs.
-- Admin-configurable commission fees per client.
-- A specific tax calculation (8.25% of the item price).
-- A critical change in business logic: the client's wallet should only be debited for the commission fee, not the total item price.
+**PRODUCT REQUIREMENTS:**
+1.  **Multi-Tenancy:** Convert the existing single-tenant application into a multi-tenant architecture. (Completed)
+2.  **Shipment Module Enhancements:**
+    *   Add a status tracker for shipments. (Completed)
+    *   Display tracking number and additional info to clients. (Completed)
+    *   Sum shipping cost into the total on the creation form. (Completed)
+    *   Add a label  below the total. (Completed)
+    *   Improve the client selector with alphabetical sorting and a search filter. (Completed)
+    *   **(IN PROGRESS)** Allow admins to attach media files (proof of shipment) when creating/editing a shipment.
+    *   **(IN PROGRESS)** Allow clients to view these attachments via a small, clickable icon in their shipment history.
+3.  **Wallet & Recharge Module:**
+    *   Fix bugs preventing admins from approving recharges. (Completed)
+    *   Allow clients to upload a screenshot as proof of deposit. (Completed)
+    *   Display the client's balance in red and as a negative value if they owe money. (Completed)
+    *   **(PENDING)** Add a button for admins to **reject** a pending recharge.
+    *   **(PENDING)** Create a global history view of all recharges from all clients for the admin.
+    *   **(PENDING)** Allow admins to manually subtract money from a client's wallet, creating a transaction with the description Ajuste de balance por administrador.
+4.  **Live Shopping & Purchase Logic:**
+    *   Allow purchases even with an insufficient balance, letting the balance go negative. (Completed)
+    *   Deduct the full purchase cost (price + tax + commission) from the client's balance. (Completed)
+    *   Allow editing and deleting purchases from the admin interface. (Completed)
+    *   Allow admins to add purchases to a Live event even after it has ended. (Completed)
+    *   The Store should be defined when creating a Live, not for each individual purchase. (Completed)
+5.  **Reporting & Admin Views:**
+    *   Create a reporting module with export to PDF and Excel. (Completed)
+    *   Ensure all total calculations in reports dynamically update when a client's commission changes. (Completed)
+    *   Ensure all report totals include shipping costs and show a breakdown (e.g., 50 + 0 envío). (Completed)
+    *   Display the client's name, not just their ID, in the Top Clients list on the admin dashboard and in report tables. (Completed)
+    *   The admin's Clients view should show the total pending balance for each client, consistent with what the client sees. (Completed)
+6.  **UI/UX:**
+    *   Perform a complete visual overhaul with a specified color palette and background. (Completed)
+7.  **Client Management:**
+    *   Allow admins to edit client information and reset their passwords. (Completed)
+    *   Remove the ability to edit a client's commission fee from the Clients module; it should only be set per-purchase in the Live module. (Completed)
+8.  **Integrations:**
+    *   **(FUTURE)** Integrate with WhatsApp Cloud API.
 
-The most recent and significant request is a complete architectural pivot:
-- **Convert the application into a multi-tenant SaaS platform.**
-- Introduce a new **SUPERADMIN** role, which is global and manages tenants.
-- Each business (TikTok Shopper) will be a **TENANT**.
-- Existing **ADMIN** and **CLIENT** roles will be scoped to a specific tenant.
-- All data (wallets, purchases, shipments, etc.) must be strictly isolated by .
-- The SUPERADMIN will have a dedicated dashboard to create and manage tenants and their respective admins.
-- Admins should be able to upload a custom logo for their tenant.
-- Admins must have the ability to create client users within their tenant.
-
-**User's preferred language**:
-Spanish. The next agent MUST respond in Spanish.
+**User's preferred language**: Spanish. The next agent MUST respond in Spanish.
 
 **what currently exists?**
-A functional single-tenant full-stack application.
-- **Backend (FastAPI/MongoDB):** Endpoints for user auth, wallet management, live purchases, shipments, and a referral system. It correctly implements the custom logic for taxes and commission-only wallet deductions.
-- **Frontend (React/Tailwind CSS):** A complete UI with role-based access. It includes a login/register flow, a client dashboard, and a multi-page admin dashboard for managing live sessions, clients (including setting commissions), wallet top-ups, shipments, reports, and referral bonuses. The logo and branding have been customized as per user requests.
+The project is a multi-tenant SaaS application (React frontend, FastAPI backend, PostgreSQL DB) for personal shoppers. Key features include tenant/client management, a live shopping module where admins can add purchases to active or completed events, a shipment module, and a reporting dashboard. The UI has been completely redesigned. Admins can edit client data and reset passwords. The logic for calculating client balances, commissions, and totals (including shipping costs) has been refined and is now consistent across the admin reports and the client's dashboard view. The balance correctly displays as negative and in red when a client owes money.
 
 **Last working item**:
-The agent just received the user's request to pivot the application into a multi-tenant SaaS architecture. The agent acknowledged the new requirements and was about to begin the refactoring process on the backend. No code for the multi-tenant structure has been written yet.
-
--   **Last item agent was working**: Planning the implementation of the multi-tenant SaaS architecture.
--   **Status**: NOT STARTED
--   **Agent Testing Done**: N/A
--   **Which testing method agent to use?**: both (After the significant refactoring is complete, both the backend and frontend testing agents will be required for end-to-end verification).
--   **User Testing Done**: N/A
+-   **Last item agent was working:** The user requested three new features for the admin's wallet management module: the ability to reject pending recharges, a global history of all recharges, and a function to manually subtract money from a client's wallet. The agent had acknowledged the request and was about to begin implementation by examining the  file.
+-   **Status:** NOT STARTED
+-   **Agent Testing Done:** N
+-   **Which testing method agent to use?** both
+-   **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
--   **Issue 1: Implement Multi-Tenant SaaS Architecture (Priority: P0)**
--   **Issue 2: Implement Logo Upload for Admins (Priority: P1)**
--   **Issue 3: Complete Admin Create User functionality (Priority: P1)**
--   **Issue 4: Potential Babel recursion error with complex UI (Priority: P2)**
-
-**Issues Detail**:
--   **Issue 1: Implement Multi-Tenant SaaS Architecture**
-    -   **Attempted fixes**: None. This is a new architectural direction.
-    -   **Next debug checklist**:
-        1.  **Backend ():**
-            -   Create a new  model in MongoDB.
-            -   Add  to all existing data models (, , , , etc.).
-            -   Modify the  model to include a  field (, , ).
-            -   Refactor all API endpoints to enforce data isolation by , derived from the JWT of the authenticated user.
-            -   Create new endpoints for the SUPERADMIN to manage tenants and create tenant-admins.
-        2.  **Frontend:**
-            -   Create a new Superadmin dashboard ().
-            -   Update authentication flow to handle three roles and redirect appropriately.
-            -   Ensure all data fetches in existing Admin/Client pages are tenant-aware.
-    -   **Why fix this issue?** This is the user's new core requirement for the application to function as a SaaS platform.
-    -   **Status**: NOT STARTED
-    -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** both
-    -   **Blocked on other issue**: None.
-
--   **Issue 2: Implement Logo Upload for Admins**
-    -   **Attempted fixes**: None.
-    -   **Next debug checklist**:
-        1.  Create a backend endpoint to handle image uploads and save the URL to the  model.
-        2.  Add a file upload component to the Admin dashboard.
-        3.  Update UI components to dynamically use the tenant's logo URL instead of the current hardcoded one.
-    -   **Why fix this issue?** To allow tenant-specific branding, a key feature for a SaaS product.
-    -   **Status**: NOT STARTED
-    -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** both
-    -   **Blocked on other issue**: Issue 1: Implement Multi-Tenant SaaS Architecture.
-
--   **Issue 3: Complete Admin Create User functionality**
-    -   **Attempted fixes**: The backend endpoint () was created in , but the pivot to multi-tenancy interrupted the work before the frontend was built.
-    -   **Next debug checklist**:
-        1.  On the  page, add a Create User button and a form/modal to capture new client details.
-        2.  Call the backend endpoint from the form.
-        3.  Ensure the new user is automatically associated with the Admin's .
-    -   **Why fix this issue?** It's a specific user request for better user management.
-    -   **Status**: IN PROGRESS
-    -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** both
-    -   **Blocked on other issue**: Issue 1: Implement Multi-Tenant SaaS Architecture.
-
--   **Issue 4: Potential Babel recursion error with complex UI**
-    -   **Attempted fixes**: The agent worked around a Maximum call stack size exceeded error by simplifying the JSX in  and .
-    -   **Next debug checklist**: This is a latent environment issue. When creating new complex UI (like the Superadmin dashboard), be mindful of this. If the error occurs, simplify the component's JSX structure (e.g., avoid deeply nested property access).
-    -   **Why fix this issue?** To prevent future build failures that block development.
-    -   **Status**: BLOCKED (workaround in place)
-    -   **Is recurring issue?** Y
-    -   **Should Test frontend/backend/both after fix?** frontend
+There are no pending bugs. All work items are feature requests.
 
 **In progress Task List**:
--   **Task 1: Add Create User functionality for Admins**
-    -   **Where to resume**: The backend endpoint exists. The task is to build the frontend component on the  page to use it.
-    -   **What will be achieved with this?** Admins will be able to create new client accounts directly for their tenant.
-    -   **Status**: IN PROGRESS
+-   **Task 1: Implement Shipment Media Attachments (P1)**
+    -   **Description:** This feature was started but interrupted. The goal is to allow admins to upload files when creating a shipment and for clients to view them.
+    -   **Where to resume:** The backend  model and a file upload endpoint () have been created in . The frontend  has been modified to include a file input and logic to upload files after shipment creation. The  was also modified to include placeholders for showing an icon. The work needs to be completed and tested end-to-end.
+    -   **Status:** IN PROGRESS
     -   **Should Test frontend/backend/both after fix?** both
-    -   **Blocked on something**: The multi-tenant refactor must be done first to ensure the user is created within the correct tenant.
+    -   **Blocked on something:** No, but it was superseded by the user's latest request.
 
 **Upcoming and Future Tasks**
-- **Upcoming Tasks (P0):**
-    - **Refactor to Multi-Tenant Architecture:** Overhaul all models and APIs in  to include  and enforce data isolation.
-    - **Create Superadmin Dashboard:** Build the UI () for tenant and admin management.
-    - **Implement Admin Logo Upload:** Add endpoints and UI for tenant-specific logo uploads.
+-   **Upcoming Tasks:**
+    -   **Task 1: Implement Wallet Management Enhancements (P0)**
+        -   **Description:** Implement the three features from the Last working item section.
+        -   **Details:**
+            1.  **Reject Recharges:** Add a Rechazar button next to Aprobar for pending deposits in . This will require a new backend endpoint to update the deposit status to rejected.
+            2.  **Global Recharge History:** Create a new tab or section in  to display a list of all historical deposits (approved, pending, rejected) from all clients, showing client name, amount, status, and date.
+            3.  **Admin Balance Adjustment:** Add a new feature (e.g., a dialog) for admins to subtract an amount from a client's wallet. This requires a backend endpoint that creates a new wallet transaction with the type  and the description Ajuste de balance por administrador.
+        -   **Files to modify:** , , .
 
-- **Future Tasks (P1):**
-    - **Integrate WhatsApp Cloud API:** The playbook has been fetched. The next step is to implement the API calls in  for sending notifications using user-provided credentials.
-    - **Implement PWA Manifest:** Create a  and service worker in the frontend to make the app installable on mobile devices.
+-   **Future Tasks:**
+    -   **Task 1: Integrate WhatsApp Cloud API (P2)**
+        -   **Description:** Integrate the WhatsApp Cloud API to send notifications. The user mentioned this but it was deferred.
+        -   **Next step:** Gather specific requirements for what events should trigger WhatsApp notifications (e.g., shipment status change, recharge approval) and then use the  agent.
 
 **Completed work in this session**
-- **Initial MVP built:**
-  - User authentication (Admin, Client) and registration.
-  - Client dashboard with wallet balance and purchase history.
-  - Full Admin dashboard with sections for Live Shopping, Client Management, Wallet approvals, and Shipments.
-- **Feature Enhancements:**
-  - Implemented a referral system with a configurable bonus.
-  - Implemented configurable shipping costs set by the admin per shipment.
-  - Implemented client-specific commission rates, editable by the admin.
-- **Business Logic Pivot:**
-  - Added 8.25% tax to item prices.
-  - Changed wallet logic to only deduct the commission fee from the balance, not the item price.
-- **UI/Branding:**
-  - Integrated the user's logo across the application and adjusted its size and styling for better visibility and transparency.
+-   **Shipment Cost Calculation:** The shipping cost is now added to the total in the shipment creation form, with an explanatory label.
+-   **Dynamic Commission Logic:** Commission can no longer be edited in the client profile. It's set per-purchase in the Live module, and all totals throughout the app (reports, client views) now dynamically recalculate based on the commission rates of the underlying purchases.
+-   **Live Shopping Enhancements:** Admins can now add purchases to completed Live events. The store is now defined when the Live is created, simplifying the purchase registration form.
+-   **Client Balance Display:** The client dashboard now correctly calculates and displays the pending balance, showing it in red and as a negative number when the client owes money (Total Shipments - Current Wallet Balance).
+-   **Data Consistency:** The balance calculation is now consistent between the client dashboard and the admin-facing reports, accounting for recharges and pending shipment costs.
+-   **Admin UI/UX Improvements:**
+    -   The client selector in the shipments module now has a search bar, is alphabetically sorted, and has improved text visibility.
+    -   The Top Clients list on the admin dashboard now shows the client's name.
+    -   Report tables now show the client's name next to their ID.
+    -   The admin's client list now shows the correct pending balance for each client.
+-   **Client Edit Functionality:** Implemented and then fixed a bug in the feature allowing admins to edit client details and reset passwords.
 
 **Earlier issues found/mentioned but not fixed**
--   **Issue 1: Babel recursion error**
-    -   **Debug checklist**: A workaround is in place (simplifying JSX). The root cause is likely in the environment's babel configuration. If it recurs, the agent must simplify the component that triggers it.
-    -   **Why to solve this issue and what will be achieved with this?**: Prevents build failures and allows for the creation of more complex UI without breaking the application.
-    -   **Should Test frontend/backend/both after fix**: frontend
-    -   **Is recurring issue?**: Y
+None.
 
 **Known issue recurrence from previous fork**
--   N/A
+None.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
--   **Frontend**: React, Tailwind CSS, Shadcn UI
--   **Backend**: FastAPI, Motor (async MongoDB driver)
--   **Database**: MongoDB
--   **Architecture**: Currently a single-tenant monolith. The immediate task is to refactor it to a multi-tenant SaaS architecture.
--   **Authentication**: Custom JWT-based.
+-   **Backend:** Python, FastAPI, Motor (async MongoDB driver), Pydantic.
+-   **Frontend:** React.js, Axios, Tailwind CSS, ,  for toasts,  for icons.
+-   **Architecture:** Multi-tenant SaaS with tenant context managed via frontend  and  in the database.
+-   **Database:** MongoDB (Note: The previous summary incorrectly stated PostgreSQL/SQLAlchemy. The agent's interactions with  clearly show MongoDB and Motor client syntax like ).
 
 **key DB schema**
--   ****:  -> **Needs **.
--   ****:  -> **Needs **.
--   ****:  -> **Needs **.
--   ****:  -> **Needs **.
--   **(New) **: 
+-   **tenants**: {id, name, slug}
+-   **users**: {id, email, password_hash, role, tenant_id, name, customer_id, commission_fee}
+-   **purchases**: {id, product_name, store, price, tax, commission, total_price, client_id, tenant_id, live_id}
+-   **shipments**: {id, user_id, status, tracking_number, cost, additional_info, tenant_id, **attachments: List[str]**}
+-   **wallet_deposits**: {id, user_id, amount, status, screenshot_url, tenant_id}
+-   **wallet_transactions**: {id, user_id, amount, type, description, **purchase_id: Optional[str]**}
+-   **lives**: {id, title, status, tenant_id, **store: Optional[str]**}
 
 **changes in tech stack**
--   None. The core technologies remain the same. The change is purely architectural.
+- The database is MongoDB, not PostgreSQL as stated in the initial handoff. All backend logic uses the Motor async driver for MongoDB.
 
 **All files of reference**
--   : The most critical file. Will require extensive modification for the multi-tenant refactor.
--   : Will need routing logic updates to handle the new  role and dashboard.
--   : All pages in this directory will need to be reviewed and potentially updated to function in a tenant-aware context.
--   : Needs the UI for the Create User feature.
+-   : The monolithic backend file. Contains all API logic, database interactions, and Pydantic models. Renamed from .
+-   : Modified to show pending balances and to remove commission editing.
+-   : Heavily modified to show shipment statuses and a detailed, accurate pending balance.
+-   : Modified to allow using completed lives and to define the store at the Live-creation level.
+-   : Modified to improve the client selector and to begin implementing file attachments.
+-   : Modified to include shipping costs and show pending balances.
+-   : Modified to display client names in the Top Clients list.
+-   : Updated with new API client functions.
 
-**Areas that need refactoring**:
-- The entire application's data layer and API layer must be refactored to be multi-tenant. This involves adding  to nearly every database collection and ensuring every database query is filtered by the authenticated user's tenant.
+**Areas that need refactoring**
+-   The  file is a large monolith. It should be broken down into separate FastAPI routers by domain (e.g., , , ) to improve maintainability.
+-   Pydantic models are defined directly within . They should be moved to a dedicated  or  file for better organization.
 
 **key api endpoints**
-- 
-- 
-- 
-- **Needs to be refactored for multi-tenancy**: All existing endpoints.
-- **New endpoints required**:
-    -  (Create a new tenant)
-    -  (Create an admin for a tenant)
-    -  (List all tenants)
-    -  (Logo upload for an admin's tenant)
+-   : Updates a client's information and/or password.
+-   : Retrieves all clients with calculated pending balances.
+-   : Uploads attachment files for a shipment.
+-   : Creates a new Live event, now accepting a .
+-   : Provides data for the admin dashboard, including top customers with names.
+-   : Endpoints were updated to return consistent pending balance calculations.
 
 **Critical Info for New Agent**
-- **PRIORITY #1**: The user has mandated a pivot to a **multi-tenant SaaS architecture**. Do not proceed with any other feature until the core architectural refactor is planned and implemented. All data models and APIs must be updated to be tenant-aware.
-- **Business Logic**: Remember the specific purchase logic: the displayed total includes , but only the  is deducted from the client's wallet.
-- **Environment Risk**: A recurring Babel build error (Maximum call stack size exceeded) can be triggered by complex JSX. If the build fails after creating a new component, try simplifying its structure.
+-   **Database is MongoDB**: The initial summary was incorrect. The backend uses Motor for async MongoDB access. Do not use SQLAlchemy syntax.
+-   **Balance Calculation is Key:** The pending balance is the most critical calculation. It is . A negative result means the client owes money. This logic must be preserved as it is now consistent across all views.
+-   **Task Interruption:** The implementation of Shipment Attachments was paused mid-way. The user's new request for wallet enhancements is the top priority (P0). The attachment feature should be completed after the wallet tasks.
 
 **documents and test reports created in this job**
--   
+None created in this session.
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **User**: Update the logo across the entire platform with a new image, make it bigger. (Completed)
-2.  **User**: Make the logo's background transparent. (Completed)
-3.  **User**: I need several major logic changes:
-    - Add 8.25% tax to all items.
-    - The wallet balance should only be reduced by the commission fee, not the item price.
-    - The commission fee should not be fixed; I need to configure it for each client.
-    - Re-fix the logo transparency. (Completed)
-4.  **User**: Where can I create users? (Pending)
-5.  **Agent**: Currently, they self-register. I will add a button in Admin -> Clients for you to create them directly. (In Progress)
-6.  **User**: **(MAJOR PIVOT)** I need to change the project. Convert it to a multi-tenant SaaS platform.
-    - Create a  role.
-    - Create  for each business.
-    - All data (, , etc.) must be isolated by .
-    -  manages tenants and creates tenant .
-    - An  should be able to upload their own logo for their tenant.
-    - Also, make sure the  can create users. (This is the current task, NOT STARTED).
-7.  **Agent**: I understand. I will convert the application to a multi-tenant system, starting with the backend. (Last agent action).
+1.  ****: **(PENDING)** User requests new wallet features: reject recharges, global recharge history, and admin balance adjustments.
+2.  ****: User starts a new request about client balance display. (Completed)
+3.  ****: User requests the ability to add media attachments to shipments. (In Progress)
+4.  ****: User specifies that the mejores clientes list is on the main admin screen. (Completed)
+5.  ****: User asks to add the client's name to the best clients list. (Completed)
+6.  ****: User reports an inconsistency in total balance between the client view and admin reports. (Completed)
+7.  ****: User reports a bug in the balance calculation, saying it's repeating values. (Completed)
+8.  ****: User requests to define the store when creating a Live, not per-purchase. (Completed)
+9.  ****: User asks to ensure all reports include shipping costs and show a breakdown. (Completed)
+10. ****: User requests to remove commission editing from the client module. (Completed)
 
 **Project Health Check:**
--   **Broken**: The current single-tenant architecture is fundamentally misaligned with the new primary requirement of being a multi-tenant SaaS platform. The Create User feature is incomplete.
--   **Mocked**: WhatsApp integration. Notification records are created in the database but are not sent to the WhatsApp API.
+-   **Broken:** None.
+-   **Mocked:** None.
 
 **3rd Party Integrations**
--   **WhatsApp Cloud API (Meta)**: Playbook has been fetched, but it is not integrated. It will require user-provided credentials for implementation.
+-   **jspdf**: Used for client-side PDF generation.
+-   **jspdf-autotable**: A plugin for .
+-   **xlsx**: Used for client-side Excel (.xlsx) file generation.
 
 **Testing status**
--   **Testing agent used after significant changes**: NO. The agent relied on manual  and  tests and did not wait for the testing agent to complete its run before finishing a task cycle. This is a deviation from the required process.
--   **Troubleshoot agent used after agent stuck in loop**: NO
--   **Test files created**: []
--   **Known regressions**: None, but the entire app is pending a major refactor.
+-   **Testing agent used after significant changes:** NO
+-   **Troubleshoot agent used after agent stuck in loop:** NO
+-   **Test files created:** None.
+-   **Known regressions:** None.
 
 **Credentials to test flow:**
--   Admin credentials can be seeded by the backend:  / .
+-   **Superadmin:**
+    -   Email: 
+    -   Password: 
+-   **Admin (Tenant: Outlets USA EC):**
+    -   Email: 
+    -   Password: 
+-   **Cliente (Juan Perez):**
+    -   ID: 
+    -   Password: 
 
 **What agent forgot to execute**
--   The agent did not wait for the  to finish its execution before marking the previous task as complete, relying instead on its own manual checks.
--   The frontend implementation for the admin Create User feature was not completed before the user's major pivot request was received.</analysis>
+-   The agent was interrupted while working on the Shipment Media Attachments feature. This task is incomplete and marked as IN PROGRESS.
+-   The agent has not yet started the user's latest request regarding wallet management enhancements (reject button, history, balance adjustment), which is the new P0 task.</analysis>
