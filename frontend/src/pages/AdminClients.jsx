@@ -344,6 +344,27 @@ export default function AdminClients() {
               {/* Password Section */}
               <div className="border-t pt-4">
                 <div className="flex items-center gap-2 mb-2">
+                  <DollarSign className="h-4 w-4 text-green-500" />
+                  <Label className="text-green-600 font-medium">Comisión por Compra</Label>
+                </div>
+                <Input 
+                  type="number" 
+                  step="0.01"
+                  min="0"
+                  placeholder="3.00" 
+                  className="rounded-xl"
+                  value={editForm.commission_fee} 
+                  onChange={(e) => setEdit("commission_fee", e.target.value)}
+                  data-testid="edit-client-commission"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Esta comisión se aplicará a las nuevas compras de este cliente
+                </p>
+              </div>
+              
+              {/* Change Password Section */}
+              <div className="border-t pt-4">
+                <div className="flex items-center gap-2 mb-2">
                   <Key className="h-4 w-4 text-orange-500" />
                   <Label className="text-orange-600 font-medium">Cambiar Contraseña</Label>
                 </div>
