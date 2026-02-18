@@ -671,6 +671,43 @@ export default function ClientDashboard() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Attachments Dialog */}
+      <Dialog open={attachmentDialogOpen} onOpenChange={setAttachmentDialogOpen}>
+        <DialogContent className="rounded-2xl max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Paperclip className="h-5 w-5 text-green-600" />
+              Archivos Adjuntos
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 mt-4">
+            {selectedAttachments.map((att, idx) => {
+              const url = att.startsWith('http') ? att : `${process.env.REACT_APP_BACKEND_URL}${att}`;
+              const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(att);
+              return (
+                <div key={idx} className="border rounded-xl overflow-hidden">
+                  {isImg ? (
+                    <img src={url} alt={`Adjunto ${idx + 1}`} className="w-full max-h-64 object-contain bg-gray-50" />
+                  ) : (
+                    <div className="p-4 bg-gray-50 flex items-center justify-between">
+                      <span className="text-sm text-gray-600">Archivo {idx + 1}</span>
+                      <a 
+                        href={url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                      >
+                        <Eye className="h-4 w-4" /> Ver
+                      </a>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
