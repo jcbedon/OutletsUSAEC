@@ -54,6 +54,16 @@ export default function AdminShipments() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [trackingDialogOpen, setTrackingDialogOpen] = useState(null);
   const [newTracking, setNewTracking] = useState("");
+  const [editDialogOpen, setEditDialogOpen] = useState(null);
+  const [editForm, setEditForm] = useState({
+    shipping_type: "",
+    shipping_cost: "",
+    address: "",
+    country: "",
+    phone: "",
+    additional_info: "",
+    tracking_number: ""
+  });
   
   // Create shipment form
   const [selectedClient, setSelectedClient] = useState(null);
