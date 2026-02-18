@@ -224,6 +224,45 @@ export default function AdminShipments() {
     }
   };
 
+  const handleOpenEditDialog = (shipment) => {
+    setEditForm({
+      shipping_type: shipment.shipping_type || "",
+      shipping_cost: shipment.shipping_cost?.toString() || "",
+      address: shipment.address || "",
+      country: shipment.country || "",
+      phone: shipment.phone || "",
+      additional_info: shipment.additional_info || "",
+      tracking_number: shipment.tracking_number || ""
+    });
+    setEditDialogOpen(shipment.id);
+  };
+
+  const handleSaveEdit = async (shipmentId) => {
+    try {
+      const data = {
+        ...editForm,
+        shipping_cost: parseFloat(editForm.shipping_cost) || 0
+      };
+      await updateShipment(shipmentId, data);
+      toast.success("Envío actualizado");
+      setEditDialogOpen(null);
+      loadData();
+    } catch (error) {
+      toast.error("Error al actualizar envío");
+    }
+  };
+
+  const handleDeleteShipment = async (shipmentId) => {
+    if (!window.confirm("¿Estás seguro de eliminar este envío?")) return;
+    try {
+      await deleteShipment(shipmentId);
+      toast.success("Envío eliminado");
+      loadData();
+    } catch (error) {
+      toast.error("Error al eliminar envío");
+    }
+  };
+
   const getStatusLabel = (status) => {
     const labels = {
       preparing: "Preparando",
