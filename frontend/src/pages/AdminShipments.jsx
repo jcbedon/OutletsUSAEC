@@ -748,6 +748,121 @@ export default function AdminShipments() {
                                 </div>
                               </DialogContent>
                             </Dialog>
+
+                            {/* Edit Button */}
+                            <Dialog 
+                              open={editDialogOpen === shipment.id} 
+                              onOpenChange={(open) => {
+                                if (!open) setEditDialogOpen(null);
+                              }}
+                            >
+                              <DialogTrigger asChild>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="rounded-lg"
+                                  onClick={() => handleOpenEditDialog(shipment)}
+                                  data-testid={`edit-shipment-${shipment.id}`}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="rounded-2xl max-h-[90vh] overflow-y-auto">
+                                <DialogHeader>
+                                  <DialogTitle>Editar Envío - #{shipment.customer_id}</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-4 pt-4">
+                                  <div>
+                                    <Label>Tipo de Envío</Label>
+                                    <Select 
+                                      value={editForm.shipping_type}
+                                      onValueChange={(v) => setEditForm({...editForm, shipping_type: v})}
+                                    >
+                                      <SelectTrigger className="h-12 rounded-xl mt-1">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="with_family">Con Familiar en USA</SelectItem>
+                                        <SelectItem value="without_family">Sin Familiar en USA</SelectItem>
+                                        <SelectItem value="custom">Personalizado</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div>
+                                    <Label>Costo de Envío (USD)</Label>
+                                    <Input 
+                                      type="number" 
+                                      step="0.01"
+                                      value={editForm.shipping_cost}
+                                      onChange={(e) => setEditForm({...editForm, shipping_cost: e.target.value})}
+                                      className="h-12 rounded-xl mt-1"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label>Dirección</Label>
+                                    <Textarea
+                                      value={editForm.address}
+                                      onChange={(e) => setEditForm({...editForm, address: e.target.value})}
+                                      className="rounded-xl mt-1"
+                                    />
+                                  </div>
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                      <Label>País</Label>
+                                      <Input
+                                        value={editForm.country}
+                                        onChange={(e) => setEditForm({...editForm, country: e.target.value})}
+                                        className="h-12 rounded-xl mt-1"
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label>Teléfono</Label>
+                                      <Input
+                                        value={editForm.phone}
+                                        onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
+                                        className="h-12 rounded-xl mt-1"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <Label>Tracking</Label>
+                                    <Input
+                                      value={editForm.tracking_number}
+                                      onChange={(e) => setEditForm({...editForm, tracking_number: e.target.value})}
+                                      className="h-12 rounded-xl mt-1"
+                                      placeholder="Número de tracking"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label>Información Adicional</Label>
+                                    <Textarea
+                                      value={editForm.additional_info}
+                                      onChange={(e) => setEditForm({...editForm, additional_info: e.target.value})}
+                                      className="rounded-xl mt-1"
+                                    />
+                                  </div>
+                                  <Button 
+                                    onClick={() => handleSaveEdit(shipment.id)}
+                                    className="w-full h-12 font-bold rounded-xl" 
+                                    style={{ background: '#1E3A5F', color: 'white' }}
+                                  >
+                                    <Save className="h-5 w-5 mr-2" />
+                                    Guardar Cambios
+                                  </Button>
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+
+                            {/* Delete Button */}
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="rounded-lg text-red-600 border-red-200 hover:bg-red-50"
+                              onClick={() => handleDeleteShipment(shipment.id)}
+                              data-testid={`delete-shipment-${shipment.id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </CardContent>
                       </Card>
