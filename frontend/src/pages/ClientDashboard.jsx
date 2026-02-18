@@ -600,31 +600,24 @@ export default function ClientDashboard() {
                           </div>
                         )}
 
-                        {/* Attachments */}
                         {shipment.attachments && shipment.attachments.length > 0 && (
                           <div className="bg-green-50 rounded-lg p-3 mb-3">
                             <p className="text-xs text-gray-500 flex items-center gap-1 mb-2">
-                              <Paperclip className="h-3 w-3" /> Archivos adjuntos ({shipment.attachments.length})
+                              <Paperclip className="h-3 w-3" /> Archivos adjuntos
                             </p>
                             <div className="flex flex-wrap gap-2">
-                              {shipment.attachments.map((attachment, index) => {
-                                const fileUrl = attachment.startsWith('http') 
-                                  ? attachment 
-                                  : `${process.env.REACT_APP_BACKEND_URL}${attachment}`;
-                                return (
-                                  <a
-                                    key={index}
-                                    href={fileUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-green-200 hover:bg-green-100 transition-colors text-sm"
-                                    data-testid={`view-attachment-${index}`}
-                                  >
-                                    <Eye className="h-3 w-3 text-green-600" />
-                                    <span className="text-green-700">Ver {index + 1}</span>
-                                  </a>
-                                );
-                              })}
+                              {shipment.attachments.map((att, idx) => (
+                                <a
+                                  key={idx}
+                                  href={att.startsWith('http') ? att : `${process.env.REACT_APP_BACKEND_URL}${att}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-green-200 hover:bg-green-100 text-sm"
+                                >
+                                  <Eye className="h-3 w-3 text-green-600" />
+                                  <span className="text-green-700">Ver</span>
+                                </a>
+                              ))}
                             </div>
                           </div>
                         )}
