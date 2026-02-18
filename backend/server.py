@@ -1141,6 +1141,57 @@ async def get_all_shipments(status: Optional[str] = None, current_user: dict = D
         result.append({**s, "user_name": user["name"] if user else "Unknown"})
     return result
 
+class ShipmentUpdate(BaseModel):
+    shipping_type: Optional[str] = None
+    shipping_cost: Optional[float] = None
+    address: Optional[str] = None
+    country: Optional[str] = None
+    phone: Optional[str] = None
+    additional_info: Optional[str] = None
+    tracking_number: Optional[str] = None
+
+@api_router.put("/shipments/{shipment_id}")
+async def update_shipment(shipment_id: str, data: ShipmentUpdate, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    shipment = await db.shipments.find_one({"id": shipment_id, "tenant_id": tid}, {"_id": 0})
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Envío no encontrado")
+    updates = {}
+    if data.shipping_type is not None:
+        updates["shipping_type"] = data.shipping_type
+    if data.shipping_cost is not None:
+        updates["shipping_cost"] = data.shipping_cost
+    if data.address is not None:
+        updates["address"] = data.address
+    if data.country is not None:
+        updates["country"] = data.country
+    if data.phone is not None:
+        updates["phone"] = data.phone
+    if data.additional_info is not None:
+        updates["additional_info"] = data.additional_info
+    if data.tracking_number is not None:
+        updates["tracking_number"] = data.tracking_number
+    if updates:
+        updates["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db.shipments.update_one({"id": shipment_id, "tenant_id": tid}, {"$set": updates})
+    updated = await db.shipments.find_one({"id": shipment_id, "tenant_id": tid}, {"_id": 0})
+    return updated
+
+@api_router.delete("/shipments/{shipment_id}")
+async def delete_shipment(shipment_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    shipment = await db.shipments.find_one({"id": shipment_id, "tenant_id": tid}, {"_id": 0})
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Envío no encontrado")
+    await db.shipments.delete_one({"id": shipment_id, "tenant_id": tid})
+    await create_notification(tid, shipment["user_id"], shipment["customer_id"], "shipment_deleted",
+        "Envío Eliminado", "Un envío ha sido eliminado de tu cuenta.")
+    return {"message": "Envío eliminado"}
+
 # ==================== NOTIFICATIONS ====================
 
 @api_router.get("/notifications/{user_id}")
