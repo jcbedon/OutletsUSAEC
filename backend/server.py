@@ -185,6 +185,8 @@ class PurchaseCreate(BaseModel):
     store: str
     price: float
     live_id: str
+    apply_tax: bool = True
+    apply_commission: bool = True
 
 class ShipmentCreate(BaseModel):
     user_id: str
