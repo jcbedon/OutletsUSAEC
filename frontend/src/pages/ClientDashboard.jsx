@@ -53,6 +53,8 @@ export default function ClientDashboard() {
   const [depositSubmitting, setDepositSubmitting] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
+  const [selectedAttachments, setSelectedAttachments] = useState([]);
 
   useEffect(() => {
     if (user) {
