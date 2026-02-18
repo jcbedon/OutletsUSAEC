@@ -600,6 +600,58 @@ export default function ClientDashboard() {
                           </div>
                         )}
 
+                        {/* Attachments */}
+                        {shipment.attachments && shipment.attachments.length > 0 && (
+                          <div className="bg-green-50 rounded-lg p-3 mb-3">
+                            <p className="text-xs text-gray-500 flex items-center gap-1 mb-2">
+                              <Paperclip className="h-3 w-3" /> Archivos adjuntos ({shipment.attachments.length})
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {shipment.attachments.map((attachment, index) => {
+                                const fileUrl = attachment.startsWith('http') 
+                                  ? attachment 
+                                  : `${process.env.REACT_APP_BACKEND_URL}${attachment}`;
+                                const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(attachment);
+                                return (
+                                  <Dialog key={index}>
+                                    <DialogTrigger asChild>
+                                      <button 
+                                        className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-green-200 hover:bg-green-100 transition-colors text-sm"
+                                        data-testid={`view-attachment-${index}`}
+                                      >
+                                        <Eye className="h-3 w-3 text-green-600" />
+                                        <span className="text-green-700">Ver {index + 1}</span>
+                                      </button>
+                                    </DialogTrigger>
+                                    <DialogContent className="rounded-2xl max-w-2xl">
+                                      <DialogHeader>
+                                        <DialogTitle>Archivo Adjunto #{index + 1}</DialogTitle>
+                                      </DialogHeader>
+                                      <div className="mt-2">
+                                        {isImage ? (
+                                          <img src={fileUrl} alt={`Adjunto ${index + 1}`} className="w-full rounded-xl" />
+                                        ) : (
+                                          <div className="text-center py-8">
+                                            <Paperclip className="h-12 w-12 text-gray-400 mx-auto mb-3" />
+                                            <a 
+                                              href={fileUrl} 
+                                              target="_blank" 
+                                              rel="noopener noreferrer"
+                                              className="text-blue-600 hover:underline font-medium"
+                                            >
+                                              Descargar archivo
+                                            </a>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </DialogContent>
+                                  </Dialog>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-500">{shipment.purchase_ids.length} productos</span>
                           <span className="font-bold text-red-600">${shipment.shipping_cost.toFixed(2)}</span>
