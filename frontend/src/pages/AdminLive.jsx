@@ -627,28 +627,57 @@ export default function AdminLive() {
                           data-testid="purchase-price"
                         />
                       </div>
+                      
+                      {/* Tax and Commission Toggles */}
+                      <div className="flex gap-4 mt-3">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={purchaseForm.apply_tax}
+                            onChange={(e) => setPurchaseForm({ ...purchaseForm, apply_tax: e.target.checked })}
+                            className="w-4 h-4 rounded text-blue-600"
+                            data-testid="apply-tax-checkbox"
+                          />
+                          <span className="text-sm font-medium text-gray-700">Aplicar Tax (8.25%)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={purchaseForm.apply_commission}
+                            onChange={(e) => setPurchaseForm({ ...purchaseForm, apply_commission: e.target.checked })}
+                            className="w-4 h-4 rounded text-yellow-600"
+                            data-testid="apply-commission-checkbox"
+                          />
+                          <span className="text-sm font-medium text-gray-700">Aplicar Comisión</span>
+                        </label>
+                      </div>
+
                       {purchaseForm.price && (
                         <div className="mt-2 p-3 bg-gray-50 rounded-xl">
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-600">Precio:</span>
                             <span className="font-medium">${parseFloat(purchaseForm.price || 0).toFixed(2)}</span>
                           </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-600">Tax Illinois (8.25%):</span>
-                            <span className="font-medium">${(parseFloat(purchaseForm.price || 0) * TAX_RATE).toFixed(2)}</span>
-                          </div>
+                          {purchaseForm.apply_tax && (
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Tax Illinois (8.25%):</span>
+                              <span className="font-medium">${(parseFloat(purchaseForm.price || 0) * TAX_RATE).toFixed(2)}</span>
+                            </div>
+                          )}
                           <div className="flex justify-between text-sm font-bold text-blue-600">
-                            <span>Precio + Tax:</span>
-                            <span>${(parseFloat(purchaseForm.price || 0) * (1 + TAX_RATE)).toFixed(2)}</span>
+                            <span>Precio {purchaseForm.apply_tax ? '+ Tax' : ''}:</span>
+                            <span>${(parseFloat(purchaseForm.price || 0) * (purchaseForm.apply_tax ? (1 + TAX_RATE) : 1)).toFixed(2)}</span>
                           </div>
-                          <div className="flex justify-between text-sm mt-2 pt-2 border-t border-dashed">
-                            <span className="text-yellow-600">Comisión ({selectedCustomer?.name || 'cliente'}):</span>
-                            <span className="font-bold text-yellow-600">${customerCommission.toFixed(2)}</span>
-                          </div>
+                          {purchaseForm.apply_commission && (
+                            <div className="flex justify-between text-sm mt-2 pt-2 border-t border-dashed">
+                              <span className="text-yellow-600">Comisión ({selectedCustomer?.name || 'cliente'}):</span>
+                              <span className="font-bold text-yellow-600">${customerCommission.toFixed(2)}</span>
+                            </div>
+                          )}
                           <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t -mx-3 px-3 py-2 rounded-b-xl" style={{ background: 'rgba(30,58,95,0.05)' }}>
                             <span>Se descuenta del saldo:</span>
                             <span className="text-red-600">
-                              ${(parseFloat(purchaseForm.price || 0) * (1 + TAX_RATE) + customerCommission).toFixed(2)}
+                              ${(parseFloat(purchaseForm.price || 0) * (purchaseForm.apply_tax ? (1 + TAX_RATE) : 1) + (purchaseForm.apply_commission ? customerCommission : 0)).toFixed(2)}
                             </span>
                           </div>
                         </div>
