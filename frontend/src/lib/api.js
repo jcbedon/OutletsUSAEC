@@ -70,6 +70,8 @@ export const updateTracking = (shipmentId, trackingNumber) =>
   api.put(`/shipments/${shipmentId}/tracking`, null, { params: { tracking_number: trackingNumber } });
 export const updateShipmentStatus = (shipmentId, status) =>
   api.put(`/shipments/${shipmentId}/status`, null, { params: { status } });
+export const updateShipment = (shipmentId, data) => api.put(`/shipments/${shipmentId}`, data);
+export const deleteShipment = (shipmentId) => api.delete(`/shipments/${shipmentId}`);
 export const getUserShipments = (userId) => api.get(`/shipments/user/${userId}`);
 export const getAllShipments = (status) => api.get("/shipments", { params: { status } });
 export const uploadShipmentAttachment = (shipmentId, file) => {
