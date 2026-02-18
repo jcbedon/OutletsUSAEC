@@ -83,6 +83,11 @@ export default function AdminClients() {
       if (!dataToSend.new_password) {
         delete dataToSend.new_password;
       }
+      if (dataToSend.commission_fee) {
+        dataToSend.commission_fee = parseFloat(dataToSend.commission_fee);
+      } else {
+        delete dataToSend.commission_fee;
+      }
       await updateClient(editingClient.id, dataToSend);
       toast.success(`Cliente ${editForm.name} actualizado exitosamente`);
       setEditDialogOpen(false);
