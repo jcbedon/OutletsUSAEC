@@ -602,9 +602,24 @@ export default function ClientDashboard() {
                           </div>
                         )}
 
-                        <div className="flex justify-between text-sm">
+                        <div className="flex justify-between items-center text-sm">
                           <span className="text-gray-500">{shipment.purchase_ids.length} productos</span>
-                          <span className="font-bold text-red-600">${shipment.shipping_cost.toFixed(2)}</span>
+                          <div className="flex items-center gap-2">
+                            {shipment.attachments && shipment.attachments.length > 0 && (
+                              <button
+                                onClick={() => {
+                                  setSelectedAttachments(shipment.attachments);
+                                  setAttachmentDialogOpen(true);
+                                }}
+                                className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100 px-2 py-1 rounded-lg transition-colors"
+                                data-testid={`view-attachments-${shipment.id}`}
+                              >
+                                <Paperclip className="h-3 w-3" />
+                                <span>{shipment.attachments.length}</span>
+                              </button>
+                            )}
+                            <span className="font-bold text-red-600">${shipment.shipping_cost.toFixed(2)}</span>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
