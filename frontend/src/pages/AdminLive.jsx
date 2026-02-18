@@ -227,7 +227,9 @@ export default function AdminLive() {
       setPurchaseForm({
         customer_id: "",
         item_name: "",
-        price: ""
+        price: "",
+        apply_tax: true,
+        apply_commission: true
       });
       setSelectedCustomer(null);
       setCustomerWallet(null);
