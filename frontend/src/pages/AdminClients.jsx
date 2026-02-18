@@ -66,7 +66,8 @@ export default function AdminClients() {
       whatsapp: client.whatsapp || "",
       country: client.country || "",
       email: client.email || "",
-      new_password: ""
+      new_password: "",
+      commission_fee: client.commission_fee?.toString() || "3"
     });
     setEditDialogOpen(true);
   };
