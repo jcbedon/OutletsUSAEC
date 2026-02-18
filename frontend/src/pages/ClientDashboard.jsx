@@ -611,41 +611,18 @@ export default function ClientDashboard() {
                                 const fileUrl = attachment.startsWith('http') 
                                   ? attachment 
                                   : `${process.env.REACT_APP_BACKEND_URL}${attachment}`;
-                                const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(attachment);
                                 return (
-                                  <Dialog key={index}>
-                                    <DialogTrigger asChild>
-                                      <button 
-                                        className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-green-200 hover:bg-green-100 transition-colors text-sm"
-                                        data-testid={`view-attachment-${index}`}
-                                      >
-                                        <Eye className="h-3 w-3 text-green-600" />
-                                        <span className="text-green-700">Ver {index + 1}</span>
-                                      </button>
-                                    </DialogTrigger>
-                                    <DialogContent className="rounded-2xl max-w-2xl">
-                                      <DialogHeader>
-                                        <DialogTitle>Archivo Adjunto #{index + 1}</DialogTitle>
-                                      </DialogHeader>
-                                      <div className="mt-2">
-                                        {isImage ? (
-                                          <img src={fileUrl} alt={`Adjunto ${index + 1}`} className="w-full rounded-xl" />
-                                        ) : (
-                                          <div className="text-center py-8">
-                                            <Paperclip className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                                            <a 
-                                              href={fileUrl} 
-                                              target="_blank" 
-                                              rel="noopener noreferrer"
-                                              className="text-blue-600 hover:underline font-medium"
-                                            >
-                                              Descargar archivo
-                                            </a>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </DialogContent>
-                                  </Dialog>
+                                  <a
+                                    key={index}
+                                    href={fileUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-green-200 hover:bg-green-100 transition-colors text-sm"
+                                    data-testid={`view-attachment-${index}`}
+                                  >
+                                    <Eye className="h-3 w-3 text-green-600" />
+                                    <span className="text-green-700">Ver {index + 1}</span>
+                                  </a>
                                 );
                               })}
                             </div>
