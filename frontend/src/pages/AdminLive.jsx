@@ -64,7 +64,9 @@ export default function AdminLive() {
   const [purchaseForm, setPurchaseForm] = useState({
     customer_id: "",
     item_name: "",
-    price: ""
+    price: "",
+    apply_tax: true,
+    apply_commission: true
   });
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerWallet, setCustomerWallet] = useState(null);
