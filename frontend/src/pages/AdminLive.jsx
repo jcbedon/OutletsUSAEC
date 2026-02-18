@@ -213,7 +213,9 @@ export default function AdminLive() {
         item_name: purchaseForm.item_name,
         store: selectedLive.store || "Sin tienda",
         price: price,
-        live_id: selectedLive.id
+        live_id: selectedLive.id,
+        apply_tax: purchaseForm.apply_tax,
+        apply_commission: purchaseForm.apply_commission
       });
 
       toast.success(
