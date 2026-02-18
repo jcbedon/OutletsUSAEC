@@ -600,28 +600,6 @@ export default function ClientDashboard() {
                           </div>
                         )}
 
-                        {shipment.attachments && shipment.attachments.length > 0 && (
-                          <div className="bg-green-50 rounded-lg p-3 mb-3">
-                            <p className="text-xs text-gray-500 flex items-center gap-1 mb-2">
-                              <Paperclip className="h-3 w-3" /> Archivos adjuntos
-                            </p>
-                            <div className="flex flex-wrap gap-2">
-                              {shipment.attachments.map((att, idx) => (
-                                <a
-                                  key={idx}
-                                  href={att.startsWith('http') ? att : `${process.env.REACT_APP_BACKEND_URL}${att}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-1 px-2 py-1 bg-white rounded-lg border border-green-200 hover:bg-green-100 text-sm"
-                                >
-                                  <Eye className="h-3 w-3 text-green-600" />
-                                  <span className="text-green-700">Ver</span>
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-500">{shipment.purchase_ids.length} productos</span>
                           <span className="font-bold text-red-600">${shipment.shipping_cost.toFixed(2)}</span>
