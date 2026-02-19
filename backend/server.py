@@ -1140,6 +1140,7 @@ async def get_all_shipments(status: Optional[str] = None, current_user: dict = D
 class ShipmentUpdate(BaseModel):
     shipping_type: Optional[str] = None
     shipping_cost: Optional[float] = None
+    weight_pounds: Optional[float] = None
     address: Optional[str] = None
     country: Optional[str] = None
     phone: Optional[str] = None
