@@ -248,7 +248,8 @@ export default function AdminShipments() {
     try {
       const data = {
         ...editForm,
-        shipping_cost: parseFloat(editForm.shipping_cost) || 0
+        shipping_cost: parseFloat(editForm.shipping_cost) || 0,
+        weight_pounds: parseFloat(editForm.weight_pounds) || 0
       };
       await updateShipment(shipmentId, data);
       toast.success("Envío actualizado");
