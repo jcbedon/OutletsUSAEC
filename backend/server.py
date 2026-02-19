@@ -137,6 +137,7 @@ class Shipment(BaseModel):
     purchase_ids: List[str]
     shipping_type: str
     shipping_cost: float
+    weight_pounds: float = 0
     address: str
     country: str
     phone: str
