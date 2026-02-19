@@ -1268,6 +1268,7 @@ async def get_all_clients_purchases_report(current_user: dict = Depends(get_curr
         total_purchases = sum(p.get("total", 0) for p in purchases)
         total_commission = sum(p.get("commission", 0) for p in purchases)
         total_shipping = sum(s.get("shipping_cost", 0) for s in shipments)
+        total_weight = sum(s.get("weight_pounds", 0) for s in shipments)
         # Saldo pendiente = wallet_balance - total_shipping
         pending_balance = wallet_balance - total_shipping
         result.append({
@@ -1278,10 +1279,12 @@ async def get_all_clients_purchases_report(current_user: dict = Depends(get_curr
             },
             "wallet_balance": round(wallet_balance, 2),
             "purchases": purchases,
+            "shipments": shipments,
             "purchase_count": len(purchases),
             "total_spent": round(total_purchases, 2),
             "total_commission": round(total_commission, 2),
             "total_shipping": round(total_shipping, 2),
+            "total_weight_pounds": round(total_weight, 2),
             "pending_balance": round(pending_balance, 2)
         })
     return sorted(result, key=lambda x: x["pending_balance"])
