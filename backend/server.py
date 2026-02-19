@@ -1051,12 +1051,13 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     shipment = Shipment(tenant_id=tid, user_id=shipment_data.user_id, customer_id=user["customer_id"],
         purchase_ids=shipment_data.purchase_ids, shipping_type=shipment_data.shipping_type,
-        shipping_cost=shipment_data.shipping_cost, address=shipment_data.address,
-        country=shipment_data.country, phone=shipment_data.phone, additional_info=shipment_data.additional_info)
+        shipping_cost=shipment_data.shipping_cost, weight_pounds=shipment_data.weight_pounds,
+        address=shipment_data.address, country=shipment_data.country, phone=shipment_data.phone, 
+        additional_info=shipment_data.additional_info)
     await db.shipments.insert_one(shipment.model_dump())
     await create_notification(tid, shipment_data.user_id, user["customer_id"], "shipment_created",
-        "Envío Creado", f"Tu envío ha sido creado. Costo: ${shipment_data.shipping_cost:.2f} USD")
-    return {"message": "Envío creado", "shipment_id": shipment.id, "shipping_cost": shipment_data.shipping_cost}
+        "Envío Creado", f"Tu envío ha sido creado. Peso: {shipment_data.weight_pounds} lbs. Costo: ${shipment_data.shipping_cost:.2f} USD")
+    return {"message": "Envío creado", "shipment_id": shipment.id, "shipping_cost": shipment_data.shipping_cost, "weight_pounds": shipment_data.weight_pounds}
 
 @api_router.put("/shipments/{shipment_id}/tracking")
 async def update_tracking(shipment_id: str, tracking_number: str, current_user: dict = Depends(get_current_user)):
