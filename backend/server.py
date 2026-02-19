@@ -1160,6 +1160,8 @@ async def update_shipment(shipment_id: str, data: ShipmentUpdate, current_user: 
         updates["shipping_type"] = data.shipping_type
     if data.shipping_cost is not None:
         updates["shipping_cost"] = data.shipping_cost
+    if data.weight_pounds is not None:
+        updates["weight_pounds"] = data.weight_pounds
     if data.address is not None:
         updates["address"] = data.address
     if data.country is not None:
