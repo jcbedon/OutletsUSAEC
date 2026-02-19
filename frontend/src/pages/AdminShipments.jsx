@@ -142,12 +142,15 @@ export default function AdminShipments() {
       return;
     }
 
+    const weight = parseFloat(shipmentForm.weight_pounds) || 0;
+
     try {
       const response = await createShipment({
         user_id: selectedClient.id,
         purchase_ids: selectedPurchases,
         shipping_type: shipmentForm.shipping_type,
         shipping_cost: cost,
+        weight_pounds: weight,
         address: shipmentForm.address,
         country: shipmentForm.country,
         phone: shipmentForm.phone,
