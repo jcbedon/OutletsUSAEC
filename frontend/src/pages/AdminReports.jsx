@@ -168,7 +168,7 @@ function ClientRow({ cr, isExpanded, onToggle, onExport }) {
               <div className="mt-3 pt-3 border-t bg-gray-50 rounded-lg p-3">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Total Envíos:</span>
-                  <span className="font-bold text-gray-800">{fmtMoney(cr.total_shipping)}</span>
+                  <span className="font-bold text-gray-800">{fmtMoney(cr.total_shipping)} ({cr.total_weight_pounds || 0} lbs)</span>
                 </div>
               </div>
             )}
