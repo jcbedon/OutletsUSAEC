@@ -58,6 +58,7 @@ export default function AdminShipments() {
   const [editForm, setEditForm] = useState({
     shipping_type: "",
     shipping_cost: "",
+    weight_pounds: "",
     address: "",
     country: "",
     phone: "",
@@ -74,6 +75,7 @@ export default function AdminShipments() {
   const [shipmentForm, setShipmentForm] = useState({
     shipping_type: "",
     shipping_cost: "",
+    weight_pounds: "",
     address: "",
     country: "",
     phone: "",
