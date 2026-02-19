@@ -137,7 +137,7 @@ function ClientRow({ cr, isExpanded, onToggle, onExport }) {
                 {needsRecharge ? '-' : '+'}${Math.abs(pendingBalance).toFixed(2)}
               </p>
               <p className="text-xs text-gray-400">
-                Compras: {fmtMoney(cr.total_spent)} | Envío: {fmtMoney(cr.total_shipping || 0)}
+                Compras: {fmtMoney(cr.total_spent)} | Envío: {fmtMoney(cr.total_shipping || 0)} | {cr.total_weight_pounds || 0} lbs
               </p>
             </div>
             <div className="text-right">
