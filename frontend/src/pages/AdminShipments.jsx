@@ -463,6 +463,21 @@ export default function AdminShipments() {
                       </p>
                     </div>
 
+                    {/* Weight in Pounds */}
+                    <div>
+                      <Label>Peso del Envío (Libras)</Label>
+                      <Input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.1"
+                        placeholder="Ej: 5.5"
+                        value={shipmentForm.weight_pounds}
+                        onChange={(e) => setShipmentForm({ ...shipmentForm, weight_pounds: e.target.value })}
+                        className="h-12 rounded-xl mt-1"
+                        data-testid="shipping-weight-input"
+                      />
+                    </div>
+
                     {/* Total Cost Display */}
                     {selectedPurchases.length > 0 && (
                       <div className="bg-gradient-to-r from-[#1E3A5F] to-[#2a4a73] rounded-xl p-4 text-white">
