@@ -234,6 +234,7 @@ export default function AdminShipments() {
     setEditForm({
       shipping_type: shipment.shipping_type || "",
       shipping_cost: shipment.shipping_cost?.toString() || "",
+      weight_pounds: shipment.weight_pounds?.toString() || "",
       address: shipment.address || "",
       country: shipment.country || "",
       phone: shipment.phone || "",
