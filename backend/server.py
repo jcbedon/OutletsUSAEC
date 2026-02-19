@@ -956,22 +956,18 @@ async def get_live_purchases(live_id: str, current_user: dict = Depends(get_curr
 @api_router.get("/purchases/pending-shipment/{user_id}")
 async def get_pending_shipment_purchases(user_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
-    # Get user's current commission rate
-    user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0})
-    current_commission = user.get("commission_fee", DEFAULT_COMMISSION_FEE) if user else DEFAULT_COMMISSION_FEE
     all_purchases = await db.purchases.find({"user_id": user_id, "status": "confirmed", "tenant_id": tid}, {"_id": 0}).to_list(500)
     shipments = await db.shipments.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0, "purchase_ids": 1}).to_list(500)
     shipped_ids = set()
     for s in shipments:
         shipped_ids.update(s.get("purchase_ids", []))
-    # Recalculate totals using current commission
+    # Return purchases with their original values (commission was set at purchase time)
     result = []
     for p in all_purchases:
         if p["id"] not in shipped_ids:
             p_copy = dict(p)
-            p_copy["commission"] = current_commission
-            p_copy["total"] = round(p.get("price", 0) + p.get("tax", 0) + current_commission, 2)
-            p_copy["total_price"] = p_copy["total"]
+            # Use the commission that was stored at purchase time
+            p_copy["total_price"] = p.get("total", 0)
             result.append(p_copy)
     return result
 
