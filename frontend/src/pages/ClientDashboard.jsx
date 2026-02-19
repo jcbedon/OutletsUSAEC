@@ -584,6 +584,9 @@ export default function ClientDashboard() {
                               {shipment.shipping_type === 'with_family' ? 'Con Familiar USA' : 'Sin Familiar USA'}
                             </p>
                             <p className="text-sm text-gray-500">{shipment.country}</p>
+                            {shipment.weight_pounds > 0 && (
+                              <p className="text-sm text-blue-600 font-medium">{shipment.weight_pounds} libras</p>
+                            )}
                           </div>
                           {getStatusBadge(shipment.status)}
                         </div>
