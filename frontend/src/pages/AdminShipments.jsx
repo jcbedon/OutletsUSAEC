@@ -684,6 +684,7 @@ export default function AdminShipments() {
                               <p className="text-sm text-gray-500">
                                 {shipment.shipping_type === 'with_family' ? 'Con Familiar USA' : 'Sin Familiar USA'}
                                 {' - '}${shipment.shipping_cost.toFixed(2)}
+                                {shipment.weight_pounds > 0 && ` - ${shipment.weight_pounds} lbs`}
                               </p>
                             </div>
                             {getStatusBadge(shipment.status)}
