@@ -1258,28 +1258,20 @@ async def get_all_clients_purchases_report(current_user: dict = Depends(get_curr
         wallet = await db.wallets.find_one({"user_id": client["id"], "tenant_id": tid}, {"_id": 0})
         wallet_balance = wallet["available"] if wallet else 0
         shipments = await db.shipments.find({"user_id": client["id"], "tenant_id": tid}, {"_id": 0}).to_list(1000)
-        current_commission = client.get("commission_fee", DEFAULT_COMMISSION_FEE)
-        # Recalculate totals using current commission rate
-        total_purchases = sum(p.get("price", 0) + p.get("tax", 0) + current_commission for p in purchases)
-        total_commission = current_commission * len(purchases)
+        # Use the actual values stored at purchase time
+        total_purchases = sum(p.get("total", 0) for p in purchases)
+        total_commission = sum(p.get("commission", 0) for p in purchases)
         total_shipping = sum(s.get("shipping_cost", 0) for s in shipments)
         # Saldo pendiente = wallet_balance - total_shipping
         pending_balance = wallet_balance - total_shipping
-        # Update each purchase with recalculated values for display
-        purchases_with_current_commission = []
-        for p in purchases:
-            p_copy = dict(p)
-            p_copy["commission"] = current_commission
-            p_copy["total"] = p.get("price", 0) + p.get("tax", 0) + current_commission
-            purchases_with_current_commission.append(p_copy)
         result.append({
             "client": {
                 "id": client["id"], "customer_id": client["customer_id"],
                 "name": client["name"], "whatsapp": client["whatsapp"],
-                "country": client["country"], "commission_fee": current_commission
+                "country": client["country"], "commission_fee": client.get("commission_fee", DEFAULT_COMMISSION_FEE)
             },
             "wallet_balance": round(wallet_balance, 2),
-            "purchases": purchases_with_current_commission,
+            "purchases": purchases,
             "purchase_count": len(purchases),
             "total_spent": round(total_purchases, 2),
             "total_commission": round(total_commission, 2),
