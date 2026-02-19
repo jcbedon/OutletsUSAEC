@@ -182,6 +182,7 @@ export default function AdminShipments() {
       setShipmentForm({
         shipping_type: "",
         shipping_cost: "",
+        weight_pounds: "",
         address: "",
         country: "",
         phone: "",
