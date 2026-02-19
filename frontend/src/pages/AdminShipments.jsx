@@ -822,6 +822,17 @@ export default function AdminShipments() {
                                     />
                                   </div>
                                   <div>
+                                    <Label>Peso (Libras)</Label>
+                                    <Input 
+                                      type="number" 
+                                      step="0.1"
+                                      placeholder="Ej: 5.5"
+                                      value={editForm.weight_pounds}
+                                      onChange={(e) => setEditForm({...editForm, weight_pounds: e.target.value})}
+                                      className="h-12 rounded-xl mt-1"
+                                    />
+                                  </div>
+                                  <div>
                                     <Label>Dirección</Label>
                                     <Textarea
                                       value={editForm.address}
