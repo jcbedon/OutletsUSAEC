@@ -633,7 +633,7 @@ export default function AdminLive() {
                       </div>
                       
                       {/* Tax and Commission Toggles */}
-                      <div className="flex gap-4 mt-3">
+                      <div className="flex flex-wrap gap-4 mt-3 items-center">
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
                             type="checkbox"
@@ -642,7 +642,7 @@ export default function AdminLive() {
                             className="w-4 h-4 rounded text-blue-600"
                             data-testid="apply-tax-checkbox"
                           />
-                          <span className="text-sm font-medium text-gray-700">Aplicar Tax (8.25%)</span>
+                          <span className="text-sm font-medium text-gray-700">Tax (8.25%)</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input
@@ -652,8 +652,20 @@ export default function AdminLive() {
                             className="w-4 h-4 rounded text-yellow-600"
                             data-testid="apply-commission-checkbox"
                           />
-                          <span className="text-sm font-medium text-gray-700">Aplicar Comisión</span>
+                          <span className="text-sm font-medium text-gray-700">Comisión $</span>
                         </label>
+                        {purchaseForm.apply_commission && (
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            placeholder="3.00"
+                            value={purchaseForm.commission_amount}
+                            onChange={(e) => setPurchaseForm({ ...purchaseForm, commission_amount: e.target.value })}
+                            className="w-20 h-8 text-center rounded-lg text-sm font-bold"
+                            data-testid="commission-amount-input"
+                          />
+                        )}
                       </div>
 
                       {purchaseForm.price && (
@@ -674,14 +686,14 @@ export default function AdminLive() {
                           </div>
                           {purchaseForm.apply_commission && (
                             <div className="flex justify-between text-sm mt-2 pt-2 border-t border-dashed">
-                              <span className="text-yellow-600">Comisión ({selectedCustomer?.name || 'cliente'}):</span>
-                              <span className="font-bold text-yellow-600">${customerCommission.toFixed(2)}</span>
+                              <span className="text-yellow-600">Comisión:</span>
+                              <span className="font-bold text-yellow-600">${parseFloat(purchaseForm.commission_amount || 0).toFixed(2)}</span>
                             </div>
                           )}
                           <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t -mx-3 px-3 py-2 rounded-b-xl" style={{ background: 'rgba(30,58,95,0.05)' }}>
                             <span>Se descuenta del saldo:</span>
                             <span className="text-red-600">
-                              ${(parseFloat(purchaseForm.price || 0) * (purchaseForm.apply_tax ? (1 + TAX_RATE) : 1) + (purchaseForm.apply_commission ? customerCommission : 0)).toFixed(2)}
+                              ${(parseFloat(purchaseForm.price || 0) * (purchaseForm.apply_tax ? (1 + TAX_RATE) : 1) + (purchaseForm.apply_commission ? parseFloat(purchaseForm.commission_amount || 0) : 0)).toFixed(2)}
                             </span>
                           </div>
                         </div>
