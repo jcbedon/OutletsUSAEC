@@ -66,7 +66,8 @@ export default function AdminLive() {
     item_name: "",
     price: "",
     apply_tax: true,
-    apply_commission: true
+    apply_commission: true,
+    commission_amount: "3"
   });
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerWallet, setCustomerWallet] = useState(null);
