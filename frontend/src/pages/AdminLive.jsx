@@ -216,7 +216,8 @@ export default function AdminLive() {
         price: price,
         live_id: selectedLive.id,
         apply_tax: purchaseForm.apply_tax,
-        apply_commission: purchaseForm.apply_commission
+        apply_commission: purchaseForm.apply_commission,
+        commission_amount: parseFloat(purchaseForm.commission_amount) || 0
       });
 
       toast.success(
@@ -224,13 +225,15 @@ export default function AdminLive() {
         { duration: 3000 }
       );
 
-      // Reset form
+      // Reset form but keep commission amount for next purchase
+      const lastCommission = purchaseForm.commission_amount;
       setPurchaseForm({
         customer_id: "",
         item_name: "",
         price: "",
         apply_tax: true,
-        apply_commission: true
+        apply_commission: true,
+        commission_amount: lastCommission
       });
       setSelectedCustomer(null);
       setCustomerWallet(null);
