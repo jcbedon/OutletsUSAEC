@@ -907,9 +907,9 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
     wallet = await db.wallets.find_one({"user_id": user["id"], "tenant_id": tid}, {"_id": 0})
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
-    # Apply tax and commission based on flags
-    commission_fee = user.get("commission_fee", DEFAULT_COMMISSION_FEE) if purchase_data.apply_commission else 0
+    # Apply tax based on flag, commission comes from form input
     tax = round(purchase_data.price * ILLINOIS_TAX_RATE, 2) if purchase_data.apply_tax else 0
+    commission_fee = purchase_data.commission_amount if purchase_data.apply_commission else 0
     price_with_tax = round(purchase_data.price + tax, 2)
     total = round(price_with_tax + commission_fee, 2)
     purchase = Purchase(tenant_id=tid, user_id=user["id"], customer_id=purchase_data.customer_id.upper(),
