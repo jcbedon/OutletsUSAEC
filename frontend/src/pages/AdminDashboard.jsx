@@ -24,35 +24,15 @@ import {
   Store,
   ShoppingCart,
   PiggyBank,
-  Scale,
-  ArrowUpRight,
-  ArrowDownRight
+  Scale
 } from "lucide-react";
 import { uploadTenantLogo } from "@/lib/api";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-  Legend,
-  AreaChart,
-  Area
-} from "recharts";
 
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
 const CHART_COLORS = ["#1E3A5F", "#2ECC71", "#E74C3C", "#F39C12", "#9B59B6", "#3498DB", "#1ABC9C", "#E67E22"];
 
 const formatMoney = (n) => "$" + (n || 0).toFixed(2);
-const formatNumber = (n) => (n || 0).toLocaleString();
 
 export default function AdminDashboard() {
   const { user, logout, updateTenantLogo } = useAuth();
@@ -185,15 +165,12 @@ export default function AdminDashboard() {
 
         {/* Tabs for Dashboard Views */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
-          <TabsList className="grid w-full grid-cols-3 rounded-xl h-11 bg-white border">
+          <TabsList className="grid w-full grid-cols-2 rounded-xl h-11 bg-white border">
             <TabsTrigger value="overview" className="rounded-lg data-[state=active]:bg-slate-800 data-[state=active]:text-white">
               Panel Principal
             </TabsTrigger>
             <TabsTrigger value="stats" className="rounded-lg data-[state=active]:bg-slate-800 data-[state=active]:text-white">
-              Estadísticas
-            </TabsTrigger>
-            <TabsTrigger value="charts" className="rounded-lg data-[state=active]:bg-slate-800 data-[state=active]:text-white">
-              Gráficas
+              Estadisticas
             </TabsTrigger>
           </TabsList>
 
@@ -265,7 +242,7 @@ export default function AdminDashboard() {
             </div>
 
             {/* Menu Grid */}
-            <h2 className="text-lg font-bold text-slate-800 mb-4">Acciones Rápidas</h2>
+            <h2 className="text-lg font-bold text-slate-800 mb-4">Acciones Rapidas</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {menuItems.map((item) => (
                 <Link key={item.path} to={item.path}>
@@ -313,7 +290,7 @@ export default function AdminDashboard() {
                             </div>
                             <div>
                               <p className="font-bold text-slate-800">{customer.name}</p>
-                              <p className="text-xs text-gray-500">#{customer._id} • {customer.purchase_count} compras</p>
+                              <p className="text-xs text-gray-500">#{customer._id} - {customer.purchase_count} compras</p>
                             </div>
                           </div>
                           <p className="font-bold text-green-600">${customer.total_spent.toFixed(2)}</p>
@@ -337,7 +314,7 @@ export default function AdminDashboard() {
                     <Badge className="bg-green-600 text-white text-xs">Ganancia</Badge>
                   </div>
                   <p className="text-2xl font-extrabold text-green-700">{formatMoney(revenue.gross_profit)}</p>
-                  <p className="text-xs text-green-600 mt-1">Comisiones + Envíos</p>
+                  <p className="text-xs text-green-600 mt-1">Comisiones + Envios</p>
                 </CardContent>
               </Card>
 
@@ -366,10 +343,10 @@ export default function AdminDashboard() {
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between mb-2">
                     <Truck className="h-5 w-5 text-purple-600" />
-                    <Badge variant="outline" className="text-purple-600 border-purple-300 text-xs">{revenue.shipment_count} envíos</Badge>
+                    <Badge variant="outline" className="text-purple-600 border-purple-300 text-xs">{revenue.shipment_count} envios</Badge>
                   </div>
                   <p className="text-2xl font-extrabold text-purple-700">{formatMoney(revenue.total_shipping)}</p>
-                  <p className="text-xs text-purple-600 mt-1">Total Envíos</p>
+                  <p className="text-xs text-purple-600 mt-1">Total Envios</p>
                 </CardContent>
               </Card>
             </div>
@@ -399,7 +376,7 @@ export default function AdminDashboard() {
                       <span className="font-bold text-yellow-600">{formatMoney(revenue.total_commissions)}</span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b">
-                      <span className="text-gray-600">Envíos</span>
+                      <span className="text-gray-600">Envios</span>
                       <span className="font-bold text-purple-600">{formatMoney(revenue.total_shipping)}</span>
                     </div>
                     <div className="flex justify-between items-center py-3 bg-green-50 rounded-lg px-3 -mx-1">
@@ -421,7 +398,7 @@ export default function AdminDashboard() {
                 <CardContent>
                   <div className="space-y-4">
                     <div className="flex justify-between items-center py-2 border-b">
-                      <span className="text-gray-600">Depósitos Recibidos</span>
+                      <span className="text-gray-600">Depositos Recibidos</span>
                       <span className="font-bold text-green-600">{formatMoney(wallets.total_deposits_received)}</span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b">
@@ -437,7 +414,7 @@ export default function AdminDashboard() {
                       <span className="font-bold text-slate-800">{revenue.purchase_count || 0}</span>
                     </div>
                     <div className="flex justify-between items-center py-2 border-b">
-                      <span className="text-gray-600">Total Envíos</span>
+                      <span className="text-gray-600">Total Envios</span>
                       <span className="font-bold text-slate-800">{revenue.shipment_count || 0}</span>
                     </div>
                     <div className="flex justify-between items-center py-2">
@@ -511,7 +488,7 @@ export default function AdminDashboard() {
                                   <Badge className="bg-green-500 text-white text-xs px-1.5 py-0">En vivo</Badge>
                                 )}
                               </div>
-                              <p className="text-xs text-gray-500">{live.store} • {live.compras} compras</p>
+                              <p className="text-xs text-gray-500">{live.store} - {live.compras} compras</p>
                             </div>
                             <div className="text-right ml-2">
                               <p className="font-bold text-slate-800">{formatMoney(live.ventas)}</p>
@@ -527,124 +504,45 @@ export default function AdminDashboard() {
                 </CardContent>
               </Card>
             </div>
-          </TabsContent>
 
-          {/* Charts Tab */}
-          <TabsContent value="charts" className="mt-6">
-            {/* Sales Trend Chart */}
-            <Card className="rounded-xl mb-6">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-green-600" />
-                  Tendencia de Ventas (Últimos 30 días)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {businessStats?.sales_trend?.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={300}>
-                    <AreaChart data={businessStats.sales_trend}>
-                      <defs>
-                        <linearGradient id="colorVentas" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#1E3A5F" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#1E3A5F" stopOpacity={0}/>
-                        </linearGradient>
-                        <linearGradient id="colorComisiones" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#2ECC71" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#2ECC71" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(v) => v.slice(5)} />
-                      <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v}`} />
-                      <Tooltip 
-                        formatter={(value, name) => [formatMoney(value), name === 'ventas' ? 'Ventas' : 'Comisiones']}
-                        labelFormatter={(label) => `Fecha: ${label}`}
-                      />
-                      <Legend />
-                      <Area type="monotone" dataKey="ventas" name="Ventas" stroke="#1E3A5F" fillOpacity={1} fill="url(#colorVentas)" strokeWidth={2} />
-                      <Area type="monotone" dataKey="comisiones" name="Comisiones" stroke="#2ECC71" fillOpacity={1} fill="url(#colorComisiones)" strokeWidth={2} />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-[300px] flex items-center justify-center text-gray-400">
-                    Sin datos de tendencia disponibles
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Bar Charts Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Sales by Store Bar Chart */}
-              <Card className="rounded-xl">
+            {/* Sales Trend - Simple visual bars */}
+            {businessStats?.sales_trend?.length > 0 && (
+              <Card className="rounded-xl mt-6">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg flex items-center gap-2">
-                    <Store className="h-5 w-5 text-blue-600" />
-                    Ventas por Tienda
+                    <TrendingUp className="h-5 w-5 text-green-600" />
+                    Tendencia de Ventas (Ultimos 30 dias)
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {businessStats?.sales_by_store?.length > 0 ? (
-                    <ResponsiveContainer width="100%" height={280}>
-                      <BarChart data={businessStats.sales_by_store.slice(0, 6)} layout="vertical">
-                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                        <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v}`} />
-                        <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} width={80} />
-                        <Tooltip formatter={(value) => formatMoney(value)} />
-                        <Legend />
-                        <Bar dataKey="ventas" name="Ventas" fill="#1E3A5F" radius={[0, 4, 4, 0]} />
-                        <Bar dataKey="comisiones" name="Comisiones" fill="#2ECC71" radius={[0, 4, 4, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-[280px] flex items-center justify-center text-gray-400">
-                      Sin datos de tiendas
+                  <ScrollArea className="h-[200px]">
+                    <div className="space-y-2">
+                      {businessStats.sales_trend.slice(-15).map((day, i) => {
+                        const maxSales = Math.max(...businessStats.sales_trend.map(d => d.ventas));
+                        const barWidth = maxSales > 0 ? (day.ventas / maxSales) * 100 : 0;
+                        return (
+                          <div key={i} className="flex items-center gap-3">
+                            <span className="text-xs text-gray-500 w-16">{day.date.slice(5)}</span>
+                            <div className="flex-1 bg-gray-100 rounded-full h-6 overflow-hidden">
+                              <div 
+                                className="h-full rounded-full flex items-center justify-end pr-2"
+                                style={{ 
+                                  width: `${Math.max(barWidth, 5)}%`,
+                                  background: 'linear-gradient(90deg, #1E3A5F, #2ECC71)'
+                                }}
+                              >
+                                <span className="text-xs text-white font-medium">${day.ventas.toFixed(0)}</span>
+                              </div>
+                            </div>
+                            <span className="text-xs text-yellow-600 w-16 text-right">+${day.comisiones.toFixed(0)}</span>
+                          </div>
+                        );
+                      })}
                     </div>
-                  )}
+                  </ScrollArea>
                 </CardContent>
               </Card>
-
-              {/* Revenue Distribution Pie Chart */}
-              <Card className="rounded-xl">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <PiggyBank className="h-5 w-5 text-green-600" />
-                    Distribución de Ganancias
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {revenue.gross_profit > 0 ? (
-                    <ResponsiveContainer width="100%" height={280}>
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: 'Comisiones', value: revenue.total_commissions || 0 },
-                            { name: 'Envíos', value: revenue.total_shipping || 0 }
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={100}
-                          paddingAngle={5}
-                          dataKey="value"
-                          label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                          labelLine={false}
-                        >
-                          <Cell fill="#F39C12" />
-                          <Cell fill="#9B59B6" />
-                        </Pie>
-                        <Tooltip formatter={(value) => formatMoney(value)} />
-                        <Legend />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="h-[280px] flex items-center justify-center text-gray-400">
-                      Sin datos de ganancias
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+            )}
           </TabsContent>
         </Tabs>
       </div>
