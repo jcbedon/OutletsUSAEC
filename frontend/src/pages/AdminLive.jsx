@@ -632,57 +632,98 @@ export default function AdminLive() {
                         />
                       </div>
                       
-                      {/* Tax and Commission Toggles */}
-                      <div className="flex flex-wrap gap-4 mt-3 items-center">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={purchaseForm.apply_tax}
-                            onChange={(e) => setPurchaseForm({ ...purchaseForm, apply_tax: e.target.checked })}
-                            className="w-4 h-4 rounded text-blue-600"
-                            data-testid="apply-tax-checkbox"
-                          />
-                          <span className="text-sm font-medium text-gray-700">Tax (8.25%)</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={purchaseForm.apply_commission}
-                            onChange={(e) => setPurchaseForm({ ...purchaseForm, apply_commission: e.target.checked })}
-                            className="w-4 h-4 rounded text-yellow-600"
-                            data-testid="apply-commission-checkbox"
-                          />
-                          <span className="text-sm font-medium text-gray-700">Comisión $</span>
-                        </label>
-                        {purchaseForm.apply_commission && (
-                          <Input
-                            type="number"
-                            inputMode="decimal"
-                            step="0.01"
-                            placeholder="3.00"
-                            value={purchaseForm.commission_amount}
-                            onChange={(e) => setPurchaseForm({ ...purchaseForm, commission_amount: e.target.value })}
-                            className="w-20 h-8 text-center rounded-lg text-sm font-bold"
-                            data-testid="commission-amount-input"
-                          />
-                        )}
+                      {/* Tax Options - Radio Buttons */}
+                      <div className="mt-3 p-3 bg-blue-50 rounded-xl">
+                        <p className="text-xs font-semibold text-gray-600 mb-2">Impuesto (Tax)</p>
+                        <div className="flex flex-wrap gap-3">
+                          <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-gray-200 hover:border-blue-400 transition-colors">
+                            <input
+                              type="radio"
+                              name="tax_type"
+                              value="illinois"
+                              checked={purchaseForm.tax_type === "illinois"}
+                              onChange={(e) => setPurchaseForm({ ...purchaseForm, tax_type: e.target.value })}
+                              className="w-4 h-4 text-blue-600"
+                              data-testid="tax-illinois-radio"
+                            />
+                            <span className="text-sm font-medium text-gray-700">8.25%</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-gray-200 hover:border-blue-400 transition-colors">
+                            <input
+                              type="radio"
+                              name="tax_type"
+                              value="custom"
+                              checked={purchaseForm.tax_type === "custom"}
+                              onChange={(e) => setPurchaseForm({ ...purchaseForm, tax_type: e.target.value })}
+                              className="w-4 h-4 text-blue-600"
+                              data-testid="tax-custom-radio"
+                            />
+                            <span className="text-sm font-medium text-gray-700">15%</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-gray-200 hover:border-gray-400 transition-colors">
+                            <input
+                              type="radio"
+                              name="tax_type"
+                              value="none"
+                              checked={purchaseForm.tax_type === "none"}
+                              onChange={(e) => setPurchaseForm({ ...purchaseForm, tax_type: e.target.value })}
+                              className="w-4 h-4 text-gray-600"
+                              data-testid="tax-none-radio"
+                            />
+                            <span className="text-sm font-medium text-gray-700">Sin Tax</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Commission */}
+                      <div className="mt-3 p-3 bg-yellow-50 rounded-xl">
+                        <div className="flex items-center justify-between">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={purchaseForm.apply_commission}
+                              onChange={(e) => setPurchaseForm({ ...purchaseForm, apply_commission: e.target.checked })}
+                              className="w-4 h-4 rounded text-yellow-600"
+                              data-testid="apply-commission-checkbox"
+                            />
+                            <span className="text-sm font-medium text-gray-700">Comisión $</span>
+                          </label>
+                          {purchaseForm.apply_commission && (
+                            <Input
+                              type="number"
+                              inputMode="decimal"
+                              step="0.01"
+                              placeholder="3.00"
+                              value={purchaseForm.commission_amount}
+                              onChange={(e) => setPurchaseForm({ ...purchaseForm, commission_amount: e.target.value })}
+                              className="w-24 h-8 text-center rounded-lg text-sm font-bold"
+                              data-testid="commission-amount-input"
+                            />
+                          )}
+                        </div>
                       </div>
 
                       {purchaseForm.price && (
-                        <div className="mt-2 p-3 bg-gray-50 rounded-xl">
+                        <div className="mt-3 p-3 bg-gray-50 rounded-xl">
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-600">Precio:</span>
                             <span className="font-medium">${parseFloat(purchaseForm.price || 0).toFixed(2)}</span>
                           </div>
-                          {purchaseForm.apply_tax && (
+                          {purchaseForm.tax_type !== "none" && (
                             <div className="flex justify-between text-sm">
-                              <span className="text-gray-600">Tax Illinois (8.25%):</span>
-                              <span className="font-medium">${(parseFloat(purchaseForm.price || 0) * TAX_RATE).toFixed(2)}</span>
+                              <span className="text-gray-600">
+                                Tax ({purchaseForm.tax_type === "illinois" ? "8.25%" : "15%"}):
+                              </span>
+                              <span className="font-medium">
+                                ${(parseFloat(purchaseForm.price || 0) * (purchaseForm.tax_type === "illinois" ? 0.0825 : 0.15)).toFixed(2)}
+                              </span>
                             </div>
                           )}
                           <div className="flex justify-between text-sm font-bold text-blue-600">
-                            <span>Precio {purchaseForm.apply_tax ? '+ Tax' : ''}:</span>
-                            <span>${(parseFloat(purchaseForm.price || 0) * (purchaseForm.apply_tax ? (1 + TAX_RATE) : 1)).toFixed(2)}</span>
+                            <span>Precio {purchaseForm.tax_type !== "none" ? '+ Tax' : ''}:</span>
+                            <span>
+                              ${(parseFloat(purchaseForm.price || 0) * (purchaseForm.tax_type === "illinois" ? 1.0825 : purchaseForm.tax_type === "custom" ? 1.15 : 1)).toFixed(2)}
+                            </span>
                           </div>
                           {purchaseForm.apply_commission && (
                             <div className="flex justify-between text-sm mt-2 pt-2 border-t border-dashed">
@@ -693,7 +734,7 @@ export default function AdminLive() {
                           <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t -mx-3 px-3 py-2 rounded-b-xl" style={{ background: 'rgba(30,58,95,0.05)' }}>
                             <span>Se descuenta del saldo:</span>
                             <span className="text-red-600">
-                              ${(parseFloat(purchaseForm.price || 0) * (purchaseForm.apply_tax ? (1 + TAX_RATE) : 1) + (purchaseForm.apply_commission ? parseFloat(purchaseForm.commission_amount || 0) : 0)).toFixed(2)}
+                              ${(parseFloat(purchaseForm.price || 0) * (purchaseForm.tax_type === "illinois" ? 1.0825 : purchaseForm.tax_type === "custom" ? 1.15 : 1) + (purchaseForm.apply_commission ? parseFloat(purchaseForm.commission_amount || 0) : 0)).toFixed(2)}
                             </span>
                           </div>
                         </div>
