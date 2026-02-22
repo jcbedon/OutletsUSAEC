@@ -231,7 +231,7 @@ export default function AdminLive() {
         customer_id: "",
         item_name: "",
         price: "",
-        apply_tax: true,
+        tax_type: "illinois",
         apply_commission: true,
         commission_amount: lastCommission
       });
