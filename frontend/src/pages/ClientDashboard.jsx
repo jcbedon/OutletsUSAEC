@@ -55,6 +55,9 @@ export default function ClientDashboard() {
   const [copied, setCopied] = useState(false);
   const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
   const [selectedAttachments, setSelectedAttachments] = useState([]);
+  const [shipmentDetailOpen, setShipmentDetailOpen] = useState(false);
+  const [selectedShipment, setSelectedShipment] = useState(null);
+  const [shipmentProducts, setShipmentProducts] = useState([]);
 
   useEffect(() => {
     if (user) {
