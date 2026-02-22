@@ -1206,10 +1206,18 @@ async def get_all_shipments(status: Optional[str] = None, current_user: dict = D
     if status:
         query["status"] = status
     shipments = await db.shipments.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    
+    if not shipments:
+        return []
+    
+    # Batch fetch all users in one query instead of N queries
+    user_ids = list(set(s["user_id"] for s in shipments))
+    users_list = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(user_ids))
+    users_dict = {u["id"]: u["name"] for u in users_list}
+    
     result = []
     for s in shipments:
-        user = await db.users.find_one({"id": s["user_id"]}, {"_id": 0, "name": 1})
-        result.append({**s, "user_name": user["name"] if user else "Unknown"})
+        result.append({**s, "user_name": users_dict.get(s["user_id"], "Unknown")})
     return result
 
 class ShipmentUpdate(BaseModel):
