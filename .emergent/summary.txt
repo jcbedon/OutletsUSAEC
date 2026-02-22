@@ -3,91 +3,102 @@ The user is building a SaaS platform for personal shoppers and has requested a s
 
 **PRODUCT REQUIREMENTS:**
 1.  **Multi-Tenancy:** Convert the existing single-tenant application into a multi-tenant architecture. (Completed)
-2.  **Shipment Module Enhancements:**
-    *   Add a status tracker for shipments. (Completed)
-    *   Display tracking number and additional info to clients. (Completed)
-    *   Sum shipping cost into the total on the creation form. (Completed)
-    *   Add a label  below the total. (Completed)
-    *   Improve the client selector with alphabetical sorting and a search filter. (Completed)
-    *   **(IN PROGRESS)** Allow admins to attach media files (proof of shipment) when creating/editing a shipment.
-    *   **(IN PROGRESS)** Allow clients to view these attachments via a small, clickable icon in their shipment history.
+2.  **Shipment Module:**
+    *   Add a status tracker. (Completed)
+    *   Display tracking number. (Completed)
+    *   Sum shipping cost into the total. (Completed)
+    *   Improve client selector. (Completed)
+    *   Allow admins to attach media files. (Completed)
+    *   Allow clients to view attachments. (Completed)
+    *   **(IN PROGRESS)** Add a  field to shipments, visible to admins and clients, and included in reports.
+    *   **(NEW)** Allow admins to edit and delete shipments. (Completed)
 3.  **Wallet & Recharge Module:**
     *   Fix bugs preventing admins from approving recharges. (Completed)
-    *   Allow clients to upload a screenshot as proof of deposit. (Completed)
-    *   Display the client's balance in red and as a negative value if they owe money. (Completed)
-    *   **(PENDING)** Add a button for admins to **reject** a pending recharge.
-    *   **(PENDING)** Create a global history view of all recharges from all clients for the admin.
-    *   **(PENDING)** Allow admins to manually subtract money from a client's wallet, creating a transaction with the description Ajuste de balance por administrador.
+    *   Allow clients to upload proof of deposit. (Completed)
+    *   Display negative balance in red. (Completed)
+    *   **(NEW)** Add a button for admins to reject a pending recharge. (Completed)
+    *   **(NEW)** Create a global history view of all recharges. (Completed)
+    *   **(NEW)** Allow admins to manually subtract money from a client's wallet with a custom reason. (Completed)
 4.  **Live Shopping & Purchase Logic:**
-    *   Allow purchases even with an insufficient balance, letting the balance go negative. (Completed)
-    *   Deduct the full purchase cost (price + tax + commission) from the client's balance. (Completed)
-    *   Allow editing and deleting purchases from the admin interface. (Completed)
-    *   Allow admins to add purchases to a Live event even after it has ended. (Completed)
-    *   The Store should be defined when creating a Live, not for each individual purchase. (Completed)
+    *   Allow purchases with an insufficient balance. (Completed)
+    *   Deduct full purchase cost from balance. (Completed)
+    *   Allow editing and deleting purchases. (Completed)
+    *   Allow adding purchases to ended Lives. (Completed)
+    *   Define Store at the Live level. (Completed)
+    *   **(NEW)** Add checkboxes to optionally apply/remove tax and commission when creating a purchase. (Completed)
+    *   **(IN PROGRESS)** Add a second tax option (15%) and ensure only one can be selected at a time.
 5.  **Reporting & Admin Views:**
     *   Create a reporting module with export to PDF and Excel. (Completed)
-    *   Ensure all total calculations in reports dynamically update when a client's commission changes. (Completed)
-    *   Ensure all report totals include shipping costs and show a breakdown (e.g., 50 + 0 envío). (Completed)
-    *   Display the client's name, not just their ID, in the Top Clients list on the admin dashboard and in report tables. (Completed)
-    *   The admin's Clients view should show the total pending balance for each client, consistent with what the client sees. (Completed)
-6.  **UI/UX:**
-    *   Perform a complete visual overhaul with a specified color palette and background. (Completed)
-7.  **Client Management:**
-    *   Allow admins to edit client information and reset their passwords. (Completed)
-    *   Remove the ability to edit a client's commission fee from the Clients module; it should only be set per-purchase in the Live module. (Completed)
+    *   Ensure all totals dynamically update. (Completed)
+    *   Fix a bug where reports ignored the  setting on creation and recalculated it. (Completed)
+6.  **Client Management:**
+    *   Allow admins to edit client info and reset passwords. (Completed)
+    *   **(NEW)** Re-enable editing a client's  in their profile. (Completed)
+    *   **(SUPERSEDED)** The  on a client is no longer used for new purchases. Commission is now set per-purchase.
+7.  **UI/UX:**
+    *   Complete visual overhaul. (Completed)
+    *   **(NEW)** Change the favicon in the browser tab.
 8.  **Integrations:**
     *   **(FUTURE)** Integrate with WhatsApp Cloud API.
 
 **User's preferred language**: Spanish. The next agent MUST respond in Spanish.
 
 **what currently exists?**
-The project is a multi-tenant SaaS application (React frontend, FastAPI backend, PostgreSQL DB) for personal shoppers. Key features include tenant/client management, a live shopping module where admins can add purchases to active or completed events, a shipment module, and a reporting dashboard. The UI has been completely redesigned. Admins can edit client data and reset passwords. The logic for calculating client balances, commissions, and totals (including shipping costs) has been refined and is now consistent across the admin reports and the client's dashboard view. The balance correctly displays as negative and in red when a client owes money.
+The application is a multi-tenant SaaS platform with a React frontend and FastAPI/MongoDB backend. Most of the core features requested by the user have been implemented. Admins can manage clients, live shopping events, shipments (including CRUD and file attachments), and a wallet system. Clients can view their dashboard, balance, purchases, and shipment history (including attachments). The logic for calculating totals has been updated multiple times to reflect new requirements, such as optional taxes/commissions and per-purchase commission rates. A bug that caused reports to incorrectly recalculate commissions has been fixed.
 
 **Last working item**:
--   **Last item agent was working:** The user requested three new features for the admin's wallet management module: the ability to reject pending recharges, a global history of all recharges, and a function to manually subtract money from a client's wallet. The agent had acknowledged the request and was about to begin implementation by examining the  file.
--   **Status:** NOT STARTED
+-   **Last item agent was working:** The agent was implementing a feature to allow two different tax rates (8.25% and 15%) to be selected via radio buttons when creating a purchase in . The backend endpoint was updated, and the agent was in the process of modifying the frontend component's state and JSX to add the radio buttons.
+-   **Status:** IN PROGRESS
 -   **Agent Testing Done:** N
 -   **Which testing method agent to use?** both
 -   **User Testing Done:** N
 
 **All Pending/In progress Issue list**:
-There are no pending bugs. All work items are feature requests.
+-   **Issue 1: Potential Babel Plugin Conflict (P2)**
+    -   **Description:** When initially implementing the view attachments feature in , the agent encountered a Maximum call stack size exceeded error originating from a babel plugin ().
+    -   **Attempted fixes:** The agent worked around the issue by simplifying the component structure and moving the modal logic. This resolved the immediate problem, but the root cause in the plugin interaction was not identified.
+    -   **Next debug checklist:** If complex UI changes in  cause the error again, consider creating a separate, imported component for the new functionality to isolate it from the main component tree that the plugin seems to struggle with.
+    -   **Why fix this issue and what will be achieved with the fix?** Fixing this would prevent future development on this page from being blocked by the same mysterious error.
+    -   **Status:** RESOLVED (Workaround)
+    -   **Is recurring issue?** Y
+    -   **Should Test frontend/backend/both after fix?** frontend
+    -   **Blocked on other issue:** No
 
 **In progress Task List**:
--   **Task 1: Implement Shipment Media Attachments (P1)**
-    -   **Description:** This feature was started but interrupted. The goal is to allow admins to upload files when creating a shipment and for clients to view them.
-    -   **Where to resume:** The backend  model and a file upload endpoint () have been created in . The frontend  has been modified to include a file input and logic to upload files after shipment creation. The  was also modified to include placeholders for showing an icon. The work needs to be completed and tested end-to-end.
+-   **Task 1: Implement Alternative 15% Tax Option (P0)**
+    -   **Description:** Add a radio button selection in the Create Purchase form to choose between the default 8.25% tax and a new 15% tax. Only one can be active at a time.
+    -   **Where to resume:** The file . The agent has already added the  state. The next step is to replace the  checkbox with a radio button group in the JSX and update the  function to send the correct  to the backend.
+    -   **What will be achieved with this?** The user will have the flexibility to apply different tax rates to purchases.
     -   **Status:** IN PROGRESS
     -   **Should Test frontend/backend/both after fix?** both
-    -   **Blocked on something:** No, but it was superseded by the user's latest request.
+    -   **Blocked on something:** No
 
 **Upcoming and Future Tasks**
 -   **Upcoming Tasks:**
-    -   **Task 1: Implement Wallet Management Enhancements (P0)**
-        -   **Description:** Implement the three features from the Last working item section.
-        -   **Details:**
-            1.  **Reject Recharges:** Add a Rechazar button next to Aprobar for pending deposits in . This will require a new backend endpoint to update the deposit status to rejected.
-            2.  **Global Recharge History:** Create a new tab or section in  to display a list of all historical deposits (approved, pending, rejected) from all clients, showing client name, amount, status, and date.
-            3.  **Admin Balance Adjustment:** Add a new feature (e.g., a dialog) for admins to subtract an amount from a client's wallet. This requires a backend endpoint that creates a new wallet transaction with the type  and the description Ajuste de balance por administrador.
-        -   **Files to modify:** , , .
-
+    -   **Task 1: Complete Weight in Pounds Feature (P1)**
+        -   **Description:** The user requested a  field for shipments. While it was added to the backend and the admin/client shipment views, it still needs to be correctly displayed in the  module.
+        -   **Files to modify:**  (ensure the  endpoints return the weight),  (update the UI to display the total weight).
+    -   **Task 2: Change Favicon (P2)**
+        -   **Description:** The user wants to change the icon that appears in the browser tab.
+        -   **Files to modify:** Requires a new icon file and an update to . The agent should ask the user to provide the image file.
 -   **Future Tasks:**
     -   **Task 1: Integrate WhatsApp Cloud API (P2)**
-        -   **Description:** Integrate the WhatsApp Cloud API to send notifications. The user mentioned this but it was deferred.
-        -   **Next step:** Gather specific requirements for what events should trigger WhatsApp notifications (e.g., shipment status change, recharge approval) and then use the  agent.
+        -   **Description:** Integrate the WhatsApp Cloud API for notifications.
+        -   **Next step:** Gather specific requirements from the user (e.g., which events trigger notifications) and then use the  agent.
+    -   **Task 2: Backend Refactoring (P2)**
+        -   **Description:** The  file is a monolith containing all API logic and models. It should be refactored for better maintainability.
+        -   **Next step:** Break down  into multiple router files (e.g., , ) and move Pydantic models to a separate  file.
 
 **Completed work in this session**
--   **Shipment Cost Calculation:** The shipping cost is now added to the total in the shipment creation form, with an explanatory label.
--   **Dynamic Commission Logic:** Commission can no longer be edited in the client profile. It's set per-purchase in the Live module, and all totals throughout the app (reports, client views) now dynamically recalculate based on the commission rates of the underlying purchases.
--   **Live Shopping Enhancements:** Admins can now add purchases to completed Live events. The store is now defined when the Live is created, simplifying the purchase registration form.
--   **Client Balance Display:** The client dashboard now correctly calculates and displays the pending balance, showing it in red and as a negative number when the client owes money (Total Shipments - Current Wallet Balance).
--   **Data Consistency:** The balance calculation is now consistent between the client dashboard and the admin-facing reports, accounting for recharges and pending shipment costs.
--   **Admin UI/UX Improvements:**
-    -   The client selector in the shipments module now has a search bar, is alphabetically sorted, and has improved text visibility.
-    -   The Top Clients list on the admin dashboard now shows the client's name.
-    -   Report tables now show the client's name next to their ID.
-    -   The admin's client list now shows the correct pending balance for each client.
--   **Client Edit Functionality:** Implemented and then fixed a bug in the feature allowing admins to edit client details and reset passwords.
+-   **Wallet Management:** Implemented features for admins to reject deposits, view a global history of all deposits, and perform manual balance adjustments with a custom reason.
+-   **Shipment Management:** Added functionality for admins to edit and delete existing shipments.
+-   **Client-Side Attachments:** Implemented a feature for clients to view shipment attachments via a small icon that opens a modal.
+-   **Purchase Logic Overhaul:**
+    -   Commission is now defined per-purchase in the Live module, not per-client.
+    -   Added checkboxes to enable/disable tax and commission on a per-purchase basis.
+-   **Bug Fix (Reporting):** Fixed a critical bug where reports would ignore  or  set during purchase creation and would instead recalculate totals using the client's default commission.
+-   **Client Commission Edit:** Re-enabled the ability for an admin to edit a client's , although this value is no longer used for new purchases.
+-   **Weight in Pounds (Partial):** Added a  field to the  model and integrated it into the admin creation/edit forms and the client/admin view cards.
 
 **Earlier issues found/mentioned but not fixed**
 None.
@@ -100,90 +111,82 @@ None.
 
 **Key Technical Concepts**
 -   **Backend:** Python, FastAPI, Motor (async MongoDB driver), Pydantic.
--   **Frontend:** React.js, Axios, Tailwind CSS, ,  for toasts,  for icons.
--   **Architecture:** Multi-tenant SaaS with tenant context managed via frontend  and  in the database.
--   **Database:** MongoDB (Note: The previous summary incorrectly stated PostgreSQL/SQLAlchemy. The agent's interactions with  clearly show MongoDB and Motor client syntax like ).
+-   **Frontend:** React.js, Axios, Tailwind CSS, , Shadcn UI components (, , etc.).
+-   **Architecture:** Multi-tenant SaaS with tenant context managed via .
+-   **Database:** MongoDB.
 
 **key DB schema**
--   **tenants**: {id, name, slug}
--   **users**: {id, email, password_hash, role, tenant_id, name, customer_id, commission_fee}
--   **purchases**: {id, product_name, store, price, tax, commission, total_price, client_id, tenant_id, live_id}
--   **shipments**: {id, user_id, status, tracking_number, cost, additional_info, tenant_id, **attachments: List[str]**}
--   **wallet_deposits**: {id, user_id, amount, status, screenshot_url, tenant_id}
--   **wallet_transactions**: {id, user_id, amount, type, description, **purchase_id: Optional[str]**}
--   **lives**: {id, title, status, tenant_id, **store: Optional[str]**}
+-   **shipments**: {..., cost, status, attachments: List[str], **weight_pounds: Optional[float]**}
+-   **purchases**: {..., price, **tax: float**, **commission: float**, total_price, **apply_tax: bool**, **apply_commission: bool**, **tax_rate: Optional[float]**}
+-   **wallet_deposits**: {..., status: str}
+-   **wallet_transactions**: {..., type: str, description: str}
 
 **changes in tech stack**
-- The database is MongoDB, not PostgreSQL as stated in the initial handoff. All backend logic uses the Motor async driver for MongoDB.
+None.
 
 **All files of reference**
--   : The monolithic backend file. Contains all API logic, database interactions, and Pydantic models. Renamed from .
--   : Modified to show pending balances and to remove commission editing.
--   : Heavily modified to show shipment statuses and a detailed, accurate pending balance.
--   : Modified to allow using completed lives and to define the store at the Live-creation level.
--   : Modified to improve the client selector and to begin implementing file attachments.
--   : Modified to include shipping costs and show pending balances.
--   : Modified to display client names in the Top Clients list.
--   : Updated with new API client functions.
+-   : Heavily modified to add new endpoints (shipment CRUD, wallet management, optional tax/commission), update existing endpoints, and fix the reporting logic bug.
+-   : Updated with new API functions for the new features.
+-   : Overhauled to include pending/history tabs, a reject button, and a balance adjustment modal.
+-   : Updated to add edit/delete buttons, their corresponding modals, and the  field.
+-   : Updated to add checkboxes for tax/commission and a manual commission input field. Currently being modified for tax radio buttons.
+-   : Updated to re-enable editing the  field in the edit modal.
+-   : Modified to display shipment weight and an icon to view shipment attachments in a modal.
+-   : Work started to add  but needs to be completed.
 
 **Areas that need refactoring**
--   The  file is a large monolith. It should be broken down into separate FastAPI routers by domain (e.g., , , ) to improve maintainability.
--   Pydantic models are defined directly within . They should be moved to a dedicated  or  file for better organization.
+-   The  monolith is becoming increasingly complex and is the top priority for refactoring. It should be broken down into domain-specific routers.
 
 **key api endpoints**
--   : Updates a client's information and/or password.
--   : Retrieves all clients with calculated pending balances.
--   : Uploads attachment files for a shipment.
--   : Creates a new Live event, now accepting a .
--   : Provides data for the admin dashboard, including top customers with names.
--   : Endpoints were updated to return consistent pending balance calculations.
+-   : Rejects a pending deposit.
+-   : Retrieves history of all deposits across all clients.
+-   : Manually subtracts from a client's wallet.
+-   : Edits an existing shipment.
+-   : Deletes a shipment.
+-    (modified): Now accepts , ,  amount, and .
+-    (modified): Logic fixed to use stored  and  instead of recalculating.
 
 **Critical Info for New Agent**
--   **Database is MongoDB**: The initial summary was incorrect. The backend uses Motor for async MongoDB access. Do not use SQLAlchemy syntax.
--   **Balance Calculation is Key:** The pending balance is the most critical calculation. It is . A negative result means the client owes money. This logic must be preserved as it is now consistent across all views.
--   **Task Interruption:** The implementation of Shipment Attachments was paused mid-way. The user's new request for wallet enhancements is the top priority (P0). The attachment feature should be completed after the wallet tasks.
+-   **Commission Logic Change:** The most significant recent change is that commission is no longer tied to a client's profile for new purchases. It is now defined manually (with a default value) for **each purchase** created in a Live. The reporting logic has been fixed to respect this.
+-   **Favicon Request:** The user has asked to change the browser tab icon. You will need to ask them to provide the image file.
+-   **Babel Plugin Issue:** Be cautious when making complex UI changes to , as it previously triggered a Maximum call stack error. Isolating new features into sub-components is a safe approach.
 
 **documents and test reports created in this job**
-None created in this session.
+-    (Wallet features test report)
+-    (Updated with completed tasks)
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  ****: **(PENDING)** User requests new wallet features: reject recharges, global recharge history, and admin balance adjustments.
-2.  ****: User starts a new request about client balance display. (Completed)
-3.  ****: User requests the ability to add media attachments to shipments. (In Progress)
-4.  ****: User specifies that the mejores clientes list is on the main admin screen. (Completed)
-5.  ****: User asks to add the client's name to the best clients list. (Completed)
-6.  ****: User reports an inconsistency in total balance between the client view and admin reports. (Completed)
-7.  ****: User reports a bug in the balance calculation, saying it's repeating values. (Completed)
-8.  ****: User requests to define the store when creating a Live, not per-purchase. (Completed)
-9.  ****: User asks to ensure all reports include shipping costs and show a breakdown. (Completed)
-10. ****: User requests to remove commission editing from the client module. (Completed)
+1.  ****: **(IN PROGRESS)** User requests an alternative 15% tax option, selectable via radio button.
+2.  ****: User clarifies that commission should be set per-product during Live creation, not per-client. (Completed)
+3.  ****: User requests a pounds (weight) field for shipments, to be visible everywhere including reports. (Partially Completed)
+4.  ****: User reports a bug where purchases with  were showing incorrect totals in reports. (Completed)
+5.  ****: User asks to run the deployment health check. (Completed)
+6.  ****: User clarifies the view attachments feature should be a small icon opening a pop-up. (Completed)
+7.  ****: User requests 4 features: Shipment CRUD, view attachments for clients, optional tax/commission for purchases, and re-enabling commission editing for clients. (Completed)
+8.  ****: User asks if they can change the page icon (favicon). (Pending)
+9.  ****: User asks to run the deployment health check. (Completed)
+10. ****: User reports not seeing the new wallet features, suspecting a cache issue. (Resolved)
 
 **Project Health Check:**
 -   **Broken:** None.
 -   **Mocked:** None.
 
 **3rd Party Integrations**
--   **jspdf**: Used for client-side PDF generation.
--   **jspdf-autotable**: A plugin for .
--   **xlsx**: Used for client-side Excel (.xlsx) file generation.
+-   
+-   
+-   
 
 **Testing status**
--   **Testing agent used after significant changes:** NO
+-   **Testing agent used after significant changes:** YES (For the Wallet Management features).
 -   **Troubleshoot agent used after agent stuck in loop:** NO
 -   **Test files created:** None.
 -   **Known regressions:** None.
 
 **Credentials to test flow:**
--   **Superadmin:**
-    -   Email: 
-    -   Password: 
--   **Admin (Tenant: Outlets USA EC):**
-    -   Email: 
-    -   Password: 
--   **Cliente (Juan Perez):**
-    -   ID: 
-    -   Password: 
+-   **Superadmin:**  / 
+-   **Admin (Tenant: Outlets USA EC):**  / 
+-   **Cliente (Juan Perez):** ID  / 
 
 **What agent forgot to execute**
--   The agent was interrupted while working on the Shipment Media Attachments feature. This task is incomplete and marked as IN PROGRESS.
--   The agent has not yet started the user's latest request regarding wallet management enhancements (reject button, history, balance adjustment), which is the new P0 task.</analysis>
+-   The agent has not implemented the user's request to change the favicon.
+-   The implementation of the  feature is incomplete; it has not been fully added to the Admin Reports view.</analysis>
