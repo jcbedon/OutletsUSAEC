@@ -1260,6 +1260,146 @@ async def get_reports_summary(current_user: dict = Depends(get_current_user)):
         "pending_shipments": pending_shipments, "top_customers": top_customers
     }
 
+@api_router.get("/admin/reports/business-stats")
+async def get_business_stats(current_user: dict = Depends(get_current_user)):
+    """Get detailed business statistics including sales by store, time-based trends, and profit analysis"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    # Total revenue, taxes, commissions, and profit
+    revenue_stats = await db.purchases.aggregate([
+        {"$match": {"tenant_id": tid}},
+        {"$group": {
+            "_id": None,
+            "total_price": {"$sum": "$price"},
+            "total_tax": {"$sum": "$tax"},
+            "total_commission": {"$sum": "$commission"},
+            "total_revenue": {"$sum": "$total"},
+            "purchase_count": {"$sum": 1}
+        }}
+    ]).to_list(1)
+    
+    # Shipping revenue
+    shipping_stats = await db.shipments.aggregate([
+        {"$match": {"tenant_id": tid}},
+        {"$group": {
+            "_id": None,
+            "total_shipping": {"$sum": "$shipping_cost"},
+            "total_weight": {"$sum": "$weight_pounds"},
+            "shipment_count": {"$sum": 1}
+        }}
+    ]).to_list(1)
+    
+    # Sales by store
+    sales_by_store = await db.purchases.aggregate([
+        {"$match": {"tenant_id": tid}},
+        {"$group": {
+            "_id": "$store",
+            "total_sales": {"$sum": "$price"},
+            "total_commission": {"$sum": "$commission"},
+            "count": {"$sum": 1}
+        }},
+        {"$sort": {"total_sales": -1}},
+        {"$limit": 10}
+    ]).to_list(10)
+    
+    # Sales by live
+    sales_by_live = await db.lives.aggregate([
+        {"$match": {"tenant_id": tid}},
+        {"$project": {
+            "title": 1,
+            "store": 1,
+            "total_sales": 1,
+            "total_commissions": 1,
+            "purchase_count": 1,
+            "status": 1,
+            "created_at": 1
+        }},
+        {"$sort": {"created_at": -1}},
+        {"$limit": 15}
+    ]).to_list(15)
+    
+    # Sales trend by date (last 30 days)
+    from datetime import timedelta
+    thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    
+    sales_by_date = await db.purchases.aggregate([
+        {"$match": {"tenant_id": tid, "created_at": {"$gte": thirty_days_ago}}},
+        {"$project": {
+            "date": {"$substr": ["$created_at", 0, 10]},
+            "price": 1,
+            "commission": 1,
+            "total": 1
+        }},
+        {"$group": {
+            "_id": "$date",
+            "sales": {"$sum": "$price"},
+            "commissions": {"$sum": "$commission"},
+            "count": {"$sum": 1}
+        }},
+        {"$sort": {"_id": 1}}
+    ]).to_list(30)
+    
+    # Wallet deposits (approved) - total recharges received
+    deposits_stats = await db.wallet_transactions.aggregate([
+        {"$match": {"tenant_id": tid, "type": "deposit", "status": "approved"}},
+        {"$group": {
+            "_id": None,
+            "total_deposits": {"$sum": "$amount"},
+            "deposit_count": {"$sum": 1}
+        }}
+    ]).to_list(1)
+    
+    # Current wallet balances (money in the system)
+    wallet_stats = await db.wallets.aggregate([
+        {"$match": {"tenant_id": tid}},
+        {"$group": {
+            "_id": None,
+            "total_balance": {"$sum": "$available"},
+            "wallet_count": {"$sum": 1}
+        }}
+    ]).to_list(1)
+    
+    revenue = revenue_stats[0] if revenue_stats else {"total_price": 0, "total_tax": 0, "total_commission": 0, "total_revenue": 0, "purchase_count": 0}
+    shipping = shipping_stats[0] if shipping_stats else {"total_shipping": 0, "total_weight": 0, "shipment_count": 0}
+    deposits = deposits_stats[0] if deposits_stats else {"total_deposits": 0, "deposit_count": 0}
+    wallets = wallet_stats[0] if wallet_stats else {"total_balance": 0, "wallet_count": 0}
+    
+    # Calculate profit (commissions + shipping = gross profit for the business)
+    gross_profit = revenue["total_commission"] + shipping["total_shipping"]
+    
+    return {
+        "revenue": {
+            "total_product_sales": round(revenue["total_price"], 2),
+            "total_tax_collected": round(revenue["total_tax"], 2),
+            "total_commissions": round(revenue["total_commission"], 2),
+            "total_charged_to_clients": round(revenue["total_revenue"], 2),
+            "total_shipping": round(shipping["total_shipping"], 2),
+            "gross_profit": round(gross_profit, 2),
+            "purchase_count": revenue["purchase_count"],
+            "shipment_count": shipping["shipment_count"],
+            "total_weight_shipped": round(shipping["total_weight"], 2)
+        },
+        "wallets": {
+            "total_deposits_received": round(deposits["total_deposits"], 2),
+            "total_client_balance": round(wallets["total_balance"], 2),
+            "client_count": wallets["wallet_count"]
+        },
+        "sales_by_store": [
+            {"name": s["_id"] or "Sin tienda", "ventas": round(s["total_sales"], 2), "comisiones": round(s["total_commission"], 2), "cantidad": s["count"]}
+            for s in sales_by_store
+        ],
+        "sales_by_live": [
+            {"name": l.get("title", "N/A"), "store": l.get("store", "N/A"), "ventas": round(l.get("total_sales", 0), 2), "comisiones": round(l.get("total_commissions", 0), 2), "compras": l.get("purchase_count", 0), "status": l.get("status", "inactive")}
+            for l in sales_by_live
+        ],
+        "sales_trend": [
+            {"date": d["_id"], "ventas": round(d["sales"], 2), "comisiones": round(d["commissions"], 2), "cantidad": d["count"]}
+            for d in sales_by_date
+        ]
+    }
+
 @api_router.get("/admin/reports/clients-purchases")
 async def get_all_clients_purchases_report(current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "admin":
