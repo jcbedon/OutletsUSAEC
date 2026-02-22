@@ -1480,19 +1480,49 @@ async def get_all_clients_purchases_report(current_user: dict = Depends(get_curr
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     clients = await db.users.find({"role": "client", "tenant_id": tid}, {"_id": 0, "password_hash": 0}).to_list(1000)
+    
+    if not clients:
+        return []
+    
+    # Batch fetch all related data
+    user_ids = [c["id"] for c in clients]
+    
+    # Fetch all wallets at once
+    wallets_list = await db.wallets.find({"user_id": {"$in": user_ids}, "tenant_id": tid}, {"_id": 0}).to_list(len(user_ids))
+    wallets_dict = {w["user_id"]: w for w in wallets_list}
+    
+    # Fetch all purchases at once (with limited fields for aggregation, full data separately)
+    all_purchases = await db.purchases.find({"user_id": {"$in": user_ids}, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(10000)
+    purchases_by_user = {}
+    for p in all_purchases:
+        uid = p["user_id"]
+        if uid not in purchases_by_user:
+            purchases_by_user[uid] = []
+        purchases_by_user[uid].append(p)
+    
+    # Fetch all shipments at once
+    all_shipments = await db.shipments.find({"user_id": {"$in": user_ids}, "tenant_id": tid}, {"_id": 0}).to_list(5000)
+    shipments_by_user = {}
+    for s in all_shipments:
+        uid = s["user_id"]
+        if uid not in shipments_by_user:
+            shipments_by_user[uid] = []
+        shipments_by_user[uid].append(s)
+    
     result = []
     for client in clients:
-        purchases = await db.purchases.find({"user_id": client["id"], "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(500)
-        wallet = await db.wallets.find_one({"user_id": client["id"], "tenant_id": tid}, {"_id": 0})
+        uid = client["id"]
+        wallet = wallets_dict.get(uid)
         wallet_balance = wallet["available"] if wallet else 0
-        shipments = await db.shipments.find({"user_id": client["id"], "tenant_id": tid}, {"_id": 0}).to_list(1000)
-        # Use the actual values stored at purchase time
+        purchases = purchases_by_user.get(uid, [])
+        shipments = shipments_by_user.get(uid, [])
+        
         total_purchases = sum(p.get("total", 0) for p in purchases)
         total_commission = sum(p.get("commission", 0) for p in purchases)
         total_shipping = sum(s.get("shipping_cost", 0) for s in shipments)
         total_weight = sum(s.get("weight_pounds", 0) for s in shipments)
-        # Saldo pendiente = wallet_balance - total_shipping
         pending_balance = wallet_balance - total_shipping
+        
         result.append({
             "client": {
                 "id": client["id"], "customer_id": client["customer_id"],
@@ -1500,7 +1530,7 @@ async def get_all_clients_purchases_report(current_user: dict = Depends(get_curr
                 "country": client["country"], "commission_fee": client.get("commission_fee", DEFAULT_COMMISSION_FEE)
             },
             "wallet_balance": round(wallet_balance, 2),
-            "purchases": purchases,
+            "purchases": purchases[:500],  # Limit per client for response size
             "shipments": shipments,
             "purchase_count": len(purchases),
             "total_spent": round(total_purchases, 2),
