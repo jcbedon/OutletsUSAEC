@@ -6,24 +6,12 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, DollarSign, TrendingUp, Wallet, Truck, Store, Radio } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArrowLeft, DollarSign, TrendingUp, Wallet, Truck, Store, Radio, BarChart3, PieChart as PieChartIcon } from "lucide-react";
+import { SalesTrendChart, StoreBarChart, ProfitPieChart, LiveBarChart } from "@/components/StatsCharts";
 
 function formatMoney(n) {
   return "$" + (n || 0).toFixed(2);
-}
-
-function StatCard({ title, value, subtitle, colorClass, icon: Icon }) {
-  return (
-    <Card className={`rounded-xl ${colorClass}`}>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-2">
-          {Icon && <Icon className="h-5 w-5" />}
-        </div>
-        <p className="text-2xl font-extrabold">{value}</p>
-        <p className="text-xs mt-1">{subtitle}</p>
-      </CardContent>
-    </Card>
-  );
 }
 
 function ListItem({ rank, name, count, sales, commission, color }) {
@@ -52,6 +40,7 @@ export default function AdminStats() {
   const logoUrl = user?.tenant_logo || "";
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("resumen");
 
   useEffect(() => {
     async function load() {
@@ -79,6 +68,7 @@ export default function AdminStats() {
   const wal = stats?.wallets || {};
   const stores = stats?.sales_by_store || [];
   const lives = stats?.sales_by_live || [];
+  const trend = stats?.sales_trend || [];
   const colors = ["#1E3A5F", "#2ECC71", "#E74C3C", "#F39C12", "#9B59B6", "#3498DB"];
 
   return (
@@ -94,6 +84,7 @@ export default function AdminStats() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+        {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="rounded-xl bg-gradient-to-br from-green-50 to-green-100 border-green-200">
             <CardContent className="p-4">
@@ -125,72 +116,150 @@ export default function AdminStats() {
           </Card>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card className="rounded-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <DollarSign className="h-5 w-5 text-green-600" />
-                Desglose de Ingresos
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Ventas Productos</span><span className="font-bold">{formatMoney(rev.total_product_sales)}</span></div>
-              <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Tax Cobrado</span><span className="font-bold">{formatMoney(rev.total_tax_collected)}</span></div>
-              <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Comisiones</span><span className="font-bold text-yellow-600">{formatMoney(rev.total_commissions)}</span></div>
-              <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Envios</span><span className="font-bold text-purple-600">{formatMoney(rev.total_shipping)}</span></div>
-              <div className="flex justify-between py-3 bg-green-50 rounded-lg px-3">
-                <span className="font-bold text-green-800">GANANCIA TOTAL</span>
-                <span className="font-extrabold text-2xl text-green-600">{formatMoney(rev.gross_profit)}</span>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-3 rounded-xl h-11 bg-white border">
+            <TabsTrigger value="resumen" className="rounded-lg data-[state=active]:bg-slate-800 data-[state=active]:text-white">
+              <DollarSign className="h-4 w-4 mr-1" /> Resumen
+            </TabsTrigger>
+            <TabsTrigger value="graficas" className="rounded-lg data-[state=active]:bg-slate-800 data-[state=active]:text-white">
+              <BarChart3 className="h-4 w-4 mr-1" /> Graficas
+            </TabsTrigger>
+            <TabsTrigger value="detalle" className="rounded-lg data-[state=active]:bg-slate-800 data-[state=active]:text-white">
+              <Store className="h-4 w-4 mr-1" /> Detalle
+            </TabsTrigger>
+          </TabsList>
 
-          <Card className="rounded-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Wallet className="h-5 w-5 text-blue-600" />
-                Estado de Wallets
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Depositos Recibidos</span><span className="font-bold text-green-600">{formatMoney(wal.total_deposits_received)}</span></div>
-              <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Saldo Clientes</span><span className="font-bold text-blue-600">{formatMoney(wal.total_client_balance)}</span></div>
-              <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Clientes</span><span className="font-bold">{wal.client_count || 0}</span></div>
-              <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Compras</span><span className="font-bold">{rev.purchase_count || 0}</span></div>
-              <div className="flex justify-between py-2"><span className="text-gray-600">Peso Enviado</span><span className="font-bold">{rev.total_weight_shipped || 0} lbs</span></div>
-            </CardContent>
-          </Card>
-        </div>
+          {/* Resumen Tab */}
+          <TabsContent value="resumen" className="mt-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card className="rounded-xl">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <DollarSign className="h-5 w-5 text-green-600" />
+                    Desglose de Ingresos
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Ventas Productos</span><span className="font-bold">{formatMoney(rev.total_product_sales)}</span></div>
+                  <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Tax Cobrado</span><span className="font-bold">{formatMoney(rev.total_tax_collected)}</span></div>
+                  <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Comisiones</span><span className="font-bold text-yellow-600">{formatMoney(rev.total_commissions)}</span></div>
+                  <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Envios</span><span className="font-bold text-purple-600">{formatMoney(rev.total_shipping)}</span></div>
+                  <div className="flex justify-between py-3 bg-green-50 rounded-lg px-3">
+                    <span className="font-bold text-green-800">GANANCIA TOTAL</span>
+                    <span className="font-extrabold text-2xl text-green-600">{formatMoney(rev.gross_profit)}</span>
+                  </div>
+                </CardContent>
+              </Card>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card className="rounded-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Store className="h-5 w-5 text-blue-600" />
-                Ventas por Tienda
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {stores.length > 0 ? stores.map((s, i) => (
-                <ListItem key={i} rank={i + 1} name={s.name} count={s.cantidad} sales={s.ventas} commission={s.comisiones} color={colors[i % colors.length]} />
-              )) : <p className="text-center text-gray-400 py-4">Sin datos</p>}
-            </CardContent>
-          </Card>
+              <Card className="rounded-xl">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Wallet className="h-5 w-5 text-blue-600" />
+                    Estado de Wallets
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Depositos Recibidos</span><span className="font-bold text-green-600">{formatMoney(wal.total_deposits_received)}</span></div>
+                  <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Saldo Clientes</span><span className="font-bold text-blue-600">{formatMoney(wal.total_client_balance)}</span></div>
+                  <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Clientes</span><span className="font-bold">{wal.client_count || 0}</span></div>
+                  <div className="flex justify-between py-2 border-b"><span className="text-gray-600">Compras</span><span className="font-bold">{rev.purchase_count || 0}</span></div>
+                  <div className="flex justify-between py-2"><span className="text-gray-600">Peso Enviado</span><span className="font-bold">{rev.total_weight_shipped || 0} lbs</span></div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
 
-          <Card className="rounded-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Radio className="h-5 w-5 text-red-600" />
-                Ventas por Live
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {lives.length > 0 ? lives.slice(0, 8).map((l, i) => (
-                <ListItem key={i} rank={i + 1} name={l.name} count={l.compras} sales={l.ventas} commission={l.comisiones} color={colors[i % colors.length]} />
-              )) : <p className="text-center text-gray-400 py-4">Sin datos</p>}
-            </CardContent>
-          </Card>
-        </div>
+          {/* Graficas Tab */}
+          <TabsContent value="graficas" className="mt-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Sales Trend */}
+              <Card className="rounded-xl md:col-span-2">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-blue-600" />
+                    Tendencia de Ventas (30 dias)
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <SalesTrendChart data={trend} />
+                </CardContent>
+              </Card>
+
+              {/* Store Bar Chart */}
+              <Card className="rounded-xl">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Store className="h-5 w-5 text-blue-600" />
+                    Ventas por Tienda
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <StoreBarChart data={stores} />
+                </CardContent>
+              </Card>
+
+              {/* Profit Pie Chart */}
+              <Card className="rounded-xl">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <PieChartIcon className="h-5 w-5 text-green-600" />
+                    Distribucion de Ganancias
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ProfitPieChart commissions={rev.total_commissions} shipping={rev.total_shipping} />
+                </CardContent>
+              </Card>
+
+              {/* Live Bar Chart */}
+              <Card className="rounded-xl md:col-span-2">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Radio className="h-5 w-5 text-red-600" />
+                    Ventas por Live
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <LiveBarChart data={lives} />
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Detalle Tab */}
+          <TabsContent value="detalle" className="mt-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <Card className="rounded-xl">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Store className="h-5 w-5 text-blue-600" />
+                    Ranking Tiendas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {stores.length > 0 ? stores.map((s, i) => (
+                    <ListItem key={i} rank={i + 1} name={s.name} count={s.cantidad} sales={s.ventas} commission={s.comisiones} color={colors[i % colors.length]} />
+                  )) : <p className="text-center text-gray-400 py-4">Sin datos</p>}
+                </CardContent>
+              </Card>
+
+              <Card className="rounded-xl">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Radio className="h-5 w-5 text-red-600" />
+                    Ranking Lives
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {lives.length > 0 ? lives.slice(0, 8).map((l, i) => (
+                    <ListItem key={i} rank={i + 1} name={l.name} count={l.compras} sales={l.ventas} commission={l.comisiones} color={colors[i % colors.length]} />
+                  )) : <p className="text-center text-gray-400 py-4">Sin datos</p>}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
