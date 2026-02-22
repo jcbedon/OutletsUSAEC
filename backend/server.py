@@ -985,6 +985,10 @@ class PurchaseUpdate(BaseModel):
     item_name: Optional[str] = None
     store: Optional[str] = None
     price: Optional[float] = None
+    apply_tax: Optional[bool] = None
+    tax_rate: Optional[float] = None
+    apply_commission: Optional[bool] = None
+    commission: Optional[float] = None
 
 @api_router.put("/purchases/{purchase_id}")
 async def update_purchase(purchase_id: str, data: PurchaseUpdate, current_user: dict = Depends(get_current_user)):
@@ -994,29 +998,70 @@ async def update_purchase(purchase_id: str, data: PurchaseUpdate, current_user: 
     purchase = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0})
     if not purchase:
         raise HTTPException(status_code=404, detail="Compra no encontrada")
+    
     updates = {}
+    
+    # Get current or new values
     new_price = data.price if data.price is not None else purchase["price"]
+    new_apply_tax = data.apply_tax if data.apply_tax is not None else purchase.get("apply_tax", True)
+    new_tax_rate = data.tax_rate if data.tax_rate is not None else purchase.get("tax_rate", ILLINOIS_TAX_RATE)
+    new_apply_commission = data.apply_commission if data.apply_commission is not None else purchase.get("apply_commission", True)
+    new_commission = data.commission if data.commission is not None else purchase.get("commission", 0)
+    
+    # Update basic fields
     if data.item_name is not None:
         updates["item_name"] = data.item_name
     if data.store is not None:
         updates["store"] = data.store
-    if data.price is not None:
-        tax = round(new_price * ILLINOIS_TAX_RATE, 2)
-        price_with_tax = round(new_price + tax, 2)
-        commission = purchase["commission"]
-        total = round(price_with_tax + commission, 2)
+    
+    # Recalculate totals if any financial field changed
+    price_changed = data.price is not None
+    tax_changed = data.apply_tax is not None or data.tax_rate is not None
+    commission_changed = data.apply_commission is not None or data.commission is not None
+    
+    if price_changed or tax_changed or commission_changed:
+        # Calculate new tax
+        if new_apply_tax:
+            new_tax = round(new_price * new_tax_rate, 2)
+        else:
+            new_tax = 0
+        new_price_with_tax = round(new_price + new_tax, 2)
+        
+        # Calculate new commission
+        if not new_apply_commission:
+            new_commission = 0
+        
+        new_total = round(new_price_with_tax + new_commission, 2)
         old_total = purchase["total"]
-        diff = total - old_total
-        updates.update({"price": new_price, "tax": tax, "price_with_tax": price_with_tax, "total": total})
+        diff = new_total - old_total
+        
+        updates.update({
+            "price": new_price,
+            "tax": new_tax,
+            "tax_rate": new_tax_rate if new_apply_tax else None,
+            "apply_tax": new_apply_tax,
+            "price_with_tax": new_price_with_tax,
+            "commission": new_commission,
+            "apply_commission": new_apply_commission,
+            "total": new_total
+        })
+        
         # Adjust wallet balance
         wallet = await db.wallets.find_one({"user_id": purchase["user_id"], "tenant_id": tid}, {"_id": 0})
         if wallet:
             new_balance = wallet["available"] - diff
             await db.wallets.update_one({"user_id": purchase["user_id"], "tenant_id": tid},
                 {"$set": {"available": new_balance, "updated_at": datetime.now(timezone.utc).isoformat()}})
+        
         # Adjust live totals
+        old_price_with_tax = purchase.get("price_with_tax", purchase["price"])
+        old_commission = purchase.get("commission", 0)
         await db.lives.update_one({"id": purchase["live_id"], "tenant_id": tid},
-            {"$inc": {"total_sales": round(price_with_tax - purchase.get("price_with_tax", 0), 2)}})
+            {"$inc": {
+                "total_sales": round(new_price_with_tax - old_price_with_tax, 2),
+                "total_commissions": round(new_commission - old_commission, 2)
+            }})
+    
     if updates:
         await db.purchases.update_one({"id": purchase_id, "tenant_id": tid}, {"$set": updates})
     updated = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0})
