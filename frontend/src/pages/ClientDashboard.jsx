@@ -731,117 +731,12 @@ export default function ClientDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Shipment Products Detail Dialog */}
-      <Dialog open={shipmentDetailOpen} onOpenChange={setShipmentDetailOpen}>
-        <DialogContent className="rounded-2xl max-w-lg max-h-[80vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Truck className="h-5 w-5 text-blue-600" />
-              Detalle del Envio
-            </DialogTitle>
-          </DialogHeader>
-          
-          {selectedShipment && (
-            <div className="space-y-4 mt-4">
-              {/* Shipment Info */}
-              <div className="bg-blue-50 rounded-xl p-4 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Tipo:</span>
-                  <span className="font-medium">{selectedShipment.shipping_type === 'with_family' ? 'Con Familiar USA' : 'Sin Familiar USA'}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Destino:</span>
-                  <span className="font-medium">{selectedShipment.country}</span>
-                </div>
-                {selectedShipment.weight_pounds > 0 && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Peso:</span>
-                    <span className="font-bold text-blue-600">{selectedShipment.weight_pounds} lbs</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-gray-600">Costo Envio:</span>
-                  <span className="font-bold text-red-600">${selectedShipment.shipping_cost?.toFixed(2)}</span>
-                </div>
-                {selectedShipment.tracking_number && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Tracking:</span>
-                    <span className="font-mono text-sm">{selectedShipment.tracking_number}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Products List */}
-              <div>
-                <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
-                  <ShoppingBag className="h-4 w-4" />
-                  Productos en este Envio ({shipmentProducts.length})
-                </h4>
-                <ScrollArea className="h-[250px]">
-                  <div className="space-y-2">
-                    {shipmentProducts.length > 0 ? (
-                      shipmentProducts.map((product) => (
-                        <div key={product.id} className="bg-gray-50 rounded-lg p-3 flex justify-between items-center">
-                          <div>
-                            <p className="font-medium text-slate-800">{product.item_name}</p>
-                            <p className="text-xs text-gray-500">{product.store || 'Sin tienda'}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold text-slate-800">${product.total?.toFixed(2)}</p>
-                            <p className="text-xs text-gray-500">
-                              ${product.price?.toFixed(2)} + ${product.tax?.toFixed(2)} tax
-                              {product.commission > 0 && ` + $${product.commission?.toFixed(2)} com`}
-                            </p>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-center text-gray-400 py-4">
-                        <p>No se encontraron los detalles de los productos</p>
-                      </div>
-                    )}
-                  </div>
-                </ScrollArea>
-              </div>
-
-              {/* Attachments section in detail view */}
-              {selectedShipment.attachments && selectedShipment.attachments.length > 0 && (
-                <div>
-                  <h4 className="font-bold text-slate-800 mb-2 flex items-center gap-2">
-                    <Paperclip className="h-4 w-4" />
-                    Archivos Adjuntos ({selectedShipment.attachments.length})
-                  </h4>
-                  <div className="space-y-2">
-                    {selectedShipment.attachments.map((att, idx) => {
-                      const attUrl = att.startsWith('http') ? att : `${process.env.REACT_APP_BACKEND_URL}${att}`;
-                      const attIsImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(att);
-                      return (
-                        <div key={idx} className="border rounded-lg overflow-hidden">
-                          {attIsImg ? (
-                            <img src={attUrl} alt={`Adjunto ${idx + 1}`} className="w-full max-h-32 object-contain bg-gray-50" />
-                          ) : (
-                            <a 
-                              href={attUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="p-3 bg-gray-50 flex items-center justify-between hover:bg-gray-100 transition-colors block"
-                            >
-                              <span className="text-sm text-gray-600">Archivo {idx + 1}</span>
-                              <span className="text-sm text-blue-600 flex items-center gap-1">
-                                <Eye className="h-4 w-4" /> Ver
-                              </span>
-                            </a>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <ShipmentDetailDialog 
+        open={shipmentDetailOpen} 
+        onOpenChange={setShipmentDetailOpen}
+        shipment={selectedShipment}
+        products={shipmentProducts}
+      />
     </div>
   );
 }
