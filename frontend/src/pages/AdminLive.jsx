@@ -215,7 +215,7 @@ export default function AdminLive() {
         store: selectedLive.store || "Sin tienda",
         price: price,
         live_id: selectedLive.id,
-        apply_tax: purchaseForm.apply_tax,
+        tax_type: purchaseForm.tax_type,
         apply_commission: purchaseForm.apply_commission,
         commission_amount: parseFloat(purchaseForm.commission_amount) || 0
       });
