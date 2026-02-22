@@ -587,8 +587,10 @@ export default function ClientDashboard() {
                               {shipment.shipping_type === 'with_family' ? 'Con Familiar USA' : 'Sin Familiar USA'}
                             </p>
                             <p className="text-sm text-gray-500">{shipment.country}</p>
-                            {shipment.weight_pounds > 0 && (
-                              <p className="text-sm text-blue-600 font-medium">{shipment.weight_pounds} libras</p>
+                            {(shipment.weight_pounds && shipment.weight_pounds > 0) && (
+                              <p className="text-sm text-blue-600 font-bold mt-1">
+                                {shipment.weight_pounds} lbs
+                              </p>
                             )}
                           </div>
                           {getStatusBadge(shipment.status)}
@@ -609,7 +611,20 @@ export default function ClientDashboard() {
                         )}
 
                         <div className="flex justify-between items-center text-sm">
-                          <span className="text-gray-500">{shipment.purchase_ids.length} productos</span>
+                          <button
+                            onClick={() => {
+                              setSelectedShipment(shipment);
+                              // Find the products for this shipment
+                              const prods = purchases.filter(p => shipment.purchase_ids.includes(p.id));
+                              setShipmentProducts(prods);
+                              setShipmentDetailOpen(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                            data-testid={`view-products-${shipment.id}`}
+                          >
+                            <ShoppingBag className="h-4 w-4" />
+                            Ver {shipment.purchase_ids?.length || 0} productos
+                          </button>
                           <div className="flex items-center gap-2">
                             {shipment.attachments && shipment.attachments.length > 0 && (
                               <button
@@ -621,10 +636,10 @@ export default function ClientDashboard() {
                                 data-testid={`view-attachments-${shipment.id}`}
                               >
                                 <Paperclip className="h-3 w-3" />
-                                <span>{shipment.attachments.length}</span>
+                                <span>{shipment.attachments.length} archivo(s)</span>
                               </button>
                             )}
-                            <span className="font-bold text-red-600">${shipment.shipping_cost.toFixed(2)}</span>
+                            <span className="font-bold text-red-600">${shipment.shipping_cost?.toFixed(2) || '0.00'}</span>
                           </div>
                         </div>
                       </CardContent>
