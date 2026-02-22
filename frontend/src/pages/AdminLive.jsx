@@ -73,7 +73,14 @@ export default function AdminLive() {
   const [customerWallet, setCustomerWallet] = useState(null);
   const [customerCommission, setCustomerCommission] = useState(3.0);
   const [editingPurchase, setEditingPurchase] = useState(null);
-  const [editForm, setEditForm] = useState({ item_name: "", store: "", price: "" });
+  const [editForm, setEditForm] = useState({ 
+    item_name: "", 
+    store: "", 
+    price: "",
+    tax_type: "illinois",
+    apply_commission: true,
+    commission: "3"
+  });
 
   const customerIdRef = useRef(null);
 
