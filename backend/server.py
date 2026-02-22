@@ -1169,17 +1169,18 @@ async def upload_shipment_attachment(shipment_id: str, file: UploadFile = File(.
     if not shipment:
         raise HTTPException(status_code=404, detail="Envío no encontrado")
     
-    # Save file
-    upload_dir = Path("uploads/shipments")
-    upload_dir.mkdir(parents=True, exist_ok=True)
+    # Save file - use UPLOAD_DIR to ensure correct path
+    shipments_upload_dir = UPLOAD_DIR / "shipments"
+    shipments_upload_dir.mkdir(parents=True, exist_ok=True)
     file_ext = Path(file.filename).suffix
     filename = f"{shipment_id}_{uuid.uuid4().hex[:8]}{file_ext}"
-    file_path = upload_dir / filename
+    file_path = shipments_upload_dir / filename
     
     with open(file_path, "wb") as f:
         content = await file.read()
         f.write(content)
     
+    # URL must include /api prefix for proper routing
     file_url = f"/api/uploads/shipments/{filename}"
     
     # Add to shipment attachments
