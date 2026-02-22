@@ -186,7 +186,7 @@ class PurchaseCreate(BaseModel):
     store: str
     price: float
     live_id: str
-    apply_tax: bool = True
+    tax_type: str = "illinois"  # "none", "illinois" (8.25%), "custom" (15%)
     apply_commission: bool = True
     commission_amount: float = 0
 
