@@ -67,7 +67,9 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] Admin: Shipment cost added to total recharge amount
 - [x] Admin: Edit/Delete shipments
 - [x] Admin: Attach media files to shipments
-- [x] Client: View shipment attachments
+- [x] Client: View shipment attachments (BUG FIX Feb 22 - fixed logout issue)
+- [x] Client: View products included in shipment
+- [x] Client: Video playback for video attachments
 - [x] Weight in pounds (weight_pounds) field for shipments
 
 ### Reports
