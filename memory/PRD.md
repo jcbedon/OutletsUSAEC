@@ -39,6 +39,11 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
   - Ventas por Live (ranked list)
   - Desglose de Ingresos (productos, tax, comisiones, envíos)
   - Estado de Wallets (depósitos, saldos, peso enviado)
+  - **Gráficas interactivas con Recharts:**
+    - Tendencia de ventas (30 días) - Área chart
+    - Ventas por Tienda - Barras horizontales
+    - Distribución de Ganancias - Pie chart donut
+    - Ventas por Live - Barras verticales
 
 ### Client Management
 - [x] Admin: Create clients with custom commission + initial balance
