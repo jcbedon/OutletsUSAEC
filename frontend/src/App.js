@@ -12,6 +12,7 @@ import AdminWallet from "@/pages/AdminWallet";
 import AdminShipments from "@/pages/AdminShipments";
 import AdminReports from "@/pages/AdminReports";
 import AdminReferrals from "@/pages/AdminReferrals";
+import AdminStats from "@/pages/AdminStats";
 import SuperadminDashboard from "@/pages/SuperadminDashboard";
 
 const AuthContext = createContext(null);
@@ -95,6 +96,7 @@ function App() {
           <Route path="/admin/shipments" element={<ProtectedRoute allowedRoles={["admin"]}><AdminShipments /></ProtectedRoute>} />
           <Route path="/admin/reports" element={<ProtectedRoute allowedRoles={["admin"]}><AdminReports /></ProtectedRoute>} />
           <Route path="/admin/referrals" element={<ProtectedRoute allowedRoles={["admin"]}><AdminReferrals /></ProtectedRoute>} />
+          <Route path="/admin/stats" element={<ProtectedRoute allowedRoles={["admin"]}><AdminStats /></ProtectedRoute>} />
 
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
