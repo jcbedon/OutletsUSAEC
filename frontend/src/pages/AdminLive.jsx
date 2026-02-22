@@ -841,6 +841,83 @@ export default function AdminLive() {
                                       onChange={(e) => setEditForm({...editForm, price: e.target.value})}
                                       placeholder="Precio" className="h-9 rounded-lg text-sm w-24" data-testid="edit-price" />
                                   </div>
+                                  
+                                  {/* Tax Options */}
+                                  <div className="p-2 bg-blue-50 rounded-lg">
+                                    <p className="text-xs font-medium text-gray-600 mb-1">Impuesto</p>
+                                    <div className="flex gap-2 flex-wrap">
+                                      <label className="flex items-center gap-1 text-xs cursor-pointer bg-white px-2 py-1 rounded border">
+                                        <input type="radio" name={`edit_tax_${purchase.id}`} value="illinois"
+                                          checked={editForm.tax_type === "illinois"}
+                                          onChange={(e) => setEditForm({...editForm, tax_type: e.target.value})}
+                                          className="w-3 h-3" />
+                                        <span>8.25%</span>
+                                      </label>
+                                      <label className="flex items-center gap-1 text-xs cursor-pointer bg-white px-2 py-1 rounded border">
+                                        <input type="radio" name={`edit_tax_${purchase.id}`} value="custom"
+                                          checked={editForm.tax_type === "custom"}
+                                          onChange={(e) => setEditForm({...editForm, tax_type: e.target.value})}
+                                          className="w-3 h-3" />
+                                        <span>15%</span>
+                                      </label>
+                                      <label className="flex items-center gap-1 text-xs cursor-pointer bg-white px-2 py-1 rounded border">
+                                        <input type="radio" name={`edit_tax_${purchase.id}`} value="none"
+                                          checked={editForm.tax_type === "none"}
+                                          onChange={(e) => setEditForm({...editForm, tax_type: e.target.value})}
+                                          className="w-3 h-3" />
+                                        <span>Sin Tax</span>
+                                      </label>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* Commission */}
+                                  <div className="p-2 bg-yellow-50 rounded-lg flex items-center justify-between">
+                                    <label className="flex items-center gap-1 text-xs cursor-pointer">
+                                      <input type="checkbox" checked={editForm.apply_commission}
+                                        onChange={(e) => setEditForm({...editForm, apply_commission: e.target.checked})}
+                                        className="w-3 h-3" />
+                                      <span className="font-medium text-gray-700">Comision $</span>
+                                    </label>
+                                    {editForm.apply_commission && (
+                                      <Input type="number" step="0.01" value={editForm.commission}
+                                        onChange={(e) => setEditForm({...editForm, commission: e.target.value})}
+                                        className="h-7 w-20 text-xs text-center rounded" data-testid="edit-commission" />
+                                    )}
+                                  </div>
+                                  
+                                  {/* Preview */}
+                                  {editForm.price && (
+                                    <div className="p-2 bg-gray-50 rounded-lg text-xs space-y-1">
+                                      <div className="flex justify-between">
+                                        <span className="text-gray-500">Precio:</span>
+                                        <span className="font-medium">${parseFloat(editForm.price || 0).toFixed(2)}</span>
+                                      </div>
+                                      {editForm.tax_type !== "none" && (
+                                        <div className="flex justify-between">
+                                          <span className="text-gray-500">Tax ({editForm.tax_type === "illinois" ? "8.25%" : "15%"}):</span>
+                                          <span className="font-medium">
+                                            ${(parseFloat(editForm.price || 0) * (editForm.tax_type === "illinois" ? 0.0825 : 0.15)).toFixed(2)}
+                                          </span>
+                                        </div>
+                                      )}
+                                      {editForm.apply_commission && (
+                                        <div className="flex justify-between">
+                                          <span className="text-gray-500">Comision:</span>
+                                          <span className="font-medium">${parseFloat(editForm.commission || 0).toFixed(2)}</span>
+                                        </div>
+                                      )}
+                                      <div className="flex justify-between pt-1 border-t font-bold text-blue-600">
+                                        <span>Total:</span>
+                                        <span>
+                                          ${(
+                                            parseFloat(editForm.price || 0) * (editForm.tax_type === "illinois" ? 1.0825 : editForm.tax_type === "custom" ? 1.15 : 1) 
+                                            + (editForm.apply_commission ? parseFloat(editForm.commission || 0) : 0)
+                                          ).toFixed(2)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+                                  
                                   <div className="flex gap-2">
                                     <Button size="sm" onClick={() => handleSaveEdit(purchase.id)}
                                       className="flex-1 h-8 rounded-lg" style={{ background: '#2ECC71', color: 'white' }} data-testid="save-edit-btn">
