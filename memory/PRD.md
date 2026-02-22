@@ -16,67 +16,107 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 3. **CLIENT**: Tenant-scoped. Views wallet, purchases, shipments, notifications.
 
 ## Business Logic
-- Tax: 8.25% (Illinois tax) applied to item price
-- Commission: Configurable per client (default $3.00)
+- Tax: Selectable (8.25% Illinois, 15% Custom, or Sin Tax) - applied per purchase
+- Commission: Configurable per purchase (default $3.00) - no longer per-client for new purchases
 - Display total = price + tax + commission
 - **Full purchase total (price + tax + commission) is deducted from client wallet** - Negative balances are allowed
 - Referral bonus: Configurable per tenant
 - **Shipment Cost**: Added to purchase total to calculate "Total a Recargar"
 
 ## Implemented Features (Feb 2026)
+
+### Multi-Tenancy & Auth
 - [x] Multi-tenant architecture with tenant_id isolation
 - [x] JWT authentication with 3 roles
 - [x] Superadmin dashboard (create/list/suspend tenants)
 - [x] Tenant creation with auto-admin creation
+
+### Admin Dashboard
 - [x] Admin dashboard with stats, quick actions
+- [x] **NEW: Estadísticas page** - comprehensive business statistics dashboard (Feb 22, 2026)
+  - Ganancia total (Comisiones + Envíos)
+  - Ventas por Tienda (ranked list)
+  - Ventas por Live (ranked list)
+  - Desglose de Ingresos (productos, tax, comisiones, envíos)
+  - Estado de Wallets (depósitos, saldos, peso enviado)
+
+### Client Management
 - [x] Admin: Create clients with custom commission + initial balance
 - [x] Admin: Client management (search, edit commission)
+
+### Live Shopping & Purchases
 - [x] Admin: Live shopping session CRUD
 - [x] Admin: Purchase registration with tax + commission calc
+- [x] **Tax radio buttons**: 8.25% (Illinois), 15% (Custom), Sin Tax (Feb 22, 2026)
 - [x] Admin: Edit/Delete purchases from Live module
+- [x] Commission set per-purchase (not per-client) for new purchases
+
+### Wallet & Recharges
 - [x] Admin: Wallet deposit requests + approvals with screenshot proof
-- [x] Admin: **Reject pending deposit requests** (NEW - Feb 16, 2026)
-- [x] Admin: **Global deposit history** - view all deposits from all clients with search/filters (NEW - Feb 16, 2026)
-- [x] Admin: **Manual balance adjustment** - subtract money with custom reason (NEW - Feb 16, 2026)
-- [x] Admin: Shipment management with tracking and status (Preparación, En Tránsito, Completado)
-- [x] Admin: Shipment cost added to total recharge amount with informational label
-- [x] Admin: Referral bonus configuration
-- [x] Admin: Reports module with export to PDF/Excel (by client, by live, all purchases)
+- [x] Admin: Reject pending deposit requests
+- [x] Admin: Global deposit history - view all deposits from all clients
+- [x] Admin: Manual balance adjustment - subtract money with custom reason
+
+### Shipments
+- [x] Admin: Shipment management with tracking and status
+- [x] Admin: Shipment cost added to total recharge amount
+- [x] Admin: Edit/Delete shipments
+- [x] Admin: Attach media files to shipments
+- [x] Client: View shipment attachments
+- [x] Weight in pounds (weight_pounds) field for shipments
+
+### Reports
+- [x] Admin: Reports module with export to PDF/Excel
+- [x] Reports by client, by live, all purchases
+- [x] Weight in pounds displayed in reports
+
+### Branding & UI
+- [x] **NEW: Custom favicon** - Outlets USA EC logo as browser icon (Feb 22, 2026)
+- [x] **NEW: Page title "Outlets USA EC"** (Feb 22, 2026)
 - [x] Admin: Logo upload for tenant branding
-- [x] Client: Dashboard with wallet, purchases, shipments (tracking visible), notifications
-- [x] Client: "Total a Recargar" display showing sum of purchases + shipping costs with informational label
-- [x] Client: Upload proof of deposit (screenshot) for recharge requests
-- [x] Client: Self-registration with tenant slug code
-- [x] Dynamic logo across all pages (from tenant settings)
-- [x] Role-based routing (superadmin/admin/client)
+- [x] Dynamic logo across all pages
 - [x] Complete UI redesign with modern color palette (#1E3A5F, #2ECC71, etc.)
+
+### Client Features
+- [x] Client: Dashboard with wallet, purchases, shipments
+- [x] Client: Tracking number visible
+- [x] Client: "Total a Recargar" display
+- [x] Client: Upload proof of deposit
+- [x] Client: Self-registration with tenant slug code
+- [x] Client: View shipment attachments
 
 ## DB Collections
 - `tenants`: id, business_name, slug, owner_name, email, logo_url, status
 - `users`: id, tenant_id, customer_id, name, role, commission_fee, etc.
 - `wallets`: id, tenant_id, user_id, available, reserved
 - `wallet_transactions`: id, tenant_id, user_id, type, amount, status, proof_url
-- `lives`: id, tenant_id, title, status, total_sales, total_commissions
-- `purchases`: id, tenant_id, user_id, item_name, price, tax, commission, total
-- `shipments`: id, tenant_id, user_id, purchase_ids, status, tracking, attachments
+- `lives`: id, tenant_id, title, store, status, total_sales, total_commissions
+- `purchases`: id, tenant_id, user_id, item_name, price, tax, commission, total, apply_tax, apply_commission, tax_rate
+- `shipments`: id, tenant_id, user_id, purchase_ids, status, tracking, attachments, weight_pounds
 - `notifications`: id, tenant_id, user_id, type, title, message
 - `settings`: tenant_id, key, value (e.g., referral_bonus)
 
-## Key API Endpoints (Wallet Module)
+## Key API Endpoints
+
+### Wallet Module
 - `GET /api/wallet/pending-deposits` - Get pending deposit requests
 - `GET /api/wallet/all-deposits` - Get all deposits (history) with user names
 - `POST /api/wallet/approve-deposit/{id}` - Approve a pending deposit
 - `POST /api/wallet/reject-deposit/{id}` - Reject a pending deposit
 - `POST /api/wallet/admin-adjustment` - Manual balance adjustment (subtract)
 
+### Reports Module
+- `GET /api/admin/reports/summary` - Basic summary stats
+- `GET /api/admin/reports/business-stats` - **NEW** Comprehensive business statistics
+- `GET /api/admin/reports/clients-purchases` - Client purchase reports
+- `GET /api/admin/reports/all-purchases` - All purchases report
+- `GET /api/admin/reports/live/{id}` - Live-specific report
+
 ## Key Credentials
 - Superadmin: superadmin@outletsusaec.com / super123
 - Admin (Outlets USA EC): admin@outletsusaec.com / admin123
 - Client (Juan Perez): J2934 / client123
 - Tenant slug example: outlets-usa
-
-## P0 - In Progress
-- [ ] Shipment media attachments - allow admins to upload proof files to shipments
 
 ## P1 - Backlog
 - [ ] WhatsApp Cloud API integration (requires user credentials)
@@ -88,6 +128,5 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 
 ## P2 - Future
 - [ ] Multi-language support
-- [ ] Dashboard analytics charts
-- [ ] Export reports to CSV/PDF
 - [ ] Email notifications
+- [ ] Backend refactoring (split server.py into routers)
