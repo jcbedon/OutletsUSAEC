@@ -17,7 +17,6 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ShipmentDetailDialog } from "@/components/ShipmentDetailDialog";
 import { 
   ShoppingBag, 
   Truck, 
@@ -59,6 +58,8 @@ export default function ClientDashboard() {
   const [shipmentDetailOpen, setShipmentDetailOpen] = useState(false);
   const [selectedShipment, setSelectedShipment] = useState(null);
   const [shipmentProducts, setShipmentProducts] = useState([]);
+  
+  const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
 
   useEffect(() => {
     if (user) {
