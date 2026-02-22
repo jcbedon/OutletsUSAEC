@@ -266,16 +266,55 @@ export default function AdminLive() {
 
   const handleEditPurchase = (purchase) => {
     setEditingPurchase(purchase.id);
-    setEditForm({ item_name: purchase.item_name, store: purchase.store, price: purchase.price.toString() });
+    // Determine tax_type from stored values
+    let tax_type = "none";
+    if (purchase.apply_tax !== false) {
+      if (purchase.tax_rate === 0.15) {
+        tax_type = "custom";
+      } else {
+        tax_type = "illinois";
+      }
+    }
+    setEditForm({ 
+      item_name: purchase.item_name, 
+      store: purchase.store, 
+      price: purchase.price.toString(),
+      tax_type: tax_type,
+      apply_commission: purchase.apply_commission !== false,
+      commission: (purchase.commission || 0).toString()
+    });
   };
 
   const handleSaveEdit = async (purchaseId) => {
     try {
       const data = {};
       const orig = purchases.find(p => p.id === purchaseId);
+      
+      // Basic fields
       if (editForm.item_name !== orig.item_name) data.item_name = editForm.item_name;
       if (editForm.store !== orig.store) data.store = editForm.store;
       if (parseFloat(editForm.price) !== orig.price) data.price = parseFloat(editForm.price);
+      
+      // Tax fields
+      const newApplyTax = editForm.tax_type !== "none";
+      const newTaxRate = editForm.tax_type === "custom" ? 0.15 : 0.0825;
+      const origApplyTax = orig.apply_tax !== false;
+      const origTaxRate = orig.tax_rate || 0.0825;
+      
+      if (newApplyTax !== origApplyTax) data.apply_tax = newApplyTax;
+      if (newApplyTax && newTaxRate !== origTaxRate) data.tax_rate = newTaxRate;
+      if (!newApplyTax) data.tax_rate = 0;
+      
+      // Commission fields
+      const newApplyCommission = editForm.apply_commission;
+      const newCommission = parseFloat(editForm.commission) || 0;
+      const origApplyCommission = orig.apply_commission !== false;
+      const origCommission = orig.commission || 0;
+      
+      if (newApplyCommission !== origApplyCommission) data.apply_commission = newApplyCommission;
+      if (newApplyCommission && newCommission !== origCommission) data.commission = newCommission;
+      if (!newApplyCommission) data.commission = 0;
+      
       if (Object.keys(data).length === 0) { setEditingPurchase(null); return; }
       await updatePurchase(purchaseId, data);
       toast.success("Compra actualizada");
