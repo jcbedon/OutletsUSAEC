@@ -553,25 +553,46 @@ async def get_all_clients(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     users = await db.users.find({"role": "client", "tenant_id": tid}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(1000)
+    
+    if not users:
+        return []
+    
+    # Batch fetch all related data in 3 queries instead of N*3
+    user_ids = [u["id"] for u in users]
+    
+    # Fetch all wallets at once
+    wallets_list = await db.wallets.find({"user_id": {"$in": user_ids}, "tenant_id": tid}, {"_id": 0}).to_list(len(user_ids))
+    wallets_dict = {w["user_id"]: w for w in wallets_list}
+    
+    # Aggregate purchases per user
+    purchases_agg = await db.purchases.aggregate([
+        {"$match": {"user_id": {"$in": user_ids}, "tenant_id": tid}},
+        {"$group": {"_id": "$user_id", "total": {"$sum": "$total"}, "count": {"$sum": 1}}}
+    ]).to_list(len(user_ids))
+    purchases_dict = {p["_id"]: {"total": p["total"], "count": p["count"]} for p in purchases_agg}
+    
+    # Aggregate shipments per user
+    shipments_agg = await db.shipments.aggregate([
+        {"$match": {"user_id": {"$in": user_ids}, "tenant_id": tid}},
+        {"$group": {"_id": "$user_id", "total_shipping": {"$sum": "$shipping_cost"}}}
+    ]).to_list(len(user_ids))
+    shipments_dict = {s["_id"]: s["total_shipping"] for s in shipments_agg}
+    
     result = []
     for user in users:
-        wallet = await db.wallets.find_one({"user_id": user["id"], "tenant_id": tid}, {"_id": 0})
+        uid = user["id"]
+        wallet = wallets_dict.get(uid)
         wallet_balance = wallet["available"] if wallet else 0
-        # Get purchases for display - use the commission stored at purchase time
-        purchases = await db.purchases.find({"user_id": user["id"], "tenant_id": tid}, {"_id": 0}).to_list(1000)
-        total_purchases = sum(p.get("total", 0) for p in purchases)
-        # Get total shipping costs
-        shipments = await db.shipments.find({"user_id": user["id"], "tenant_id": tid}, {"_id": 0}).to_list(1000)
-        total_shipping = sum(s.get("shipping_cost", 0) for s in shipments)
-        # Saldo pendiente = wallet_balance - total_shipping (las compras ya están descontadas del wallet)
+        purch = purchases_dict.get(uid, {"total": 0, "count": 0})
+        total_shipping = shipments_dict.get(uid, 0)
         pending_balance = wallet_balance - total_shipping
         result.append({
             **user, 
             "wallet_balance": round(wallet_balance, 2),
-            "total_purchases": round(total_purchases, 2),
+            "total_purchases": round(purch["total"], 2),
             "total_shipping": round(total_shipping, 2),
             "pending_balance": round(pending_balance, 2),
-            "purchase_count": len(purchases)
+            "purchase_count": purch["count"]
         })
     return result
 
