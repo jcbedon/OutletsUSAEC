@@ -1180,7 +1180,7 @@ async def upload_shipment_attachment(shipment_id: str, file: UploadFile = File(.
         content = await file.read()
         f.write(content)
     
-    file_url = f"/uploads/shipments/{filename}"
+    file_url = f"/api/uploads/shipments/{filename}"
     
     # Add to shipment attachments
     current_attachments = shipment.get("attachments", [])

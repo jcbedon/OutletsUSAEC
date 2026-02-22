@@ -829,13 +829,46 @@ function AttachmentList({ items, backendUrl }) {
   return (
     <div className="space-y-2">
       {items.map(function(att, idx) {
-        var url = att.startsWith('http') ? att : backendUrl + att;
+        // Asegurar que la URL tenga el prefijo /api si es necesario
+        var normalizedAtt = att;
+        if (!att.startsWith('http') && !att.startsWith('/api/')) {
+          normalizedAtt = '/api' + att;
+        }
+        var url = att.startsWith('http') ? att : backendUrl + normalizedAtt;
         var isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(att);
+        var isVideo = /\.(mp4|mov|webm|avi|mkv)$/i.test(att);
+        
         if (isImg) {
           return <img key={idx} src={url} alt="Adjunto" className="w-full max-h-32 object-contain bg-gray-50 rounded" />;
         }
+        if (isVideo) {
+          return (
+            <div key={idx} className="bg-gray-50 rounded p-2">
+              <video controls className="w-full max-h-48 rounded">
+                <source src={url} type="video/mp4" />
+                Tu navegador no soporta video.
+              </video>
+              <a 
+                href={url} 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="block text-center text-sm text-blue-600 hover:underline mt-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                Abrir en nueva pestaña
+              </a>
+            </div>
+          );
+        }
         return (
-          <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="block p-3 bg-gray-50 rounded hover:bg-gray-100 text-blue-600">
+          <a 
+            key={idx} 
+            href={url} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="block p-3 bg-gray-50 rounded hover:bg-gray-100 text-blue-600"
+            onClick={(e) => e.stopPropagation()}
+          >
             Ver Archivo {idx + 1}
           </a>
         );
