@@ -896,6 +896,8 @@ async def get_live(live_id: str, current_user: dict = Depends(get_current_user))
 
 # ==================== PURCHASE ENDPOINTS ====================
 
+CUSTOM_TAX_RATE = 0.15  # 15% custom tax
+
 @api_router.post("/purchases")
 async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "admin":
@@ -907,8 +909,13 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
     wallet = await db.wallets.find_one({"user_id": user["id"], "tenant_id": tid}, {"_id": 0})
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
-    # Apply tax based on flag, commission comes from form input
-    tax = round(purchase_data.price * ILLINOIS_TAX_RATE, 2) if purchase_data.apply_tax else 0
+    # Calculate tax based on tax_type
+    if purchase_data.tax_type == "illinois":
+        tax = round(purchase_data.price * ILLINOIS_TAX_RATE, 2)
+    elif purchase_data.tax_type == "custom":
+        tax = round(purchase_data.price * CUSTOM_TAX_RATE, 2)
+    else:
+        tax = 0
     commission_fee = purchase_data.commission_amount if purchase_data.apply_commission else 0
     price_with_tax = round(purchase_data.price + tax, 2)
     total = round(price_with_tax + commission_fee, 2)
