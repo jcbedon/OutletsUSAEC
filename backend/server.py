@@ -1547,11 +1547,24 @@ async def get_all_purchases_report(current_user: dict = Depends(get_current_user
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     purchases = await db.purchases.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    
+    if not purchases:
+        return []
+    
+    # Batch fetch all users and lives in 2 queries instead of N*2
+    user_ids = list(set(p["user_id"] for p in purchases))
+    live_ids = list(set(p.get("live_id") for p in purchases if p.get("live_id")))
+    
+    users_list = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1, "customer_id": 1}).to_list(len(user_ids))
+    users_dict = {u["id"]: u for u in users_list}
+    
+    lives_list = await db.lives.find({"id": {"$in": live_ids}}, {"_id": 0, "id": 1, "title": 1}).to_list(len(live_ids)) if live_ids else []
+    lives_dict = {l["id"]: l["title"] for l in lives_list}
+    
     for p in purchases:
-        user = await db.users.find_one({"id": p["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
+        user = users_dict.get(p["user_id"])
         p["client_name"] = user["name"] if user else "Unknown"
-        live = await db.lives.find_one({"id": p.get("live_id")}, {"_id": 0, "title": 1})
-        p["live_title"] = live["title"] if live else "N/A"
+        p["live_title"] = lives_dict.get(p.get("live_id"), "N/A")
     return purchases
 
 # ==================== SETTINGS ====================
