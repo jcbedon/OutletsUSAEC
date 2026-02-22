@@ -706,12 +706,31 @@ export default function ClientDashboard() {
           </DialogHeader>
           <div className="space-y-3 mt-4">
             {selectedAttachments.map((att, idx) => {
-              const url = att.startsWith('http') ? att : `${process.env.REACT_APP_BACKEND_URL}${att}`;
+              // Asegurar que la URL tenga el prefijo /api si es necesario
+              const normalizedAtt = !att.startsWith('http') && !att.startsWith('/api/') ? '/api' + att : att;
+              const url = att.startsWith('http') ? att : `${process.env.REACT_APP_BACKEND_URL}${normalizedAtt}`;
               const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(att);
+              const isVideo = /\.(mp4|mov|webm|avi|mkv)$/i.test(att);
               return (
                 <div key={idx} className="border rounded-xl overflow-hidden">
                   {isImg ? (
                     <img src={url} alt={`Adjunto ${idx + 1}`} className="w-full max-h-64 object-contain bg-gray-50" />
+                  ) : isVideo ? (
+                    <div className="p-2 bg-gray-50">
+                      <video controls className="w-full max-h-64 rounded">
+                        <source src={url} type="video/mp4" />
+                        Tu navegador no soporta video.
+                      </video>
+                      <a 
+                        href={url} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="block text-center text-sm text-blue-600 hover:underline mt-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Abrir en nueva pestaña
+                      </a>
+                    </div>
                   ) : (
                     <div className="p-4 bg-gray-50 flex items-center justify-between">
                       <span className="text-sm text-gray-600">Archivo {idx + 1}</span>
@@ -720,6 +739,7 @@ export default function ClientDashboard() {
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <Eye className="h-4 w-4" /> Ver/Descargar
                       </a>
