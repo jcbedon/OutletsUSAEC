@@ -104,4 +104,12 @@ export const getReferralBonus = () => api.get("/admin/settings/referral-bonus");
 export const setReferralBonus = (amount) => api.put(`/admin/settings/referral-bonus?amount=${amount}`);
 export const getReferralStats = () => api.get("/admin/referrals");
 
+// Settings - Tax Options
+export const getTenantSettings = () => api.get("/admin/settings");
+export const updateTenantTaxOptions = (taxOptions) => api.put("/admin/settings/tax-options", { tax_options: taxOptions });
+
+// Superadmin - Tenant Tax Options
+export const updateTenantTaxOptionsSuperadmin = (tenantId, taxOptions) => 
+  api.put(`/superadmin/tenants/${tenantId}/tax-options`, { tax_options: taxOptions });
+
 export default api;

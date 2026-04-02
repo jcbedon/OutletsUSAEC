@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/App";
 import { useNavigate } from "react-router-dom";
-import { listTenants, createTenant, updateTenantStatus, getSuperadminStats } from "@/lib/api";
+import { listTenants, createTenant, updateTenantStatus, getSuperadminStats, updateTenantTaxOptionsSuperadmin } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Building, Users, Shield, Plus, LogOut, Power, UserPlus } from "lucide-react";
+import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Settings, Percent, X } from "lucide-react";
 
 export default function SuperadminDashboard() {
   const { user, logout } = useAuth();
@@ -24,6 +24,21 @@ export default function SuperadminDashboard() {
     business_name: "", slug: "", owner_name: "", email: "",
     admin_name: "", admin_email: "", admin_password: "", admin_whatsapp: "", admin_country: ""
   });
+  
+  // Tax options configuration state
+  const [taxDialogOpen, setTaxDialogOpen] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState(null);
+  const [taxOptions, setTaxOptions] = useState([]);
+  const [newTaxValue, setNewTaxValue] = useState("");
+  const [newTaxLabel, setNewTaxLabel] = useState("");
+
+  const DEFAULT_TAX_OPTIONS = [
+    { value: "8.25", label: "8.25%" },
+    { value: "10", label: "10%" },
+    { value: "15", label: "15%" },
+    { value: "0", label: "Sin Taxes" },
+    { value: "other", label: "Otro" }
+  ];
 
   useEffect(() => { loadData(); }, []);
 
@@ -72,6 +87,53 @@ export default function SuperadminDashboard() {
 
   const handleLogout = () => { logout(); navigate("/login"); };
   const set = (key, val) => setForm({ ...form, [key]: val });
+
+  const openTaxDialog = (tenant) => {
+    setSelectedTenant(tenant);
+    setTaxOptions(tenant.tax_options || DEFAULT_TAX_OPTIONS);
+    setNewTaxValue("");
+    setNewTaxLabel("");
+    setTaxDialogOpen(true);
+  };
+
+  const handleAddTaxOption = () => {
+    if (!newTaxValue || !newTaxLabel) {
+      toast.error("Ingresa valor y etiqueta");
+      return;
+    }
+    const otherIndex = taxOptions.findIndex(opt => opt.value === "other");
+    const newOption = { value: newTaxValue, label: newTaxLabel };
+    if (otherIndex >= 0) {
+      const newOptions = [...taxOptions];
+      newOptions.splice(otherIndex, 0, newOption);
+      setTaxOptions(newOptions);
+    } else {
+      setTaxOptions([...taxOptions, newOption]);
+    }
+    setNewTaxValue("");
+    setNewTaxLabel("");
+  };
+
+  const handleRemoveTaxOption = (index) => {
+    const opt = taxOptions[index];
+    if (opt.value === "0" || opt.value === "other") {
+      toast.error("No se puede eliminar esta opción");
+      return;
+    }
+    setTaxOptions(taxOptions.filter((_, i) => i !== index));
+  };
+
+  const handleSaveTaxOptions = async () => {
+    if (!selectedTenant) return;
+    try {
+      await updateTenantTaxOptionsSuperadmin(selectedTenant.id, taxOptions);
+      toast.success("Opciones de impuestos actualizadas");
+      setTaxDialogOpen(false);
+      loadData();
+    } catch (error) {
+      toast.error("Error al guardar");
+    }
+  };
 
   if (loading) {
     return (
@@ -253,15 +315,26 @@ export default function SuperadminDashboard() {
                           <span>{tenant.client_count || 0} clientes</span>
                         </div>
                       </div>
-                      <Button
-                        variant="outline" size="sm"
-                        className={`rounded-lg ${tenant.status === "active" ? "border-red-200 text-red-600 hover:bg-red-50" : "border-green-200 text-green-600 hover:bg-green-50"}`}
-                        onClick={() => handleToggleStatus(tenant.id, tenant.status)}
-                        data-testid={`toggle-tenant-${tenant.id}`}
-                      >
-                        <Power className="h-4 w-4 mr-1" />
-                        {tenant.status === "active" ? "Suspender" : "Activar"}
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline" size="sm"
+                          className="rounded-lg border-blue-200 text-blue-600 hover:bg-blue-50"
+                          onClick={() => openTaxDialog(tenant)}
+                          data-testid={`config-taxes-${tenant.id}`}
+                        >
+                          <Percent className="h-4 w-4 mr-1" />
+                          Taxes
+                        </Button>
+                        <Button
+                          variant="outline" size="sm"
+                          className={`rounded-lg ${tenant.status === "active" ? "border-red-200 text-red-600 hover:bg-red-50" : "border-green-200 text-green-600 hover:bg-green-50"}`}
+                          onClick={() => handleToggleStatus(tenant.id, tenant.status)}
+                          data-testid={`toggle-tenant-${tenant.id}`}
+                        >
+                          <Power className="h-4 w-4 mr-1" />
+                          {tenant.status === "active" ? "Suspender" : "Activar"}
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -269,6 +342,83 @@ export default function SuperadminDashboard() {
             </div>
           )}
         </ScrollArea>
+
+        {/* Tax Options Configuration Dialog */}
+        <Dialog open={taxDialogOpen} onOpenChange={setTaxDialogOpen}>
+          <DialogContent className="rounded-2xl max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Percent className="h-5 w-5 text-blue-600" />
+                Configurar Impuestos - {selectedTenant?.business_name}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <p className="text-sm text-gray-500">
+                Configura las opciones de impuestos que estarán disponibles para este Personal Shopper.
+              </p>
+              
+              {/* Current tax options */}
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Opciones Actuales</Label>
+                {taxOptions.map((opt, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-blue-100 text-blue-800">{opt.label}</Badge>
+                      <span className="text-xs text-gray-500">valor: {opt.value}%</span>
+                    </div>
+                    {opt.value !== "0" && opt.value !== "other" && (
+                      <Button
+                        variant="ghost" size="sm"
+                        className="h-6 w-6 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => handleRemoveTaxOption(idx)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Add new option */}
+              <div className="border-t pt-4">
+                <Label className="text-sm font-semibold">Agregar Nueva Opción</Label>
+                <div className="flex gap-2 mt-2">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="Valor (ej: 12.5)"
+                    value={newTaxValue}
+                    onChange={(e) => setNewTaxValue(e.target.value)}
+                    className="w-28 rounded-lg"
+                  />
+                  <Input
+                    placeholder="Etiqueta (ej: 12.5%)"
+                    value={newTaxLabel}
+                    onChange={(e) => setNewTaxLabel(e.target.value)}
+                    className="flex-1 rounded-lg"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleAddTaxOption}
+                    className="rounded-lg"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleSaveTaxOptions}
+                className="w-full h-11 font-bold rounded-xl"
+                style={{ background: '#1E3A5F', color: 'white' }}
+              >
+                Guardar Configuración
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

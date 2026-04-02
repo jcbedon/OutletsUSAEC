@@ -51,6 +51,13 @@ class Tenant(BaseModel):
     email: str
     logo_url: Optional[str] = None
     status: str = "active"
+    tax_options: List[dict] = Field(default_factory=lambda: [
+        {"value": "8.25", "label": "8.25%"},
+        {"value": "10", "label": "10%"},
+        {"value": "15", "label": "15%"},
+        {"value": "0", "label": "Sin Taxes"},
+        {"value": "other", "label": "Otro"}
+    ])
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class User(BaseModel):
@@ -186,7 +193,8 @@ class PurchaseCreate(BaseModel):
     store: str
     price: float
     live_id: str
-    tax_type: str = "illinois"  # "none", "illinois" (8.25%), "custom" (15%)
+    tax_rate: float = 0.0825  # Direct tax rate (0.0825 = 8.25%)
+    apply_tax: bool = True
     apply_commission: bool = True
     commission_amount: float = 0
 
@@ -485,6 +493,38 @@ async def update_tenant(tenant_id: str, status: str, current_user: dict = Depend
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
     return {"message": f"Tenant actualizado a {status}"}
+
+@api_router.put("/superadmin/tenants/{tenant_id}/tax-options")
+async def update_tenant_tax_options_superadmin(tenant_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Superadmin endpoint to update tax options for a specific tenant"""
+    if current_user["role"] != "superadmin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    tax_options = data.get("tax_options", [])
+    if not tax_options:
+        raise HTTPException(status_code=400, detail="Se requieren opciones de impuestos")
+    await db.tenants.update_one({"id": tenant_id}, {"$set": {"tax_options": tax_options}})
+    return {"message": "Opciones de impuestos actualizadas para el tenant", "tax_options": tax_options}
+
+@api_router.get("/superadmin/tenants/{tenant_id}/details")
+async def get_tenant_details(tenant_id: str, current_user: dict = Depends(get_current_user)):
+    """Get full tenant details including tax options"""
+    if current_user["role"] != "superadmin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    default_tax_options = [
+        {"value": "8.25", "label": "8.25%"},
+        {"value": "10", "label": "10%"},
+        {"value": "15", "label": "15%"},
+        {"value": "0", "label": "Sin Taxes"},
+        {"value": "other", "label": "Otro"}
+    ]
+    tenant["tax_options"] = tenant.get("tax_options", default_tax_options)
+    return tenant
 
 @api_router.post("/superadmin/tenants/{tenant_id}/admin")
 async def create_admin_for_tenant(tenant_id: str, data: CreateAdminRequest, current_user: dict = Depends(get_current_user)):
@@ -930,27 +970,43 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
     wallet = await db.wallets.find_one({"user_id": user["id"], "tenant_id": tid}, {"_id": 0})
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
-    # Calculate tax based on tax_type
-    if purchase_data.tax_type == "illinois":
-        tax = round(purchase_data.price * ILLINOIS_TAX_RATE, 2)
-    elif purchase_data.tax_type == "custom":
-        tax = round(purchase_data.price * CUSTOM_TAX_RATE, 2)
-    else:
-        tax = 0
+    
+    # Calculate tax using the provided tax_rate
+    tax_rate = purchase_data.tax_rate if purchase_data.apply_tax else 0
+    tax = round(purchase_data.price * tax_rate, 2)
+    
     commission_fee = purchase_data.commission_amount if purchase_data.apply_commission else 0
     price_with_tax = round(purchase_data.price + tax, 2)
     total = round(price_with_tax + commission_fee, 2)
-    purchase = Purchase(tenant_id=tid, user_id=user["id"], customer_id=purchase_data.customer_id.upper(),
-        item_name=purchase_data.item_name, store=purchase_data.store, price=purchase_data.price,
-        tax=tax, price_with_tax=price_with_tax, commission=commission_fee, total=total, live_id=purchase_data.live_id)
-    await db.purchases.insert_one(purchase.model_dump())
+    
+    purchase_dict = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "user_id": user["id"],
+        "customer_id": purchase_data.customer_id.upper(),
+        "item_name": purchase_data.item_name,
+        "store": purchase_data.store,
+        "price": purchase_data.price,
+        "tax": tax,
+        "tax_rate": tax_rate,
+        "apply_tax": purchase_data.apply_tax,
+        "price_with_tax": price_with_tax,
+        "commission": commission_fee,
+        "apply_commission": purchase_data.apply_commission,
+        "total": total,
+        "status": "confirmed",
+        "live_id": purchase_data.live_id,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.purchases.insert_one(purchase_dict)
     new_balance = wallet["available"] - total
     await db.wallets.update_one({"user_id": user["id"], "tenant_id": tid},
         {"$set": {"available": new_balance, "updated_at": datetime.now(timezone.utc).isoformat()}})
     transaction = WalletTransaction(tenant_id=tid, user_id=user["id"], customer_id=purchase_data.customer_id.upper(),
         type="purchase", amount=-total, balance_after=new_balance,
         description=f"Compra: {purchase_data.item_name} ({purchase_data.store}) - Total: ${total:.2f}", status="approved",
-        approved_at=datetime.now(timezone.utc).isoformat(), purchase_id=purchase.id)
+        approved_at=datetime.now(timezone.utc).isoformat(), purchase_id=purchase_dict["id"])
     await db.wallet_transactions.insert_one(transaction.model_dump())
     await db.lives.update_one({"id": purchase_data.live_id, "tenant_id": tid},
         {"$inc": {"total_sales": price_with_tax, "total_commissions": commission_fee, "purchase_count": 1}})
@@ -959,7 +1015,7 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
         f"Compraste {purchase_data.item_name} - Precio: ${purchase_data.price:.2f} + Tax: ${tax:.2f} + Comisión: ${commission_fee:.2f} = Total: ${total:.2f}. Saldo: ${new_balance:.2f}")
     await check_low_balance(tid, user["id"], purchase_data.customer_id.upper(), new_balance)
     return {
-        "message": "Compra registrada", "purchase_id": purchase.id, "price": purchase_data.price,
+        "message": "Compra registrada", "purchase_id": purchase_dict["id"], "price": purchase_data.price,
         "tax": tax, "price_with_tax": price_with_tax, "commission": commission_fee, "total": total,
         "amount_deducted": total, "new_balance": new_balance, "customer_name": user["name"]
     }
@@ -1587,6 +1643,37 @@ async def set_referral_bonus_setting(amount: float, current_user: dict = Depends
     await db.settings.update_one({"key": "referral_bonus", "tenant_id": tid},
         {"$set": {"key": "referral_bonus", "tenant_id": tid, "value": amount}}, upsert=True)
     return {"message": f"Bono de referido actualizado a ${amount:.2f}", "referral_bonus": amount}
+
+@api_router.get("/admin/settings")
+async def get_tenant_settings(current_user: dict = Depends(get_current_user)):
+    """Get all tenant settings including tax options"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "tax_options": 1})
+    default_tax_options = [
+        {"value": "8.25", "label": "8.25%"},
+        {"value": "10", "label": "10%"},
+        {"value": "15", "label": "15%"},
+        {"value": "0", "label": "Sin Taxes"},
+        {"value": "other", "label": "Otro"}
+    ]
+    return {
+        "tax_options": tenant.get("tax_options", default_tax_options) if tenant else default_tax_options,
+        "referral_bonus": await get_referral_bonus(tid)
+    }
+
+@api_router.put("/admin/settings/tax-options")
+async def update_tenant_tax_options(data: dict, current_user: dict = Depends(get_current_user)):
+    """Update tax options for the tenant"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    tax_options = data.get("tax_options", [])
+    if not tax_options:
+        raise HTTPException(status_code=400, detail="Se requieren opciones de impuestos")
+    await db.tenants.update_one({"id": tid}, {"$set": {"tax_options": tax_options}})
+    return {"message": "Opciones de impuestos actualizadas", "tax_options": tax_options}
 
 @api_router.get("/admin/referrals")
 async def get_referral_stats(current_user: dict = Depends(get_current_user)):

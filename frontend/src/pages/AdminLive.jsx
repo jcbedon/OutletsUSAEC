@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useAuth } from "@/App";
 import { useNavigate } from "react-router-dom";
 import { 
@@ -13,7 +13,8 @@ import {
   getWalletByCustomerId,
   getClientInfo,
   updatePurchase,
-  deletePurchase
+  deletePurchase,
+  getTenantSettings
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -40,10 +41,18 @@ import {
   Edit,
   Trash2,
   Save,
-  X
+  X,
+  Search
 } from "lucide-react";
 
-const TAX_RATE = 0.0825; // Illinois tax 8.25%
+// Default tax options
+const DEFAULT_TAX_OPTIONS = [
+  { value: "8.25", label: "8.25%" },
+  { value: "10", label: "10%" },
+  { value: "15", label: "15%" },
+  { value: "0", label: "Sin Taxes" },
+  { value: "other", label: "Otro" }
+];
 
 export default function AdminLive() {
   const { user } = useAuth();
@@ -65,7 +74,8 @@ export default function AdminLive() {
     customer_id: "",
     item_name: "",
     price: "",
-    tax_type: "illinois",  // "none", "illinois", "custom"
+    tax_option: "8.25",  // Selected tax option value
+    custom_tax: "",       // For "other" option
     apply_commission: true,
     commission_amount: "3"
   });
@@ -77,15 +87,52 @@ export default function AdminLive() {
     item_name: "", 
     store: "", 
     price: "",
-    tax_type: "illinois",
+    tax_option: "8.25",
+    custom_tax: "",
     apply_commission: true,
     commission: "3"
   });
+  
+  // Client autocomplete state
+  const [clientSearchOpen, setClientSearchOpen] = useState(false);
+  const [clientSearchValue, setClientSearchValue] = useState("");
+  
+  // Tax options from tenant settings
+  const [taxOptions, setTaxOptions] = useState(DEFAULT_TAX_OPTIONS);
 
   const customerIdRef = useRef(null);
 
+  // Filter clients for autocomplete
+  const filteredClients = useMemo(() => {
+    if (!clientSearchValue || clientSearchValue.length < 1) return [];
+    const search = clientSearchValue.toLowerCase().trim();
+    const searchTerms = search.split(/\s+/);
+    return activeClients.filter(c => {
+      const name = c.name?.toLowerCase() || "";
+      const customerId = c.customer_id?.toLowerCase() || "";
+      return searchTerms.every(term =>
+        name.includes(term) ||
+        customerId.includes(term) ||
+        name.split(/\s+/).some(word => word.startsWith(term))
+      );
+    }).slice(0, 8); // Limit to 8 suggestions
+  }, [activeClients, clientSearchValue]);
+
+  // Calculate actual tax rate from selected option
+  const getEffectiveTaxRate = (taxOption, customTax) => {
+    if (taxOption === "0") return 0;
+    if (taxOption === "other") return parseFloat(customTax) / 100 || 0;
+    return parseFloat(taxOption) / 100;
+  };
+
   useEffect(() => {
     loadData();
+    // Load tenant tax settings
+    getTenantSettings().then(res => {
+      if (res.data?.tax_options && res.data.tax_options.length > 0) {
+        setTaxOptions(res.data.tax_options);
+      }
+    }).catch(() => {});
   }, []);
 
   const loadData = async () => {
@@ -180,23 +227,39 @@ export default function AdminLive() {
     }
   };
 
-  const handleCustomerIdChange = async (customerId) => {
-    setPurchaseForm({ ...purchaseForm, customer_id: customerId });
+  const handleCustomerIdChange = async (value) => {
+    setClientSearchValue(value);
+    setPurchaseForm({ ...purchaseForm, customer_id: value.toUpperCase() });
     setSelectedCustomer(null);
     setCustomerWallet(null);
     setCustomerCommission(3.0);
 
-    if (customerId.length >= 2) {
+    // Show dropdown if searching by name (contains letters beyond just the ID pattern)
+    const hasLettersForName = /[a-zA-Z]{2,}/.test(value) && !/^[A-Z]\d+$/.test(value.toUpperCase());
+    setClientSearchOpen(hasLettersForName && value.length >= 2);
+
+    // Try to find customer by exact ID
+    if (value.length >= 2) {
       try {
-        const clientInfoRes = await getClientInfo(customerId);
+        const clientInfoRes = await getClientInfo(value.toUpperCase());
         const clientData = clientInfoRes.data;
         setCustomerWallet({ available: clientData.wallet_balance });
         setSelectedCustomer(clientData);
         setCustomerCommission(clientData.commission_fee || 3.0);
+        setClientSearchOpen(false);
       } catch (error) {
-        // Customer not found
+        // Customer not found by ID - keep dropdown open for name search
       }
     }
+  };
+
+  const handleSelectClient = (client) => {
+    setPurchaseForm({ ...purchaseForm, customer_id: client.customer_id });
+    setClientSearchValue(client.customer_id);
+    setSelectedCustomer(client);
+    setCustomerWallet({ available: client.wallet_balance || 0 });
+    setCustomerCommission(client.commission_fee || 3.0);
+    setClientSearchOpen(false);
   };
 
   const handleSubmitPurchase = async (e) => {
@@ -213,16 +276,25 @@ export default function AdminLive() {
       return;
     }
 
+    // Validate custom tax if "other" is selected
+    if (purchaseForm.tax_option === "other" && (!purchaseForm.custom_tax || parseFloat(purchaseForm.custom_tax) < 0)) {
+      toast.error("Ingresa un valor válido para el impuesto personalizado");
+      return;
+    }
+
     setSubmitting(true);
 
     try {
+      const taxRate = getEffectiveTaxRate(purchaseForm.tax_option, purchaseForm.custom_tax);
+      
       const result = await createPurchase({
         customer_id: purchaseForm.customer_id,
         item_name: purchaseForm.item_name,
         store: selectedLive.store || "Sin tienda",
         price: price,
         live_id: selectedLive.id,
-        tax_type: purchaseForm.tax_type,
+        tax_rate: taxRate,
+        apply_tax: taxRate > 0,
         apply_commission: purchaseForm.apply_commission,
         commission_amount: parseFloat(purchaseForm.commission_amount) || 0
       });
@@ -232,16 +304,20 @@ export default function AdminLive() {
         { duration: 3000 }
       );
 
-      // Reset form but keep commission amount for next purchase
+      // Reset form but keep tax option and commission for next purchase
+      const lastTaxOption = purchaseForm.tax_option;
+      const lastCustomTax = purchaseForm.custom_tax;
       const lastCommission = purchaseForm.commission_amount;
       setPurchaseForm({
         customer_id: "",
         item_name: "",
         price: "",
-        tax_type: "illinois",
+        tax_option: lastTaxOption,
+        custom_tax: lastCustomTax,
         apply_commission: true,
         commission_amount: lastCommission
       });
+      setClientSearchValue("");
       setSelectedCustomer(null);
       setCustomerWallet(null);
 
@@ -266,20 +342,26 @@ export default function AdminLive() {
 
   const handleEditPurchase = (purchase) => {
     setEditingPurchase(purchase.id);
-    // Determine tax_type from stored values
-    let tax_type = "none";
-    if (purchase.apply_tax !== false) {
-      if (purchase.tax_rate === 0.15) {
-        tax_type = "custom";
+    // Determine tax_option from stored tax_rate
+    let tax_option = "0";
+    let custom_tax = "";
+    if (purchase.apply_tax !== false && purchase.tax_rate > 0) {
+      const rate = (purchase.tax_rate * 100).toFixed(2).replace(/\.?0+$/, '');
+      // Check if it matches predefined options
+      const matchingOption = DEFAULT_TAX_OPTIONS.find(opt => opt.value === rate);
+      if (matchingOption && matchingOption.value !== "other") {
+        tax_option = rate;
       } else {
-        tax_type = "illinois";
+        tax_option = "other";
+        custom_tax = rate;
       }
     }
     setEditForm({ 
       item_name: purchase.item_name, 
       store: purchase.store, 
       price: purchase.price.toString(),
-      tax_type: tax_type,
+      tax_option: tax_option,
+      custom_tax: custom_tax,
       apply_commission: purchase.apply_commission !== false,
       commission: (purchase.commission || 0).toString()
     });
@@ -295,15 +377,14 @@ export default function AdminLive() {
       if (editForm.store !== orig.store) data.store = editForm.store;
       if (parseFloat(editForm.price) !== orig.price) data.price = parseFloat(editForm.price);
       
-      // Tax fields
-      const newApplyTax = editForm.tax_type !== "none";
-      const newTaxRate = editForm.tax_type === "custom" ? 0.15 : 0.0825;
+      // Tax fields - use new tax option system
+      const newTaxRate = getEffectiveTaxRate(editForm.tax_option, editForm.custom_tax);
+      const newApplyTax = newTaxRate > 0;
       const origApplyTax = orig.apply_tax !== false;
-      const origTaxRate = orig.tax_rate || 0.0825;
+      const origTaxRate = orig.tax_rate || 0;
       
       if (newApplyTax !== origApplyTax) data.apply_tax = newApplyTax;
-      if (newApplyTax && newTaxRate !== origTaxRate) data.tax_rate = newTaxRate;
-      if (!newApplyTax) data.tax_rate = 0;
+      if (Math.abs(newTaxRate - origTaxRate) > 0.0001) data.tax_rate = newTaxRate;
       
       // Commission fields
       const newApplyCommission = editForm.apply_commission;
@@ -618,20 +699,45 @@ export default function AdminLive() {
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleSubmitPurchase} className="space-y-4">
-                    {/* Customer ID */}
+                    {/* Customer ID with Autocomplete */}
                     <div>
                       <Label className="text-sm font-medium">ID Cliente</Label>
                       <div className="relative mt-1">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 z-10" />
                         <Input
                           ref={customerIdRef}
-                          placeholder="Ej: J4582"
-                          value={purchaseForm.customer_id}
-                          onChange={(e) => handleCustomerIdChange(e.target.value.toUpperCase())}
-                          className="pl-10 h-14 text-2xl font-bold text-center rounded-xl uppercase"
+                          placeholder="ID o nombre del cliente..."
+                          value={clientSearchValue}
+                          onChange={(e) => handleCustomerIdChange(e.target.value)}
+                          onFocus={() => clientSearchValue.length >= 2 && setClientSearchOpen(true)}
+                          onBlur={() => setTimeout(() => setClientSearchOpen(false), 200)}
+                          className="pl-10 h-14 text-xl font-bold rounded-xl"
                           data-testid="purchase-customer-id"
                           autoComplete="off"
                         />
+                        
+                        {/* Autocomplete Dropdown */}
+                        {clientSearchOpen && filteredClients.length > 0 && (
+                          <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                            {filteredClients.map((client) => (
+                              <button
+                                key={client.id}
+                                type="button"
+                                onClick={() => handleSelectClient(client)}
+                                className="w-full px-4 py-3 text-left hover:bg-blue-50 flex items-center justify-between border-b border-gray-100 last:border-0"
+                                data-testid={`client-suggestion-${client.customer_id}`}
+                              >
+                                <div>
+                                  <span className="font-bold text-blue-600">#{client.customer_id}</span>
+                                  <span className="ml-2 text-gray-800">{client.name}</span>
+                                </div>
+                                <Badge className="bg-gray-100 text-gray-600">
+                                  ${(client.wallet_balance || 0).toFixed(2)}
+                                </Badge>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       {selectedCustomer && (
                         <div className="mt-2 p-3 bg-green-50 rounded-xl flex items-center justify-between">
@@ -678,46 +784,42 @@ export default function AdminLive() {
                         />
                       </div>
                       
-                      {/* Tax Options - Radio Buttons */}
+                      {/* Tax Options - Dropdown */}
                       <div className="mt-3 p-3 bg-blue-50 rounded-xl">
                         <p className="text-xs font-semibold text-gray-600 mb-2">Impuesto (Tax)</p>
-                        <div className="flex flex-wrap gap-3">
-                          <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-gray-200 hover:border-blue-400 transition-colors">
-                            <input
-                              type="radio"
-                              name="tax_type"
-                              value="illinois"
-                              checked={purchaseForm.tax_type === "illinois"}
-                              onChange={(e) => setPurchaseForm({ ...purchaseForm, tax_type: e.target.value })}
-                              className="w-4 h-4 text-blue-600"
-                              data-testid="tax-illinois-radio"
-                            />
-                            <span className="text-sm font-medium text-gray-700">8.25%</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-gray-200 hover:border-blue-400 transition-colors">
-                            <input
-                              type="radio"
-                              name="tax_type"
-                              value="custom"
-                              checked={purchaseForm.tax_type === "custom"}
-                              onChange={(e) => setPurchaseForm({ ...purchaseForm, tax_type: e.target.value })}
-                              className="w-4 h-4 text-blue-600"
-                              data-testid="tax-custom-radio"
-                            />
-                            <span className="text-sm font-medium text-gray-700">15%</span>
-                          </label>
-                          <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-lg border border-gray-200 hover:border-gray-400 transition-colors">
-                            <input
-                              type="radio"
-                              name="tax_type"
-                              value="none"
-                              checked={purchaseForm.tax_type === "none"}
-                              onChange={(e) => setPurchaseForm({ ...purchaseForm, tax_type: e.target.value })}
-                              className="w-4 h-4 text-gray-600"
-                              data-testid="tax-none-radio"
-                            />
-                            <span className="text-sm font-medium text-gray-700">Sin Tax</span>
-                          </label>
+                        <div className="flex gap-2 items-center">
+                          <Select 
+                            value={purchaseForm.tax_option} 
+                            onValueChange={(val) => setPurchaseForm({ ...purchaseForm, tax_option: val })}
+                          >
+                            <SelectTrigger className="h-10 rounded-lg bg-white flex-1" data-testid="tax-select">
+                              <SelectValue placeholder="Seleccionar impuesto" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {taxOptions.map((opt) => (
+                                <SelectItem key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          
+                          {purchaseForm.tax_option === "other" && (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                inputMode="decimal"
+                                step="0.01"
+                                min="0"
+                                placeholder="0"
+                                value={purchaseForm.custom_tax}
+                                onChange={(e) => setPurchaseForm({ ...purchaseForm, custom_tax: e.target.value })}
+                                className="w-20 h-10 text-center rounded-lg"
+                                data-testid="custom-tax-input"
+                              />
+                              <span className="text-sm font-medium text-gray-600">%</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -751,38 +853,48 @@ export default function AdminLive() {
 
                       {purchaseForm.price && (
                         <div className="mt-3 p-3 bg-gray-50 rounded-xl">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-600">Precio:</span>
-                            <span className="font-medium">${parseFloat(purchaseForm.price || 0).toFixed(2)}</span>
-                          </div>
-                          {purchaseForm.tax_type !== "none" && (
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-600">
-                                Tax ({purchaseForm.tax_type === "illinois" ? "8.25%" : "15%"}):
-                              </span>
-                              <span className="font-medium">
-                                ${(parseFloat(purchaseForm.price || 0) * (purchaseForm.tax_type === "illinois" ? 0.0825 : 0.15)).toFixed(2)}
-                              </span>
-                            </div>
-                          )}
-                          <div className="flex justify-between text-sm font-bold text-blue-600">
-                            <span>Precio {purchaseForm.tax_type !== "none" ? '+ Tax' : ''}:</span>
-                            <span>
-                              ${(parseFloat(purchaseForm.price || 0) * (purchaseForm.tax_type === "illinois" ? 1.0825 : purchaseForm.tax_type === "custom" ? 1.15 : 1)).toFixed(2)}
-                            </span>
-                          </div>
-                          {purchaseForm.apply_commission && (
-                            <div className="flex justify-between text-sm mt-2 pt-2 border-t border-dashed">
-                              <span className="text-yellow-600">Comisión:</span>
-                              <span className="font-bold text-yellow-600">${parseFloat(purchaseForm.commission_amount || 0).toFixed(2)}</span>
-                            </div>
-                          )}
-                          <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t -mx-3 px-3 py-2 rounded-b-xl" style={{ background: 'rgba(30,58,95,0.05)' }}>
-                            <span>Se descuenta del saldo:</span>
-                            <span className="text-red-600">
-                              ${(parseFloat(purchaseForm.price || 0) * (purchaseForm.tax_type === "illinois" ? 1.0825 : purchaseForm.tax_type === "custom" ? 1.15 : 1) + (purchaseForm.apply_commission ? parseFloat(purchaseForm.commission_amount || 0) : 0)).toFixed(2)}
-                            </span>
-                          </div>
+                          {(() => {
+                            const price = parseFloat(purchaseForm.price || 0);
+                            const taxRate = getEffectiveTaxRate(purchaseForm.tax_option, purchaseForm.custom_tax);
+                            const taxAmount = price * taxRate;
+                            const priceWithTax = price + taxAmount;
+                            const commission = purchaseForm.apply_commission ? parseFloat(purchaseForm.commission_amount || 0) : 0;
+                            const total = priceWithTax + commission;
+                            const taxLabel = purchaseForm.tax_option === "other" 
+                              ? `${purchaseForm.custom_tax || 0}%`
+                              : purchaseForm.tax_option === "0" 
+                                ? "Sin Tax" 
+                                : `${purchaseForm.tax_option}%`;
+                            
+                            return (
+                              <>
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-gray-600">Precio:</span>
+                                  <span className="font-medium">${price.toFixed(2)}</span>
+                                </div>
+                                {taxRate > 0 && (
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-gray-600">Tax ({taxLabel}):</span>
+                                    <span className="font-medium">${taxAmount.toFixed(2)}</span>
+                                  </div>
+                                )}
+                                <div className="flex justify-between text-sm font-bold text-blue-600">
+                                  <span>Precio {taxRate > 0 ? '+ Tax' : ''}:</span>
+                                  <span>${priceWithTax.toFixed(2)}</span>
+                                </div>
+                                {purchaseForm.apply_commission && (
+                                  <div className="flex justify-between text-sm mt-2 pt-2 border-t border-dashed">
+                                    <span className="text-yellow-600">Comisión:</span>
+                                    <span className="font-bold text-yellow-600">${commission.toFixed(2)}</span>
+                                  </div>
+                                )}
+                                <div className="flex justify-between text-lg font-bold mt-2 pt-2 border-t -mx-3 px-3 py-2 rounded-b-xl" style={{ background: 'rgba(30,58,95,0.05)' }}>
+                                  <span>Se descuenta del saldo:</span>
+                                  <span className="text-red-600">${total.toFixed(2)}</span>
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
@@ -845,28 +957,35 @@ export default function AdminLive() {
                                   {/* Tax Options */}
                                   <div className="p-2 bg-blue-50 rounded-lg">
                                     <p className="text-xs font-medium text-gray-600 mb-1">Impuesto</p>
-                                    <div className="flex gap-2 flex-wrap">
-                                      <label className="flex items-center gap-1 text-xs cursor-pointer bg-white px-2 py-1 rounded border">
-                                        <input type="radio" name={`edit_tax_${purchase.id}`} value="illinois"
-                                          checked={editForm.tax_type === "illinois"}
-                                          onChange={(e) => setEditForm({...editForm, tax_type: e.target.value})}
-                                          className="w-3 h-3" />
-                                        <span>8.25%</span>
-                                      </label>
-                                      <label className="flex items-center gap-1 text-xs cursor-pointer bg-white px-2 py-1 rounded border">
-                                        <input type="radio" name={`edit_tax_${purchase.id}`} value="custom"
-                                          checked={editForm.tax_type === "custom"}
-                                          onChange={(e) => setEditForm({...editForm, tax_type: e.target.value})}
-                                          className="w-3 h-3" />
-                                        <span>15%</span>
-                                      </label>
-                                      <label className="flex items-center gap-1 text-xs cursor-pointer bg-white px-2 py-1 rounded border">
-                                        <input type="radio" name={`edit_tax_${purchase.id}`} value="none"
-                                          checked={editForm.tax_type === "none"}
-                                          onChange={(e) => setEditForm({...editForm, tax_type: e.target.value})}
-                                          className="w-3 h-3" />
-                                        <span>Sin Tax</span>
-                                      </label>
+                                    <div className="flex gap-2 items-center">
+                                      <Select 
+                                        value={editForm.tax_option} 
+                                        onValueChange={(val) => setEditForm({...editForm, tax_option: val})}
+                                      >
+                                        <SelectTrigger className="h-8 rounded text-xs bg-white flex-1">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {taxOptions.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                                              {opt.label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                      {editForm.tax_option === "other" && (
+                                        <div className="flex items-center gap-1">
+                                          <Input
+                                            type="number"
+                                            step="0.01"
+                                            min="0"
+                                            value={editForm.custom_tax}
+                                            onChange={(e) => setEditForm({...editForm, custom_tax: e.target.value})}
+                                            className="w-16 h-8 text-xs text-center rounded"
+                                          />
+                                          <span className="text-xs">%</span>
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                   
@@ -888,33 +1007,41 @@ export default function AdminLive() {
                                   {/* Preview */}
                                   {editForm.price && (
                                     <div className="p-2 bg-gray-50 rounded-lg text-xs space-y-1">
-                                      <div className="flex justify-between">
-                                        <span className="text-gray-500">Precio:</span>
-                                        <span className="font-medium">${parseFloat(editForm.price || 0).toFixed(2)}</span>
-                                      </div>
-                                      {editForm.tax_type !== "none" && (
-                                        <div className="flex justify-between">
-                                          <span className="text-gray-500">Tax ({editForm.tax_type === "illinois" ? "8.25%" : "15%"}):</span>
-                                          <span className="font-medium">
-                                            ${(parseFloat(editForm.price || 0) * (editForm.tax_type === "illinois" ? 0.0825 : 0.15)).toFixed(2)}
-                                          </span>
-                                        </div>
-                                      )}
-                                      {editForm.apply_commission && (
-                                        <div className="flex justify-between">
-                                          <span className="text-gray-500">Comision:</span>
-                                          <span className="font-medium">${parseFloat(editForm.commission || 0).toFixed(2)}</span>
-                                        </div>
-                                      )}
-                                      <div className="flex justify-between pt-1 border-t font-bold text-blue-600">
-                                        <span>Total:</span>
-                                        <span>
-                                          ${(
-                                            parseFloat(editForm.price || 0) * (editForm.tax_type === "illinois" ? 1.0825 : editForm.tax_type === "custom" ? 1.15 : 1) 
-                                            + (editForm.apply_commission ? parseFloat(editForm.commission || 0) : 0)
-                                          ).toFixed(2)}
-                                        </span>
-                                      </div>
+                                      {(() => {
+                                        const price = parseFloat(editForm.price || 0);
+                                        const taxRate = getEffectiveTaxRate(editForm.tax_option, editForm.custom_tax);
+                                        const taxAmount = price * taxRate;
+                                        const commission = editForm.apply_commission ? parseFloat(editForm.commission || 0) : 0;
+                                        const total = price + taxAmount + commission;
+                                        const taxLabel = editForm.tax_option === "other" 
+                                          ? `${editForm.custom_tax || 0}%`
+                                          : editForm.tax_option === "0" ? "Sin Tax" : `${editForm.tax_option}%`;
+                                        
+                                        return (
+                                          <>
+                                            <div className="flex justify-between">
+                                              <span className="text-gray-500">Precio:</span>
+                                              <span className="font-medium">${price.toFixed(2)}</span>
+                                            </div>
+                                            {taxRate > 0 && (
+                                              <div className="flex justify-between">
+                                                <span className="text-gray-500">Tax ({taxLabel}):</span>
+                                                <span className="font-medium">${taxAmount.toFixed(2)}</span>
+                                              </div>
+                                            )}
+                                            {editForm.apply_commission && (
+                                              <div className="flex justify-between">
+                                                <span className="text-gray-500">Comisión:</span>
+                                                <span className="font-medium">${commission.toFixed(2)}</span>
+                                              </div>
+                                            )}
+                                            <div className="flex justify-between pt-1 border-t font-bold text-blue-600">
+                                              <span>Total:</span>
+                                              <span>${total.toFixed(2)}</span>
+                                            </div>
+                                          </>
+                                        );
+                                      })()}
                                     </div>
                                   )}
                                   
