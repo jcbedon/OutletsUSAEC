@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
 import {
@@ -9,12 +9,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ArrowLeft, DollarSign, Users, TrendingUp, Radio,
-  FileSpreadsheet, FileText, Download, ChevronDown, ChevronUp
+  FileSpreadsheet, FileText, Download, ChevronDown, ChevronUp, Search
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -206,6 +207,46 @@ export default function AdminReports() {
   const [loading, setLoading] = useState(true);
   const [expandedClient, setExpandedClient] = useState(null);
   const [activeTab, setActiveTab] = useState("resumen");
+  const [clientSearch, setClientSearch] = useState("");
+  const [purchaseSearch, setPurchaseSearch] = useState("");
+
+  // Filtrar clientes por búsqueda
+  const filteredClientsReport = useMemo(() => {
+    if (!clientSearch.trim()) return clientsReport;
+    const searchTerms = clientSearch.toLowerCase().trim().split(/\s+/);
+    return clientsReport.filter(cr => {
+      const name = cr.client.name?.toLowerCase() || "";
+      const customerId = cr.client.customer_id?.toLowerCase() || "";
+      const whatsapp = cr.client.whatsapp || "";
+      return searchTerms.every(term =>
+        name.includes(term) ||
+        customerId.includes(term) ||
+        whatsapp.includes(term) ||
+        name.split(/\s+/).some(word => word.startsWith(term))
+      );
+    });
+  }, [clientsReport, clientSearch]);
+
+  // Filtrar compras por búsqueda
+  const filteredPurchases = useMemo(() => {
+    if (!purchaseSearch.trim()) return allPurchases;
+    const searchTerms = purchaseSearch.toLowerCase().trim().split(/\s+/);
+    return allPurchases.filter(p => {
+      const clientName = p.client_name?.toLowerCase() || "";
+      const customerId = p.customer_id?.toLowerCase() || "";
+      const itemName = p.item_name?.toLowerCase() || "";
+      const store = p.store?.toLowerCase() || "";
+      const liveTitle = p.live_title?.toLowerCase() || "";
+      return searchTerms.every(term =>
+        clientName.includes(term) ||
+        customerId.includes(term) ||
+        itemName.includes(term) ||
+        store.includes(term) ||
+        liveTitle.includes(term) ||
+        clientName.split(/\s+/).some(word => word.startsWith(term))
+      );
+    });
+  }, [allPurchases, purchaseSearch]);
 
   useEffect(() => {
     Promise.all([getReportsSummary(), getLives()])
@@ -318,17 +359,49 @@ export default function AdminReports() {
           </TabsContent>
 
           <TabsContent value="clientes">
-            <div className="flex justify-end gap-2 mb-4">
+            <div className="flex flex-col sm:flex-row justify-between gap-3 mb-4">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder="Buscar por nombre, apellido, ID o WhatsApp..."
+                  value={clientSearch}
+                  onChange={(e) => setClientSearch(e.target.value)}
+                  className="pl-9 h-10 rounded-xl"
+                  data-testid="search-clients-report"
+                />
+                {clientSearch && (
+                  <button
+                    onClick={() => setClientSearch("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
               <ExportBtns onPdf={() => exportClientsResumen("pdf")} onXls={() => exportClientsResumen("xls")} pdfId="export-clients-pdf" xlsId="export-clients-xls" />
             </div>
-            <ScrollArea className="h-[calc(100vh-380px)]">
+            {clientSearch && (
+              <p className="text-sm text-gray-500 mb-3">
+                Mostrando {filteredClientsReport.length} de {clientsReport.length} clientes
+              </p>
+            )}
+            <ScrollArea className="h-[calc(100vh-420px)]">
               <div className="space-y-3">
-                {clientsReport.map((cr) => (
-                  <ClientRow key={cr.client.id} cr={cr}
-                    isExpanded={expandedClient === cr.client.id}
-                    onToggle={() => setExpandedClient(expandedClient === cr.client.id ? null : cr.client.id)}
-                    onExport={exportClient} />
-                ))}
+                {filteredClientsReport.length === 0 ? (
+                  <Card className="rounded-xl border-dashed border-2">
+                    <CardContent className="p-8 text-center">
+                      <Users className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500">No se encontraron clientes</p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  filteredClientsReport.map((cr) => (
+                    <ClientRow key={cr.client.id} cr={cr}
+                      isExpanded={expandedClient === cr.client.id}
+                      onToggle={() => setExpandedClient(expandedClient === cr.client.id ? null : cr.client.id)}
+                      onExport={exportClient} />
+                  ))
+                )}
               </div>
             </ScrollArea>
           </TabsContent>
@@ -336,15 +409,45 @@ export default function AdminReports() {
           <TabsContent value="compras">
             <Card className="rounded-xl">
               <CardContent className="p-4">
-                <div className="flex justify-between items-center mb-4">
-                  <p className="font-bold text-slate-800">{allPurchases.length} compras</p>
+                <div className="flex flex-col sm:flex-row justify-between gap-3 mb-4">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder="Buscar por cliente, producto, tienda o live..."
+                      value={purchaseSearch}
+                      onChange={(e) => setPurchaseSearch(e.target.value)}
+                      className="pl-9 h-10 rounded-xl"
+                      data-testid="search-purchases-report"
+                    />
+                    {purchaseSearch && (
+                      <button
+                        onClick={() => setPurchaseSearch("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                   <ExportBtns onPdf={() => exportAll("pdf")} onXls={() => exportAll("xls")} pdfId="export-all-pdf" xlsId="export-all-xls" />
                 </div>
+                <div className="flex justify-between items-center mb-3">
+                  <p className="font-bold text-slate-800">
+                    {purchaseSearch 
+                      ? `${filteredPurchases.length} de ${allPurchases.length} compras`
+                      : `${allPurchases.length} compras`
+                    }
+                  </p>
+                </div>
                 <ScrollArea className="max-h-[500px]">
-                  {allPurchases.length > 0 ? (
-                    <PurchaseTable purchases={allPurchases} showClient={true} showLive={true} />
-                  ) : (
+                  {filteredPurchases.length > 0 ? (
+                    <PurchaseTable purchases={filteredPurchases} showClient={true} showLive={true} />
+                  ) : allPurchases.length === 0 ? (
                     <p className="text-center py-12 text-gray-400">Cargando...</p>
+                  ) : (
+                    <div className="text-center py-12">
+                      <Search className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-400">No se encontraron compras</p>
+                    </div>
                   )}
                 </ScrollArea>
               </CardContent>

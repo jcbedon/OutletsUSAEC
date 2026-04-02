@@ -37,11 +37,21 @@ export default function AdminClients() {
 
   useEffect(() => {
     if (search) {
-      setFilteredClients(clients.filter(c =>
-        c.name.toLowerCase().includes(search.toLowerCase()) ||
-        c.customer_id.toLowerCase().includes(search.toLowerCase()) ||
-        c.whatsapp.includes(search)
-      ));
+      const searchTerms = search.toLowerCase().trim().split(/\s+/);
+      setFilteredClients(clients.filter(c => {
+        const name = c.name?.toLowerCase() || "";
+        const customerId = c.customer_id?.toLowerCase() || "";
+        const whatsapp = c.whatsapp || "";
+        
+        // Buscar cada término en nombre, ID o WhatsApp
+        return searchTerms.every(term => 
+          name.includes(term) ||
+          customerId.includes(term) ||
+          whatsapp.includes(term) ||
+          // Buscar por iniciales (primera letra de cada palabra del nombre)
+          name.split(/\s+/).some(word => word.startsWith(term))
+        );
+      }));
     } else {
       setFilteredClients(clients);
     }
@@ -232,9 +242,29 @@ export default function AdminClients() {
 
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-          <Input placeholder="Buscar por nombre, ID o WhatsApp..." value={search} onChange={(e) => setSearch(e.target.value)}
-            className="pl-10 h-12 rounded-xl" data-testid="search-clients-input" />
+          <Input 
+            placeholder="Buscar por nombre, apellido, iniciales, ID o WhatsApp..." 
+            value={search} 
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10 h-12 rounded-xl border-2 focus:border-blue-400" 
+            data-testid="search-clients-input" 
+          />
+          {search && (
+            <button 
+              onClick={() => setSearch("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              data-testid="clear-search-btn"
+            >
+              ✕
+            </button>
+          )}
         </div>
+        
+        {search && (
+          <p className="text-sm text-gray-500 mb-3">
+            Mostrando {filteredClients.length} de {clients.length} clientes
+          </p>
+        )}
 
         <ScrollArea className="h-[calc(100vh-380px)]">
           {filteredClients.length === 0 ? (
