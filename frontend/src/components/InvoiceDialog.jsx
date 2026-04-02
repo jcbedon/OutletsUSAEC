@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices } from "@/lib/api";
+import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice } from "@/lib/api";
 import { toast } from "sonner";
-import { FileText, Download, CheckCircle, Clock, AlertCircle, Printer, History } from "lucide-react";
+import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw } from "lucide-react";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 
@@ -90,6 +90,50 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       loadInvoices();
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al aprobar factura");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRemoveItem = async (purchaseId) => {
+    if (!currentInvoice) return;
+    
+    if (currentInvoice.purchases?.length <= 1) {
+      toast.error("No puedes quitar el último artículo");
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      await removeItemFromInvoice(currentInvoice.id, purchaseId);
+      toast.success("Artículo removido de la factura");
+      
+      // Reload invoice
+      const invoiceRes = await getInvoiceDetail(currentInvoice.id);
+      setCurrentInvoice(invoiceRes.data);
+      loadPendingPurchases();
+      loadInvoices();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al remover artículo");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReopenInvoice = async () => {
+    if (!currentInvoice) return;
+    
+    try {
+      setLoading(true);
+      await reopenInvoice(currentInvoice.id);
+      toast.success("Factura reabierta para modificaciones");
+      
+      // Reload invoice
+      const invoiceRes = await getInvoiceDetail(currentInvoice.id);
+      setCurrentInvoice(invoiceRes.data);
+      loadInvoices();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al reabrir factura");
     } finally {
       setLoading(false);
     }
@@ -519,11 +563,12 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
                       <th className="text-right p-3 text-white text-sm font-semibold">Tax</th>
                       <th className="text-right p-3 text-white text-sm font-semibold">Comisión</th>
                       <th className="text-right p-3 text-white text-sm font-semibold">Total</th>
+                      <th className="text-center p-3 text-white text-sm font-semibold w-16"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {currentInvoice.purchases?.map((p, idx) => (
-                      <tr key={p.id} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                      <tr key={p.id} className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} group hover:bg-red-50 transition-colors`}>
                         <td className="p-3 text-sm text-gray-600">{idx + 1}</td>
                         <td className="p-3 text-sm font-medium">{p.item_name}</td>
                         <td className="p-3 text-sm text-gray-600">{p.store}</td>
@@ -531,6 +576,20 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
                         <td className="p-3 text-sm text-right">${(p.tax || 0).toFixed(2)}</td>
                         <td className="p-3 text-sm text-right">${(p.commission || 0).toFixed(2)}</td>
                         <td className="p-3 text-sm text-right font-bold">${p.total.toFixed(2)}</td>
+                        <td className="p-3 text-center">
+                          {currentInvoice.purchases.length > 1 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-600 transition-all"
+                              onClick={() => handleRemoveItem(p.id)}
+                              disabled={loading}
+                              title="Quitar de la factura"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -565,7 +624,18 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
                   <AlertCircle className="h-6 w-6 text-yellow-600" />
                   <div className="flex-1">
                     <p className="font-semibold text-yellow-800">Factura Pendiente de Pago</p>
-                    <p className="text-sm text-yellow-700">Aprueba esta factura para mover las compras al historial</p>
+                    <p className="text-sm text-yellow-700">Puedes quitar artículos pasando el mouse sobre ellos. Aprueba cuando esté lista.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Approved - can reopen */}
+              {currentInvoice.status === "approved" && (
+                <div className="p-4 rounded-xl bg-blue-50 border-2 border-blue-200 flex items-center gap-3">
+                  <Edit className="h-6 w-6 text-blue-600" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-blue-800">Factura Pagada</p>
+                    <p className="text-sm text-blue-700">Puedes reabrir la factura si necesitas modificarla o quitar artículos</p>
                   </div>
                 </div>
               )}
@@ -580,7 +650,17 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
                   <Download className="h-5 w-5 mr-2" />
                   Descargar PDF
                 </Button>
-                {currentInvoice.status !== "approved" && (
+                {currentInvoice.status === "approved" ? (
+                  <Button
+                    onClick={handleReopenInvoice}
+                    disabled={loading}
+                    variant="outline"
+                    className="flex-1 h-12 rounded-xl border-orange-300 text-orange-600 hover:bg-orange-50"
+                  >
+                    <RefreshCw className="h-5 w-5 mr-2" />
+                    {loading ? "Reabriendo..." : "Reabrir Factura"}
+                  </Button>
+                ) : (
                   <Button
                     onClick={handleApproveInvoice}
                     disabled={loading}

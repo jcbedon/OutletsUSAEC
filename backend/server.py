@@ -1490,6 +1490,104 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
         "tenant": tenant
     }
 
+@api_router.put("/invoices/{invoice_id}/remove-item")
+async def remove_item_from_invoice(invoice_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Remove an item from an invoice (works for both pending and approved invoices)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    purchase_id = data.get("purchase_id")
+    
+    if not purchase_id:
+        raise HTTPException(status_code=400, detail="purchase_id es requerido")
+    
+    invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    if purchase_id not in invoice["purchase_ids"]:
+        raise HTTPException(status_code=400, detail="El artículo no está en esta factura")
+    
+    if len(invoice["purchase_ids"]) <= 1:
+        raise HTTPException(status_code=400, detail="No puedes quitar el último artículo. Elimina la factura en su lugar.")
+    
+    # Get the purchase to update totals
+    purchase = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0})
+    if not purchase:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+    
+    # Remove from invoice
+    new_purchase_ids = [pid for pid in invoice["purchase_ids"] if pid != purchase_id]
+    
+    # Recalculate totals
+    remaining_purchases = await db.purchases.find({
+        "id": {"$in": new_purchase_ids},
+        "tenant_id": tid
+    }, {"_id": 0}).to_list(len(new_purchase_ids))
+    
+    new_subtotal = sum(p["price"] for p in remaining_purchases)
+    new_total_tax = sum(p.get("tax", 0) for p in remaining_purchases)
+    new_total_commission = sum(p.get("commission", 0) for p in remaining_purchases)
+    new_total = sum(p["total"] for p in remaining_purchases)
+    
+    # Update invoice
+    await db.invoices.update_one(
+        {"id": invoice_id, "tenant_id": tid},
+        {"$set": {
+            "purchase_ids": new_purchase_ids,
+            "subtotal": round(new_subtotal, 2),
+            "total_tax": round(new_total_tax, 2),
+            "total_commission": round(new_total_commission, 2),
+            "total": round(new_total, 2)
+        }}
+    )
+    
+    # Remove invoice reference from purchase and reset status if invoice was approved
+    update_fields = {"invoice_id": None, "invoiced_at": None}
+    if invoice["status"] == "approved":
+        update_fields["status"] = "confirmed"
+        update_fields["paid_at"] = None
+    
+    await db.purchases.update_one(
+        {"id": purchase_id, "tenant_id": tid},
+        {"$set": update_fields}
+    )
+    
+    return {
+        "message": "Artículo removido de la factura",
+        "removed_purchase_id": purchase_id,
+        "new_total": round(new_total, 2),
+        "remaining_items": len(new_purchase_ids)
+    }
+
+@api_router.put("/invoices/{invoice_id}/reopen")
+async def reopen_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
+    """Reopen an approved invoice for modifications"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    if invoice["status"] != "approved":
+        raise HTTPException(status_code=400, detail="La factura no está aprobada")
+    
+    # Reopen invoice
+    await db.invoices.update_one(
+        {"id": invoice_id, "tenant_id": tid},
+        {"$set": {"status": "pending", "approved_at": None}}
+    )
+    
+    # Reset all purchases to confirmed status (not paid)
+    await db.purchases.update_many(
+        {"id": {"$in": invoice["purchase_ids"]}, "tenant_id": tid},
+        {"$set": {"status": "confirmed", "paid_at": None}}
+    )
+    
+    return {"message": "Factura reabierta para modificaciones"}
+
 @api_router.put("/invoices/{invoice_id}/approve")
 async def approve_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
     """Approve an invoice - moves purchases to paid history"""
