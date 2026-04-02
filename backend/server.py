@@ -133,7 +133,26 @@ class Purchase(BaseModel):
     total: float = 0.0
     status: str = "confirmed"
     live_id: str
+    invoice_id: Optional[str] = None  # ID de factura si está facturado
+    invoiced_at: Optional[str] = None  # Fecha de facturación
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class Invoice(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    user_id: str
+    customer_id: str
+    invoice_number: str  # Número de factura consecutivo
+    purchase_ids: List[str]
+    subtotal: float
+    total_tax: float
+    total_commission: float
+    total: float
+    status: str = "pending"  # pending, approved
+    notes: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    approved_at: Optional[str] = None
 
 class Shipment(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1330,6 +1349,199 @@ async def delete_shipment(shipment_id: str, current_user: dict = Depends(get_cur
     await create_notification(tid, shipment["user_id"], shipment["customer_id"], "shipment_deleted",
         "Envío Eliminado", "Un envío ha sido eliminado de tu cuenta.")
     return {"message": "Envío eliminado"}
+
+# ==================== INVOICES ====================
+
+@api_router.get("/invoices/client/{customer_id}/pending-purchases")
+async def get_pending_purchases_for_invoice(customer_id: str, current_user: dict = Depends(get_current_user)):
+    """Get all purchases not yet invoiced for a client"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    # Get purchases without invoice_id
+    purchases = await db.purchases.find({
+        "customer_id": customer_id.upper(),
+        "tenant_id": tid,
+        "$or": [
+            {"invoice_id": None},
+            {"invoice_id": {"$exists": False}}
+        ]
+    }, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    return purchases
+
+@api_router.post("/invoices")
+async def create_invoice(data: dict, current_user: dict = Depends(get_current_user)):
+    """Create a new invoice for a client with pending purchases"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    customer_id = data.get("customer_id", "").upper()
+    purchase_ids = data.get("purchase_ids", [])
+    notes = data.get("notes", "")
+    
+    if not customer_id or not purchase_ids:
+        raise HTTPException(status_code=400, detail="customer_id y purchase_ids son requeridos")
+    
+    # Get client info
+    client = await db.users.find_one({"customer_id": customer_id, "tenant_id": tid}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    # Get purchases
+    purchases = await db.purchases.find({
+        "id": {"$in": purchase_ids},
+        "customer_id": customer_id,
+        "tenant_id": tid
+    }, {"_id": 0}).to_list(len(purchase_ids))
+    
+    if len(purchases) != len(purchase_ids):
+        raise HTTPException(status_code=400, detail="Algunas compras no fueron encontradas")
+    
+    # Calculate totals
+    subtotal = sum(p["price"] for p in purchases)
+    total_tax = sum(p.get("tax", 0) for p in purchases)
+    total_commission = sum(p.get("commission", 0) for p in purchases)
+    total = sum(p["total"] for p in purchases)
+    
+    # Generate invoice number
+    last_invoice = await db.invoices.find_one({"tenant_id": tid}, sort=[("created_at", -1)])
+    if last_invoice and "invoice_number" in last_invoice:
+        try:
+            last_num = int(last_invoice["invoice_number"].split("-")[-1])
+            new_num = last_num + 1
+        except:
+            new_num = 1
+    else:
+        new_num = 1
+    invoice_number = f"INV-{new_num:06d}"
+    
+    invoice = Invoice(
+        tenant_id=tid,
+        user_id=client["id"],
+        customer_id=customer_id,
+        invoice_number=invoice_number,
+        purchase_ids=purchase_ids,
+        subtotal=round(subtotal, 2),
+        total_tax=round(total_tax, 2),
+        total_commission=round(total_commission, 2),
+        total=round(total, 2),
+        notes=notes
+    )
+    
+    await db.invoices.insert_one(invoice.model_dump())
+    
+    # Mark purchases as invoiced
+    now = datetime.now(timezone.utc).isoformat()
+    await db.purchases.update_many(
+        {"id": {"$in": purchase_ids}, "tenant_id": tid},
+        {"$set": {"invoice_id": invoice.id, "invoiced_at": now}}
+    )
+    
+    return {
+        "message": "Factura creada",
+        "invoice_id": invoice.id,
+        "invoice_number": invoice_number,
+        "total": invoice.total
+    }
+
+@api_router.get("/invoices/client/{customer_id}")
+async def get_client_invoices(customer_id: str, current_user: dict = Depends(get_current_user)):
+    """Get all invoices for a client"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    invoices = await db.invoices.find({
+        "customer_id": customer_id.upper(),
+        "tenant_id": tid
+    }, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    return invoices
+
+@api_router.get("/invoices/{invoice_id}")
+async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_current_user)):
+    """Get invoice with full details"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    # Get client info
+    client = await db.users.find_one({"customer_id": invoice["customer_id"], "tenant_id": tid}, {"_id": 0})
+    
+    # Get purchases
+    purchases = await db.purchases.find({
+        "id": {"$in": invoice["purchase_ids"]},
+        "tenant_id": tid
+    }, {"_id": 0}).to_list(len(invoice["purchase_ids"]))
+    
+    # Get tenant info for Personal Shopper details
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0})
+    
+    return {
+        **invoice,
+        "client": client,
+        "purchases": purchases,
+        "tenant": tenant
+    }
+
+@api_router.put("/invoices/{invoice_id}/approve")
+async def approve_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
+    """Approve an invoice - moves purchases to paid history"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    if invoice["status"] == "approved":
+        raise HTTPException(status_code=400, detail="La factura ya está aprobada")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # Update invoice status
+    await db.invoices.update_one(
+        {"id": invoice_id, "tenant_id": tid},
+        {"$set": {"status": "approved", "approved_at": now}}
+    )
+    
+    # Mark all purchases as paid/archived
+    await db.purchases.update_many(
+        {"id": {"$in": invoice["purchase_ids"]}, "tenant_id": tid},
+        {"$set": {"status": "paid", "paid_at": now}}
+    )
+    
+    # Create notification for client
+    await create_notification(
+        tid, invoice["user_id"], invoice["customer_id"],
+        "invoice_approved",
+        "Factura Aprobada",
+        f"Tu factura {invoice['invoice_number']} por ${invoice['total']:.2f} ha sido aprobada."
+    )
+    
+    return {"message": "Factura aprobada", "invoice_number": invoice["invoice_number"]}
+
+@api_router.get("/invoices/client/{customer_id}/history")
+async def get_client_purchase_history(customer_id: str, current_user: dict = Depends(get_current_user)):
+    """Get purchase history (paid purchases from approved invoices)"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    purchases = await db.purchases.find({
+        "customer_id": customer_id.upper(),
+        "tenant_id": tid,
+        "status": "paid"
+    }, {"_id": 0}).sort("paid_at", -1).to_list(500)
+    
+    return purchases
 
 # ==================== NOTIFICATIONS ====================
 

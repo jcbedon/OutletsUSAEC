@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign } from "lucide-react";
+import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText } from "lucide-react";
+import InvoiceDialog from "@/components/InvoiceDialog";
 
 export default function AdminClients() {
   const navigate = useNavigate();
@@ -30,8 +31,19 @@ export default function AdminClients() {
     name: "", country: "", whatsapp: "", email: "", password: "",
     commission_fee: 3, initial_balance: 0
   });
+  
+  // Invoice dialog state
+  const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
+  const [selectedClientForInvoice, setSelectedClientForInvoice] = useState(null);
 
   const logoUrl = user?.tenant_logo || "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+  
+  const tenantInfo = {
+    business_name: user?.tenant_name || "Personal Shopper",
+    owner_name: user?.name || "",
+    email: user?.email || "",
+    logo_url: logoUrl
+  };
 
   useEffect(() => { loadClients(); }, []);
 
@@ -305,7 +317,19 @@ export default function AdminClients() {
                         </div>
                       </div>
                     </div>
-                    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-end">
+                    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-end gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="rounded-lg border-blue-200 text-blue-600 hover:bg-blue-50"
+                        onClick={() => {
+                          setSelectedClientForInvoice(client);
+                          setInvoiceDialogOpen(true);
+                        }}
+                        data-testid={`invoice-client-${client.customer_id}`}
+                      >
+                        <FileText className="h-4 w-4 mr-1" /> Factura
+                      </Button>
                       <Button variant="outline" size="sm" className="rounded-lg"
                         onClick={() => handleOpenEditDialog(client)}
                         data-testid={`edit-client-${client.customer_id}`}>
@@ -424,6 +448,14 @@ export default function AdminClients() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Invoice Dialog */}
+        <InvoiceDialog
+          open={invoiceDialogOpen}
+          onOpenChange={setInvoiceDialogOpen}
+          client={selectedClientForInvoice}
+          tenantInfo={tenantInfo}
+        />
       </div>
     </div>
   );

@@ -108,6 +108,14 @@ export const getReferralStats = () => api.get("/admin/referrals");
 export const getTenantSettings = () => api.get("/admin/settings");
 export const updateTenantTaxOptions = (taxOptions) => api.put("/admin/settings/tax-options", { tax_options: taxOptions });
 
+// Invoices
+export const getPendingPurchases = (customerId) => api.get(`/invoices/client/${customerId}/pending-purchases`);
+export const createInvoice = (data) => api.post("/invoices", data);
+export const getClientInvoices = (customerId) => api.get(`/invoices/client/${customerId}`);
+export const getInvoiceDetail = (invoiceId) => api.get(`/invoices/${invoiceId}`);
+export const approveInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/approve`);
+export const getClientPurchaseHistory = (customerId) => api.get(`/invoices/client/${customerId}/history`);
+
 // Superadmin - Tenant Tax Options
 export const updateTenantTaxOptionsSuperadmin = (tenantId, taxOptions) => 
   api.put(`/superadmin/tenants/${tenantId}/tax-options`, { tax_options: taxOptions });
