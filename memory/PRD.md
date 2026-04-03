@@ -48,6 +48,7 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 ### Client Management
 - [x] Admin: Create clients with custom commission + initial balance
 - [x] Admin: Client management (search, edit commission)
+- [x] Admin: Search filter by name, initials, ID, WhatsApp
 
 ### Live Shopping & Purchases
 - [x] Admin: Live shopping session CRUD
@@ -55,6 +56,8 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] **Tax radio buttons**: 8.25% (Illinois), 15% (Custom), Sin Tax (Feb 22, 2026)
 - [x] Admin: Edit/Delete purchases from Live module
 - [x] Commission set per-purchase (not per-client) for new purchases
+- [x] Client autocomplete in Live Shopping module
+- [x] Dynamic tax configuration per tenant (SuperAdmin)
 
 ### Wallet & Recharges
 - [x] Admin: Wallet deposit requests + approvals with screenshot proof
@@ -72,10 +75,23 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] Client: Video playback for video attachments
 - [x] Weight in pounds (weight_pounds) field for shipments
 
+### Invoicing System (NEW - Apr 2026)
+- [x] Admin: Generate invoices from pending purchases
+- [x] Admin: Approve/Reopen invoices
+- [x] Admin: Remove items from invoices
+- [x] Admin: View invoice history per client
+- [x] **PDF Download**: Generate modern styled PDF with tenant logo (Apr 3, 2026)
+  - jspdf + jspdf-autotable v5.x integration
+  - Tenant logo loaded from /api/uploads/
+  - Shipping info (cost, weight, tracking) in PDF
+  - Status badge (PAGADA/PENDIENTE)
+- [x] Tracking URL configuration per tenant (SuperAdmin)
+
 ### Reports
 - [x] Admin: Reports module with export to PDF/Excel
 - [x] Reports by client, by live, all purchases
 - [x] Weight in pounds displayed in reports
+- [x] Search filters in Reports module
 
 ### Branding & UI
 - [x] **NEW: Custom favicon** - Outlets USA EC logo as browser icon (Feb 22, 2026)
@@ -126,6 +142,7 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - Tenant slug example: outlets-usa
 
 ## P1 - Backlog
+- [ ] Email notifications (pendiente elección de proveedor: Resend/SendGrid)
 - [ ] WhatsApp Cloud API integration (requires user credentials)
 - [ ] PWA manifest + service worker for mobile install
 - [ ] Superadmin: edit tenant details
@@ -135,5 +152,5 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 
 ## P2 - Future
 - [ ] Multi-language support
-- [ ] Email notifications
-- [ ] Backend refactoring (split server.py into routers)
+- [ ] Backend refactoring (split server.py into routers - currently ~2000 lines)
+- [ ] InvoiceDialog.jsx refactoring (currently ~920 lines)
