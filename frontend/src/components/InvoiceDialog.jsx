@@ -6,9 +6,32 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice } from "@/lib/api";
 import { toast } from "sonner";
-import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw } from "lucide-react";
-import jsPDF from "jspdf";
-import "jspdf-autotable";
+import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2 } from "lucide-react";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+
+// Helper function to load image as base64
+const loadImageAsBase64 = (url) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      try {
+        const dataURL = canvas.toDataURL("image/png");
+        resolve(dataURL);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+};
 
 export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }) {
   const [loading, setLoading] = useState(false);
@@ -17,6 +40,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
   const [currentInvoice, setCurrentInvoice] = useState(null);
   const [invoices, setInvoices] = useState([]);
   const [viewMode, setViewMode] = useState("create"); // create, view, history
+  const [generatingPDF, setGeneratingPDF] = useState(false);
   const invoiceRef = useRef(null);
 
   useEffect(() => {
@@ -152,189 +176,323 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
     }
   };
 
-  const generatePDF = () => {
+  const generatePDF = async () => {
     if (!currentInvoice) return;
     
-    const doc = new jsPDF();
-    const tenant = currentInvoice.tenant || tenantInfo;
-    const inv = currentInvoice;
-    const cli = currentInvoice.client || client;
+    setGeneratingPDF(true);
     
-    // Colors
-    const primaryColor = [30, 58, 95]; // #1E3A5F
-    const accentColor = [46, 204, 113]; // #2ECC71
-    
-    // Header background
-    doc.setFillColor(...primaryColor);
-    doc.rect(0, 0, 210, 50, "F");
-    
-    // Logo placeholder (circle)
-    doc.setFillColor(255, 255, 255);
-    doc.circle(25, 25, 12, "F");
-    doc.setFillColor(...accentColor);
-    doc.circle(25, 25, 10, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text(tenant?.business_name?.substring(0, 2)?.toUpperCase() || "PS", 25, 28, { align: "center" });
-    
-    // Company name
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.setFont("helvetica", "bold");
-    doc.text(tenant?.business_name || "Personal Shopper", 45, 22);
-    
-    // Company details
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.text(`${tenant?.owner_name || ""} | ${tenant?.email || ""}`, 45, 30);
-    
-    // Invoice title
-    doc.setFontSize(28);
-    doc.setFont("helvetica", "bold");
-    doc.text("FACTURA", 165, 25, { align: "center" });
-    doc.setFontSize(11);
-    doc.setFont("helvetica", "normal");
-    doc.text(inv.invoice_number, 165, 33, { align: "center" });
-    
-    // Status badge
-    const statusY = 40;
-    if (inv.status === "approved") {
-      doc.setFillColor(...accentColor);
-      doc.roundedRect(145, statusY - 4, 40, 8, 2, 2, "F");
+    try {
+      const doc = new jsPDF();
+      const tenant = currentInvoice.tenant || tenantInfo;
+      const inv = currentInvoice;
+      const cli = currentInvoice.client || client;
+      const shipment = inv.shipment;
+      
+      // Modern color palette
+      const primary = [30, 58, 95];      // Deep blue #1E3A5F
+      const accent = [46, 204, 113];     // Green #2ECC71
+      const purple = [142, 68, 173];     // Purple #8E44AD
+      const darkGray = [52, 73, 94];     // #34495E
+      const lightGray = [236, 240, 241]; // #ECF0F1
+      
+      // ========== HEADER WITH GRADIENT EFFECT ==========
+      // Main header bar
+      doc.setFillColor(...primary);
+      doc.rect(0, 0, 210, 55, "F");
+      
+      // Accent stripe
+      doc.setFillColor(...accent);
+      doc.rect(0, 55, 210, 3, "F");
+      
+      // Try to load and add logo - ensure absolute URL
+      let logoUrl = tenant?.logo_url || tenantInfo?.logo_url;
+      let logoAdded = false;
+      
+      if (logoUrl) {
+        // Convert relative URL to absolute URL
+        if (logoUrl.startsWith('/')) {
+          const baseUrl = process.env.REACT_APP_BACKEND_URL || window.location.origin;
+          logoUrl = baseUrl + logoUrl;
+        }
+        
+        try {
+          const logoBase64 = await loadImageAsBase64(logoUrl);
+          doc.addImage(logoBase64, 'PNG', 12, 10, 35, 35);
+          logoAdded = true;
+        } catch (e) {
+          console.log("Could not load logo:", e);
+        }
+      }
+      
+      // If no logo, show initials in a circle
+      if (!logoAdded) {
+        doc.setFillColor(255, 255, 255);
+        doc.circle(30, 27, 15, "F");
+        doc.setFillColor(...accent);
+        doc.circle(30, 27, 13, "F");
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(16);
+        doc.setFont("helvetica", "bold");
+        doc.text(tenant?.business_name?.substring(0, 2)?.toUpperCase() || "PS", 30, 31, { align: "center" });
+      }
+      
+      // Company name and info
+      const textStartX = logoAdded ? 52 : 52;
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(20);
+      doc.setFont("helvetica", "bold");
+      doc.text(tenant?.business_name || "Personal Shopper", textStartX, 20);
+      
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(200, 220, 255);
+      doc.text(tenant?.email || "", textStartX, 28);
+      doc.text(tenant?.owner_name || "", textStartX, 35);
+      
+      // Invoice number box (right side)
+      doc.setFillColor(255, 255, 255, 0.2);
+      doc.roundedRect(140, 8, 60, 40, 4, 4, "F");
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.text("FACTURA", 170, 18, { align: "center" });
+      
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text(inv.invoice_number, 170, 30, { align: "center" });
+      
+      // Status badge
+      if (inv.status === "approved") {
+        doc.setFillColor(...accent);
+      } else {
+        doc.setFillColor(241, 196, 15);
+      }
+      doc.roundedRect(150, 35, 40, 10, 3, 3, "F");
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(8);
-      doc.text("PAGADA", 165, statusY + 1, { align: "center" });
-    } else {
-      doc.setFillColor(241, 196, 15); // Yellow
-      doc.roundedRect(145, statusY - 4, 40, 8, 2, 2, "F");
-      doc.setTextColor(0, 0, 0);
-      doc.setFontSize(8);
-      doc.text("PENDIENTE", 165, statusY + 1, { align: "center" });
-    }
-    
-    // Client info section
-    doc.setTextColor(0, 0, 0);
-    doc.setFillColor(245, 247, 250);
-    doc.roundedRect(14, 58, 85, 35, 3, 3, "F");
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...primaryColor);
-    doc.text("CLIENTE", 20, 67);
-    
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(60, 60, 60);
-    doc.setFontSize(11);
-    doc.text(cli?.name || "", 20, 75);
-    doc.setFontSize(9);
-    doc.text(`ID: ${cli?.customer_id || ""}`, 20, 82);
-    doc.text(`Tel: ${cli?.whatsapp || ""}`, 20, 88);
-    
-    // Invoice details section
-    doc.setFillColor(245, 247, 250);
-    doc.roundedRect(110, 58, 85, 35, 3, 3, "F");
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...primaryColor);
-    doc.text("DETALLES", 116, 67);
-    
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(60, 60, 60);
-    doc.setFontSize(9);
-    doc.text(`Fecha: ${new Date(inv.created_at).toLocaleDateString("es-ES")}`, 116, 75);
-    doc.text(`Items: ${inv.purchase_ids?.length || 0}`, 116, 82);
-    if (inv.approved_at) {
-      doc.text(`Aprobada: ${new Date(inv.approved_at).toLocaleDateString("es-ES")}`, 116, 88);
-    }
-    
-    // Purchases table
-    const tableData = (inv.purchases || []).map((p, idx) => [
-      idx + 1,
-      p.item_name,
-      p.store,
-      `$${p.price.toFixed(2)}`,
-      `$${(p.tax || 0).toFixed(2)}`,
-      `$${(p.commission || 0).toFixed(2)}`,
-      `$${p.total.toFixed(2)}`
-    ]);
-    
-    doc.autoTable({
-      startY: 100,
-      head: [["#", "Producto", "Tienda", "Precio", "Tax", "Comisión", "Total"]],
-      body: tableData,
-      theme: "grid",
-      headStyles: {
-        fillColor: primaryColor,
-        textColor: [255, 255, 255],
-        fontStyle: "bold",
-        fontSize: 9
-      },
-      bodyStyles: {
-        fontSize: 8,
-        textColor: [60, 60, 60]
-      },
-      alternateRowStyles: {
-        fillColor: [250, 250, 250]
-      },
-      columnStyles: {
-        0: { cellWidth: 10, halign: "center" },
-        1: { cellWidth: 50 },
-        2: { cellWidth: 30 },
-        3: { cellWidth: 22, halign: "right" },
-        4: { cellWidth: 22, halign: "right" },
-        5: { cellWidth: 22, halign: "right" },
-        6: { cellWidth: 25, halign: "right", fontStyle: "bold" }
-      },
-      margin: { left: 14, right: 14 }
-    });
-    
-    // Totals section
-    const finalY = doc.lastAutoTable.finalY + 10;
-    
-    doc.setFillColor(245, 247, 250);
-    doc.roundedRect(120, finalY, 75, 45, 3, 3, "F");
-    
-    doc.setFontSize(9);
-    doc.setTextColor(80, 80, 80);
-    doc.text("Subtotal:", 125, finalY + 10);
-    doc.text(`$${inv.subtotal.toFixed(2)}`, 190, finalY + 10, { align: "right" });
-    
-    doc.text("Impuestos:", 125, finalY + 18);
-    doc.text(`$${inv.total_tax.toFixed(2)}`, 190, finalY + 18, { align: "right" });
-    
-    doc.text("Comisiones:", 125, finalY + 26);
-    doc.text(`$${inv.total_commission.toFixed(2)}`, 190, finalY + 26, { align: "right" });
-    
-    doc.setDrawColor(...primaryColor);
-    doc.line(125, finalY + 32, 190, finalY + 32);
-    
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(...primaryColor);
-    doc.text("TOTAL:", 125, finalY + 41);
-    doc.text(`$${inv.total.toFixed(2)}`, 190, finalY + 41, { align: "right" });
-    
-    // Pending badge if not approved
-    if (inv.status !== "approved") {
-      doc.setFillColor(255, 243, 205);
-      doc.roundedRect(14, finalY, 95, 20, 3, 3, "F");
-      doc.setFontSize(10);
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(133, 100, 4);
-      doc.text("PENDIENTE DE PAGO", 62, finalY + 12, { align: "center" });
+      doc.text(inv.status === "approved" ? "PAGADA" : "PENDIENTE", 170, 42, { align: "center" });
+      
+      // ========== CLIENT & INVOICE INFO ==========
+      let currentY = 65;
+      
+      // Client card
+      doc.setFillColor(...lightGray);
+      doc.roundedRect(12, currentY, 90, 38, 4, 4, "F");
+      
+      doc.setFillColor(...primary);
+      doc.roundedRect(12, currentY, 90, 8, 4, 0, "F");
+      doc.rect(12, currentY + 4, 90, 4, "F");
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text("CLIENTE", 57, currentY + 6, { align: "center" });
+      
+      doc.setTextColor(...darkGray);
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text(cli?.name || "", 17, currentY + 18);
+      
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.text(`ID: ${cli?.customer_id || ""}`, 17, currentY + 26);
+      doc.text(`WhatsApp: ${cli?.whatsapp || ""}`, 17, currentY + 33);
+      
+      // Invoice details card
+      doc.setFillColor(...lightGray);
+      doc.roundedRect(108, currentY, 90, 38, 4, 4, "F");
+      
+      doc.setFillColor(...primary);
+      doc.roundedRect(108, currentY, 90, 8, 4, 0, "F");
+      doc.rect(108, currentY + 4, 90, 4, "F");
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text("DETALLES", 153, currentY + 6, { align: "center" });
+      
+      doc.setTextColor(...darkGray);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.text(`Fecha: ${new Date(inv.created_at).toLocaleDateString("es-ES")}`, 113, currentY + 18);
+      doc.text(`Items: ${inv.purchase_ids?.length || 0} productos`, 113, currentY + 26);
+      if (inv.approved_at) {
+        doc.setTextColor(...accent);
+        doc.text(`Aprobada: ${new Date(inv.approved_at).toLocaleDateString("es-ES")}`, 113, currentY + 33);
+      }
+      
+      currentY += 45;
+      
+      // ========== SHIPMENT INFO (if available) ==========
+      if (shipment && (shipment.tracking_number || shipment.shipping_cost)) {
+        doc.setFillColor(...purple);
+        doc.roundedRect(12, currentY, 186, 22, 4, 4, "F");
+        
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "bold");
+        doc.text("INFORMACIÓN DE ENVÍO", 20, currentY + 7);
+        
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        const shipY = currentY + 16;
+        doc.text(`Costo: $${(shipment.shipping_cost || 0).toFixed(2)}`, 20, shipY);
+        doc.text(`Peso: ${shipment.weight_pounds || 0} lbs`, 80, shipY);
+        doc.text(`Tracking: ${shipment.tracking_number || "N/A"}`, 130, shipY);
+        
+        currentY += 28;
+      }
+      
+      // ========== PRODUCTS TABLE ==========
+      const tableData = (inv.purchases || []).map((p, idx) => [
+        idx + 1,
+        p.item_name,
+        p.store,
+        `$${p.price.toFixed(2)}`,
+        `$${(p.tax || 0).toFixed(2)}`,
+        `$${(p.commission || 0).toFixed(2)}`,
+        `$${p.total.toFixed(2)}`
+      ]);
+      
+      autoTable(doc, {
+        startY: currentY,
+        head: [["#", "Producto", "Tienda", "Precio", "Tax", "Com.", "Total"]],
+        body: tableData,
+        theme: "striped",
+        headStyles: {
+          fillColor: primary,
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+          fontSize: 9,
+          halign: "center"
+        },
+        bodyStyles: {
+          fontSize: 8,
+          textColor: darkGray
+        },
+        alternateRowStyles: {
+          fillColor: [248, 249, 250]
+        },
+        columnStyles: {
+          0: { cellWidth: 12, halign: "center" },
+          1: { cellWidth: 55 },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 22, halign: "right" },
+          4: { cellWidth: 20, halign: "right" },
+          5: { cellWidth: 20, halign: "right" },
+          6: { cellWidth: 25, halign: "right", fontStyle: "bold" }
+        },
+        margin: { left: 12, right: 12 },
+        styles: {
+          cellPadding: 3,
+          lineColor: [220, 220, 220],
+          lineWidth: 0.1
+        }
+      });
+      
+      // ========== TOTALS SECTION ==========
+      const finalY = doc.lastAutoTable.finalY + 8;
+      const hasShipping = shipment && shipment.shipping_cost > 0;
+      
+      // Pending warning (left side)
+      if (inv.status !== "approved") {
+        doc.setFillColor(255, 235, 200);
+        doc.roundedRect(12, finalY, 85, 28, 4, 4, "F");
+        doc.setFillColor(241, 196, 15);
+        doc.roundedRect(12, finalY, 85, 6, 4, 0, "F");
+        doc.rect(12, finalY + 3, 85, 3, "F");
+        
+        doc.setTextColor(180, 120, 0);
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "bold");
+        doc.text("PENDIENTE DE PAGO", 54, finalY + 16, { align: "center" });
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "normal");
+        doc.text("Aprobar para confirmar", 54, finalY + 23, { align: "center" });
+      }
+      
+      // Totals box (right side)
+      const totalsX = 110;
+      const totalsWidth = 88;
+      const totalsHeight = hasShipping ? 52 : 44;
+      
+      doc.setFillColor(...lightGray);
+      doc.roundedRect(totalsX, finalY, totalsWidth, totalsHeight, 4, 4, "F");
+      
+      doc.setTextColor(...darkGray);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      
+      let totY = finalY + 10;
+      doc.text("Subtotal:", totalsX + 5, totY);
+      doc.text(`$${inv.subtotal.toFixed(2)}`, totalsX + totalsWidth - 5, totY, { align: "right" });
+      
+      totY += 8;
+      doc.text("Impuestos:", totalsX + 5, totY);
+      doc.text(`$${inv.total_tax.toFixed(2)}`, totalsX + totalsWidth - 5, totY, { align: "right" });
+      
+      totY += 8;
+      doc.text("Comisiones:", totalsX + 5, totY);
+      doc.text(`$${inv.total_commission.toFixed(2)}`, totalsX + totalsWidth - 5, totY, { align: "right" });
+      
+      if (hasShipping) {
+        totY += 8;
+        doc.setTextColor(...purple);
+        doc.text("Envío:", totalsX + 5, totY);
+        doc.text(`$${shipment.shipping_cost.toFixed(2)}`, totalsX + totalsWidth - 5, totY, { align: "right" });
+      }
+      
+      // Total line
+      totY += 4;
+      doc.setDrawColor(...primary);
+      doc.setLineWidth(0.5);
+      doc.line(totalsX + 5, totY, totalsX + totalsWidth - 5, totY);
+      
+      // Grand total
+      const grandTotal = inv.total + (hasShipping ? shipment.shipping_cost : 0);
+      totY += 10;
+      doc.setFillColor(...primary);
+      doc.roundedRect(totalsX, totY - 6, totalsWidth, 14, 0, 4, "F");
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.text("TOTAL:", totalsX + 8, totY + 3);
+      doc.setFontSize(14);
+      doc.text(`$${grandTotal.toFixed(2)}`, totalsX + totalsWidth - 8, totY + 3, { align: "right" });
+      
+      // ========== FOOTER ==========
+      // Tracking URL
+      if (shipment?.tracking_number && tenant?.tracking_url_template) {
+        const trackingUrl = tenant.tracking_url_template.replace('{tracking}', shipment.tracking_number);
+        doc.setFontSize(7);
+        doc.setTextColor(100, 100, 100);
+        doc.text(`Seguimiento: ${trackingUrl}`, 12, 275);
+      }
+      
+      // Footer bar
+      doc.setFillColor(...primary);
+      doc.rect(0, 282, 210, 15, "F");
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.text("Gracias por su preferencia", 105, 289, { align: "center" });
+      doc.setFontSize(7);
+      doc.text(`Generado: ${new Date().toLocaleString("es-ES")}`, 105, 294, { align: "center" });
+      
+      // Save PDF
+      doc.save(`Factura_${inv.invoice_number}_${cli?.customer_id || ""}.pdf`);
+      toast.success("PDF descargado exitosamente");
+      
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      toast.error("Error al generar PDF");
+    } finally {
+      setGeneratingPDF(false);
     }
-    
-    // Footer
-    doc.setFontSize(8);
-    doc.setTextColor(150, 150, 150);
-    doc.text("Gracias por su preferencia", 105, 280, { align: "center" });
-    doc.text(`Generado: ${new Date().toLocaleString("es-ES")}`, 105, 285, { align: "center" });
-    
-    // Save
-    doc.save(`Factura_${inv.invoice_number}_${cli?.customer_id || ""}.pdf`);
-    toast.success("PDF descargado");
   };
 
   const togglePurchase = (purchaseId) => {
@@ -551,6 +709,40 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
                 </div>
               </div>
 
+              {/* Shipment Info */}
+              {currentInvoice.shipment && (
+                <div className="p-4 rounded-xl bg-purple-50 border border-purple-200">
+                  <p className="text-xs font-semibold text-purple-800 mb-2 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs">📦</span>
+                    INFORMACIÓN DE ENVÍO
+                  </p>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-xs text-purple-600">Costo de Envío</p>
+                      <p className="font-bold text-lg text-purple-800">${(currentInvoice.shipment.shipping_cost || 0).toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-purple-600">Peso</p>
+                      <p className="font-bold text-lg text-purple-800">{currentInvoice.shipment.weight_pounds || 0} lbs</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-purple-600">Tracking</p>
+                      <p className="font-bold text-lg text-purple-800">{currentInvoice.shipment.tracking_number || "N/A"}</p>
+                    </div>
+                  </div>
+                  {currentInvoice.shipment.tracking_number && currentInvoice.tenant?.tracking_url_template && (
+                    <a
+                      href={currentInvoice.tenant.tracking_url_template.replace('{tracking}', currentInvoice.shipment.tracking_number)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
+                    >
+                      🔗 Verificar Tracking
+                    </a>
+                  )}
+                </div>
+              )}
+
               {/* Purchases table */}
               <div className="border rounded-xl overflow-hidden">
                 <table className="w-full">
@@ -645,10 +837,20 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
                 <Button
                   onClick={generatePDF}
                   variant="outline"
+                  disabled={generatingPDF}
                   className="flex-1 h-12 rounded-xl"
                 >
-                  <Download className="h-5 w-5 mr-2" />
-                  Descargar PDF
+                  {generatingPDF ? (
+                    <>
+                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                      Generando...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-5 w-5 mr-2" />
+                      Descargar PDF
+                    </>
+                  )}
                 </Button>
                 {currentInvoice.status === "approved" ? (
                   <Button

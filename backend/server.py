@@ -58,6 +58,7 @@ class Tenant(BaseModel):
         {"value": "0", "label": "Sin Taxes"},
         {"value": "other", "label": "Otro"}
     ])
+    tracking_url_template: Optional[str] = None  # URL template with {tracking} placeholder
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class User(BaseModel):
@@ -544,6 +545,22 @@ async def get_tenant_details(tenant_id: str, current_user: dict = Depends(get_cu
     ]
     tenant["tax_options"] = tenant.get("tax_options", default_tax_options)
     return tenant
+
+@api_router.put("/superadmin/tenants/{tenant_id}/tracking-url")
+async def update_tenant_tracking_url(tenant_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update the tracking URL template for a tenant"""
+    if current_user["role"] != "superadmin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    
+    tracking_url = data.get("tracking_url_template", "")
+    await db.tenants.update_one(
+        {"id": tenant_id},
+        {"$set": {"tracking_url_template": tracking_url}}
+    )
+    return {"message": "URL de tracking actualizado", "tracking_url_template": tracking_url}
 
 @api_router.post("/superadmin/tenants/{tenant_id}/admin")
 async def create_admin_for_tenant(tenant_id: str, data: CreateAdminRequest, current_user: dict = Depends(get_current_user)):
@@ -1483,11 +1500,19 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     # Get tenant info for Personal Shopper details
     tenant = await db.tenants.find_one({"id": tid}, {"_id": 0})
     
+    # Get latest shipment for this client (if any)
+    shipment = await db.shipments.find_one(
+        {"customer_id": invoice["customer_id"], "tenant_id": tid},
+        {"_id": 0},
+        sort=[("created_at", -1)]
+    )
+    
     return {
         **invoice,
         "client": client,
         "purchases": purchases,
-        "tenant": tenant
+        "tenant": tenant,
+        "shipment": shipment
     }
 
 @api_router.put("/invoices/{invoice_id}/remove-item")

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/App";
 import { useNavigate } from "react-router-dom";
-import { listTenants, createTenant, updateTenantStatus, getSuperadminStats, updateTenantTaxOptionsSuperadmin } from "@/lib/api";
+import { listTenants, createTenant, updateTenantStatus, getSuperadminStats, updateTenantTaxOptionsSuperadmin, updateTenantTrackingUrl } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Settings, Percent, X } from "lucide-react";
+import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Settings, Percent, X, Link, Truck } from "lucide-react";
 
 export default function SuperadminDashboard() {
   const { user, logout } = useAuth();
@@ -31,6 +31,10 @@ export default function SuperadminDashboard() {
   const [taxOptions, setTaxOptions] = useState([]);
   const [newTaxValue, setNewTaxValue] = useState("");
   const [newTaxLabel, setNewTaxLabel] = useState("");
+  
+  // Tracking URL configuration state
+  const [trackingDialogOpen, setTrackingDialogOpen] = useState(false);
+  const [trackingUrl, setTrackingUrl] = useState("");
 
   const DEFAULT_TAX_OPTIONS = [
     { value: "8.25", label: "8.25%" },
@@ -129,6 +133,24 @@ export default function SuperadminDashboard() {
       await updateTenantTaxOptionsSuperadmin(selectedTenant.id, taxOptions);
       toast.success("Opciones de impuestos actualizadas");
       setTaxDialogOpen(false);
+      loadData();
+    } catch (error) {
+      toast.error("Error al guardar");
+    }
+  };
+
+  const openTrackingDialog = (tenant) => {
+    setSelectedTenant(tenant);
+    setTrackingUrl(tenant.tracking_url_template || "");
+    setTrackingDialogOpen(true);
+  };
+
+  const handleSaveTrackingUrl = async () => {
+    if (!selectedTenant) return;
+    try {
+      await updateTenantTrackingUrl(selectedTenant.id, trackingUrl);
+      toast.success("URL de tracking actualizado");
+      setTrackingDialogOpen(false);
       loadData();
     } catch (error) {
       toast.error("Error al guardar");
@@ -315,7 +337,7 @@ export default function SuperadminDashboard() {
                           <span>{tenant.client_count || 0} clientes</span>
                         </div>
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
                         <Button
                           variant="outline" size="sm"
                           className="rounded-lg border-blue-200 text-blue-600 hover:bg-blue-50"
@@ -324,6 +346,15 @@ export default function SuperadminDashboard() {
                         >
                           <Percent className="h-4 w-4 mr-1" />
                           Taxes
+                        </Button>
+                        <Button
+                          variant="outline" size="sm"
+                          className="rounded-lg border-purple-200 text-purple-600 hover:bg-purple-50"
+                          onClick={() => openTrackingDialog(tenant)}
+                          data-testid={`config-tracking-${tenant.id}`}
+                        >
+                          <Truck className="h-4 w-4 mr-1" />
+                          Tracking
                         </Button>
                         <Button
                           variant="outline" size="sm"
@@ -415,6 +446,60 @@ export default function SuperadminDashboard() {
                 style={{ background: '#1E3A5F', color: 'white' }}
               >
                 Guardar Configuración
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Tracking URL Configuration Dialog */}
+        <Dialog open={trackingDialogOpen} onOpenChange={setTrackingDialogOpen}>
+          <DialogContent className="rounded-2xl max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Truck className="h-5 w-5 text-purple-600" />
+                URL de Tracking - {selectedTenant?.business_name}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <p className="text-sm text-gray-500">
+                Configura la URL para verificar el seguimiento de envíos. Usa <code className="bg-gray-100 px-1 rounded">{'{tracking}'}</code> donde irá el número de tracking.
+              </p>
+              
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">URL de Tracking</Label>
+                <Input
+                  placeholder="https://example.com/track?number={tracking}"
+                  value={trackingUrl}
+                  onChange={(e) => setTrackingUrl(e.target.value)}
+                  className="h-11 rounded-lg"
+                />
+              </div>
+              
+              <div className="p-3 bg-purple-50 rounded-xl">
+                <p className="text-xs font-semibold text-purple-800 mb-2">Ejemplos de URLs:</p>
+                <ul className="text-xs text-purple-700 space-y-1">
+                  <li>• UPS: https://www.ups.com/track?tracknum={'{tracking}'}</li>
+                  <li>• FedEx: https://www.fedex.com/fedextrack/?trknbr={'{tracking}'}</li>
+                  <li>• USPS: https://tools.usps.com/go/TrackConfirmAction?tLabels={'{tracking}'}</li>
+                  <li>• DHL: https://www.dhl.com/en/express/tracking.html?AWB={'{tracking}'}</li>
+                </ul>
+              </div>
+
+              {trackingUrl && (
+                <div className="p-3 bg-gray-50 rounded-xl">
+                  <p className="text-xs font-semibold text-gray-600 mb-1">Vista previa (con tracking "123456"):</p>
+                  <p className="text-xs text-blue-600 break-all">
+                    {trackingUrl.replace('{tracking}', '123456')}
+                  </p>
+                </div>
+              )}
+
+              <Button
+                onClick={handleSaveTrackingUrl}
+                className="w-full h-11 font-bold rounded-xl"
+                style={{ background: '#1E3A5F', color: 'white' }}
+              >
+                Guardar URL de Tracking
               </Button>
             </div>
           </DialogContent>

@@ -118,8 +118,11 @@ export const removeItemFromInvoice = (invoiceId, purchaseId) => api.put(`/invoic
 export const reopenInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/reopen`);
 export const getClientPurchaseHistory = (customerId) => api.get(`/invoices/client/${customerId}/history`);
 
-// Superadmin - Tenant Tax Options
+// Superadmin - Tenant Settings
 export const updateTenantTaxOptionsSuperadmin = (tenantId, taxOptions) => 
   api.put(`/superadmin/tenants/${tenantId}/tax-options`, { tax_options: taxOptions });
+export const updateTenantTrackingUrl = (tenantId, trackingUrl) =>
+  api.put(`/superadmin/tenants/${tenantId}/tracking-url`, { tracking_url_template: trackingUrl });
+export const getTenantDetails = (tenantId) => api.get(`/superadmin/tenants/${tenantId}/details`);
 
 export default api;
