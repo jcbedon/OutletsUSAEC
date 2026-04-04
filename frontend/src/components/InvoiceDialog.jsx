@@ -9,21 +9,27 @@ import { toast } from "sonner";
 import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import QRCode from "qrcode";
 
-// Helper function to load image as base64
-const loadImageAsBase64 = (url) => {
+// Helper function to load image with proper dimensions
+const loadImageWithDimensions = (url) => {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
       const ctx = canvas.getContext("2d");
       ctx.drawImage(img, 0, 0);
       try {
         const dataURL = canvas.toDataURL("image/png");
-        resolve(dataURL);
+        resolve({
+          dataURL,
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+          aspectRatio: img.naturalWidth / img.naturalHeight
+        });
       } catch (e) {
         reject(e);
       }
@@ -188,166 +194,180 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       const cli = currentInvoice.client || client;
       const shipment = inv.shipment;
       
-      // Modern color palette
-      const primary = [30, 58, 95];      // Deep blue #1E3A5F
-      const accent = [46, 204, 113];     // Green #2ECC71
-      const purple = [142, 68, 173];     // Purple #8E44AD
-      const darkGray = [52, 73, 94];     // #34495E
-      const lightGray = [236, 240, 241]; // #ECF0F1
+      // ========== MODERN SAAS COLOR PALETTE ==========
+      const colors = {
+        background: [248, 250, 252],     // #F8FAFC
+        textPrimary: [15, 23, 42],        // #0F172A
+        textSecondary: [100, 116, 139],   // #64748B
+        divider: [226, 232, 240],         // #E2E8F0
+        white: [255, 255, 255],
+        // Status colors
+        paid: { bg: [220, 252, 231], text: [22, 101, 52] },       // #DCFCE7, #166534
+        pending: { bg: [254, 243, 199], text: [161, 98, 7] },     // #FEF3C7, #A16207
+        cancelled: { bg: [254, 226, 226], text: [185, 28, 28] }   // #FEE2E2, #B91C1C
+      };
       
-      // ========== HEADER WITH GRADIENT EFFECT ==========
-      // Main header bar
-      doc.setFillColor(...primary);
-      doc.rect(0, 0, 210, 55, "F");
+      const pageWidth = 210;
+      const margin = 20;
+      const contentWidth = pageWidth - (margin * 2);
       
-      // Accent stripe
-      doc.setFillColor(...accent);
-      doc.rect(0, 55, 210, 3, "F");
+      // ========== BACKGROUND ==========
+      doc.setFillColor(...colors.background);
+      doc.rect(0, 0, pageWidth, 297, "F");
       
-      // Try to load and add logo - ensure absolute URL
+      // ========== WHITE CONTAINER WITH SHADOW EFFECT ==========
+      const containerX = 12;
+      const containerY = 12;
+      const containerWidth = pageWidth - 24;
+      
+      // Subtle shadow effect
+      doc.setFillColor(200, 200, 200);
+      doc.roundedRect(containerX + 1, containerY + 1, containerWidth, 273, 6, 6, "F");
+      
+      // White container
+      doc.setFillColor(...colors.white);
+      doc.roundedRect(containerX, containerY, containerWidth, 273, 6, 6, "F");
+      
+      let currentY = containerY + 20;
+      
+      // ========== HEADER SECTION ==========
+      // Load and add logo with proper proportions
       let logoUrl = tenant?.logo_url || tenantInfo?.logo_url;
-      let logoAdded = false;
+      let logoEndX = margin;
       
       if (logoUrl) {
-        // Convert relative URL to absolute URL
         if (logoUrl.startsWith('/')) {
           const baseUrl = process.env.REACT_APP_BACKEND_URL || window.location.origin;
           logoUrl = baseUrl + logoUrl;
         }
         
         try {
-          const logoBase64 = await loadImageAsBase64(logoUrl);
-          doc.addImage(logoBase64, 'PNG', 12, 10, 35, 35);
-          logoAdded = true;
+          const logoData = await loadImageWithDimensions(logoUrl);
+          const targetHeight = 14; // ~40px in mm
+          const logoWidth = targetHeight * logoData.aspectRatio;
+          
+          // Add logo maintaining exact proportions (object-fit: contain)
+          doc.addImage(logoData.dataURL, 'PNG', margin, currentY - 4, logoWidth, targetHeight);
+          logoEndX = margin + logoWidth + 5; // 14px spacing after logo
         } catch (e) {
           console.log("Could not load logo:", e);
         }
       }
       
-      // If no logo, show initials in a circle
-      if (!logoAdded) {
-        doc.setFillColor(255, 255, 255);
-        doc.circle(30, 27, 15, "F");
-        doc.setFillColor(...accent);
-        doc.circle(30, 27, 13, "F");
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(16);
-        doc.setFont("helvetica", "bold");
-        doc.text(tenant?.business_name?.substring(0, 2)?.toUpperCase() || "PS", 30, 31, { align: "center" });
-      }
-      
-      // Company name and info
-      const textStartX = logoAdded ? 52 : 52;
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(20);
+      // Company name and email (left side, after logo)
+      doc.setTextColor(...colors.textPrimary);
+      doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
-      doc.text(tenant?.business_name || "Personal Shopper", textStartX, 20);
+      doc.text(tenant?.business_name || "Outlets USA EC", logoEndX, currentY + 2);
       
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
-      doc.setTextColor(200, 220, 255);
-      doc.text(tenant?.email || "", textStartX, 28);
-      doc.text(tenant?.owner_name || "", textStartX, 35);
+      doc.setTextColor(...colors.textSecondary);
+      doc.text(tenant?.email || "admin@outletsusaec.com", logoEndX, currentY + 8);
       
-      // Invoice number box (right side)
-      doc.setFillColor(255, 255, 255, 0.2);
-      doc.roundedRect(140, 8, 60, 40, 4, 4, "F");
+      // Invoice info (right side)
+      const rightX = pageWidth - margin;
       
-      doc.setTextColor(255, 255, 255);
+      doc.setTextColor(...colors.textSecondary);
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
-      doc.text("FACTURA", 170, 18, { align: "center" });
+      doc.text("FACTURA", rightX, currentY - 2, { align: "right" });
       
+      doc.setTextColor(...colors.textPrimary);
       doc.setFontSize(16);
       doc.setFont("helvetica", "bold");
-      doc.text(inv.invoice_number, 170, 30, { align: "center" });
+      doc.text(inv.invoice_number, rightX, currentY + 6, { align: "right" });
       
-      // Status badge
-      if (inv.status === "approved") {
-        doc.setFillColor(...accent);
-      } else {
-        doc.setFillColor(241, 196, 15);
-      }
-      doc.roundedRect(150, 35, 40, 10, 3, 3, "F");
-      doc.setTextColor(255, 255, 255);
+      doc.setTextColor(...colors.textSecondary);
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      const invoiceDate = new Date(inv.created_at).toLocaleDateString("es-ES", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric"
+      });
+      doc.text(invoiceDate, rightX, currentY + 12, { align: "right" });
+      
+      // Status badge (pill shape)
+      const statusConfig = inv.status === "approved" ? colors.paid : 
+                          inv.status === "cancelled" ? colors.cancelled : colors.pending;
+      const statusText = inv.status === "approved" ? "PAGADA" : 
+                        inv.status === "cancelled" ? "CANCELADA" : "PENDIENTE";
+      const statusIcon = inv.status === "approved" ? " ✓" : "";
+      
+      const badgeText = statusText + statusIcon;
+      const badgeWidth = doc.getTextWidth(badgeText) + 8;
+      const badgeX = rightX - badgeWidth;
+      
+      doc.setFillColor(...statusConfig.bg);
+      doc.roundedRect(badgeX, currentY + 16, badgeWidth, 7, 3, 3, "F");
+      
+      doc.setTextColor(...statusConfig.text);
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "bold");
+      doc.text(badgeText, badgeX + badgeWidth / 2, currentY + 21, { align: "center" });
+      
+      currentY += 36;
+      
+      // ========== DIVIDER ==========
+      doc.setDrawColor(...colors.divider);
+      doc.setLineWidth(0.3);
+      doc.line(margin, currentY, pageWidth - margin, currentY);
+      
+      currentY += 12;
+      
+      // ========== CLIENT AND DETAILS SECTION (2 columns) ==========
+      const colWidth = (contentWidth - 10) / 2;
+      
+      // Column 1: Cliente
+      doc.setTextColor(...colors.textSecondary);
       doc.setFontSize(8);
       doc.setFont("helvetica", "bold");
-      doc.text(inv.status === "approved" ? "PAGADA" : "PENDIENTE", 170, 42, { align: "center" });
+      doc.text("CLIENTE", margin, currentY);
       
-      // ========== CLIENT & INVOICE INFO ==========
-      let currentY = 65;
-      
-      // Client card
-      doc.setFillColor(...lightGray);
-      doc.roundedRect(12, currentY, 90, 38, 4, 4, "F");
-      
-      doc.setFillColor(...primary);
-      doc.roundedRect(12, currentY, 90, 8, 4, 0, "F");
-      doc.rect(12, currentY + 4, 90, 4, "F");
-      
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(9);
+      currentY += 6;
+      doc.setTextColor(...colors.textPrimary);
+      doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
-      doc.text("CLIENTE", 57, currentY + 6, { align: "center" });
+      doc.text(cli?.name || "", margin, currentY);
       
-      doc.setTextColor(...darkGray);
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "bold");
-      doc.text(cli?.name || "", 17, currentY + 18);
-      
+      currentY += 5;
+      doc.setTextColor(...colors.textSecondary);
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
-      doc.text(`ID: ${cli?.customer_id || ""}`, 17, currentY + 26);
-      doc.text(`WhatsApp: ${cli?.whatsapp || ""}`, 17, currentY + 33);
+      doc.text(`ID: ${cli?.customer_id || ""}`, margin, currentY);
       
-      // Invoice details card
-      doc.setFillColor(...lightGray);
-      doc.roundedRect(108, currentY, 90, 38, 4, 4, "F");
+      currentY += 4;
+      doc.text(`WhatsApp: ${cli?.whatsapp || ""}`, margin, currentY);
       
-      doc.setFillColor(...primary);
-      doc.roundedRect(108, currentY, 90, 8, 4, 0, "F");
-      doc.rect(108, currentY + 4, 90, 4, "F");
+      // Column 2: Detalles (right side, same Y level)
+      const col2X = margin + colWidth + 10;
+      let detailY = currentY - 15;
       
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(9);
+      doc.setTextColor(...colors.textSecondary);
+      doc.setFontSize(8);
       doc.setFont("helvetica", "bold");
-      doc.text("DETALLES", 153, currentY + 6, { align: "center" });
+      doc.text("DETALLES", col2X, detailY);
       
-      doc.setTextColor(...darkGray);
+      detailY += 6;
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
-      doc.text(`Fecha: ${new Date(inv.created_at).toLocaleDateString("es-ES")}`, 113, currentY + 18);
-      doc.text(`Items: ${inv.purchase_ids?.length || 0} productos`, 113, currentY + 26);
+      doc.text(`Fecha: ${new Date(inv.created_at).toLocaleDateString("es-ES")}`, col2X, detailY);
+      
+      detailY += 4;
+      doc.text(`Items: ${inv.purchases?.length || 0}`, col2X, detailY);
+      
       if (inv.approved_at) {
-        doc.setTextColor(...accent);
-        doc.text(`Aprobada: ${new Date(inv.approved_at).toLocaleDateString("es-ES")}`, 113, currentY + 33);
+        detailY += 4;
+        doc.setTextColor(...colors.paid.text);
+        doc.text(`Aprobada: ${new Date(inv.approved_at).toLocaleDateString("es-ES")}`, col2X, detailY);
       }
       
-      currentY += 45;
-      
-      // ========== SHIPMENT INFO (if available) ==========
-      if (shipment && (shipment.tracking_number || shipment.shipping_cost)) {
-        doc.setFillColor(...purple);
-        doc.roundedRect(12, currentY, 186, 22, 4, 4, "F");
-        
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "bold");
-        doc.text("INFORMACIÓN DE ENVÍO", 20, currentY + 7);
-        
-        doc.setFontSize(10);
-        doc.setFont("helvetica", "normal");
-        const shipY = currentY + 16;
-        doc.text(`Costo: $${(shipment.shipping_cost || 0).toFixed(2)}`, 20, shipY);
-        doc.text(`Peso: ${shipment.weight_pounds || 0} lbs`, 80, shipY);
-        doc.text(`Tracking: ${shipment.tracking_number || "N/A"}`, 130, shipY);
-        
-        currentY += 28;
-      }
+      currentY += 12;
       
       // ========== PRODUCTS TABLE ==========
       const tableData = (inv.purchases || []).map((p, idx) => [
-        idx + 1,
+        (idx + 1).toString(),
         p.item_name,
         p.store,
         `$${p.price.toFixed(2)}`,
@@ -358,130 +378,143 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       
       autoTable(doc, {
         startY: currentY,
-        head: [["#", "Producto", "Tienda", "Precio", "Tax", "Com.", "Total"]],
+        head: [["#", "Producto", "Tienda", "Precio", "Tax", "Comisión", "Total"]],
         body: tableData,
-        theme: "striped",
+        theme: "plain",
         headStyles: {
-          fillColor: primary,
-          textColor: [255, 255, 255],
+          fillColor: [241, 245, 249], // Gris muy claro
+          textColor: colors.textSecondary,
           fontStyle: "bold",
-          fontSize: 9,
-          halign: "center"
+          fontSize: 8,
+          cellPadding: 4
         },
         bodyStyles: {
           fontSize: 8,
-          textColor: darkGray
+          textColor: colors.textPrimary,
+          cellPadding: 3
         },
         alternateRowStyles: {
-          fillColor: [248, 249, 250]
+          fillColor: colors.white
         },
         columnStyles: {
-          0: { cellWidth: 12, halign: "center" },
-          1: { cellWidth: 55 },
-          2: { cellWidth: 30 },
+          0: { cellWidth: 10, halign: "center" },
+          1: { cellWidth: 52 },
+          2: { cellWidth: 25 },
           3: { cellWidth: 22, halign: "right" },
-          4: { cellWidth: 20, halign: "right" },
-          5: { cellWidth: 20, halign: "right" },
-          6: { cellWidth: 25, halign: "right", fontStyle: "bold" }
+          4: { cellWidth: 18, halign: "right" },
+          5: { cellWidth: 22, halign: "right" },
+          6: { cellWidth: 22, halign: "right", fontStyle: "bold" }
         },
-        margin: { left: 12, right: 12 },
+        margin: { left: margin, right: margin },
         styles: {
-          cellPadding: 3,
-          lineColor: [220, 220, 220],
-          lineWidth: 0.1
+          lineColor: colors.divider,
+          lineWidth: 0.2
+        },
+        didDrawPage: function(data) {
+          // Draw bottom border for header
+          doc.setDrawColor(...colors.divider);
+          doc.setLineWidth(0.3);
         }
       });
       
-      // ========== TOTALS SECTION ==========
-      const finalY = doc.lastAutoTable.finalY + 8;
-      const hasShipping = shipment && shipment.shipping_cost > 0;
+      // ========== TOTALS SECTION (right aligned) ==========
+      let finalY = doc.lastAutoTable.finalY + 12;
       
-      // Pending warning (left side)
-      if (inv.status !== "approved") {
-        doc.setFillColor(255, 235, 200);
-        doc.roundedRect(12, finalY, 85, 28, 4, 4, "F");
-        doc.setFillColor(241, 196, 15);
-        doc.roundedRect(12, finalY, 85, 6, 4, 0, "F");
-        doc.rect(12, finalY + 3, 85, 3, "F");
-        
-        doc.setTextColor(180, 120, 0);
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "bold");
-        doc.text("PENDIENTE DE PAGO", 54, finalY + 16, { align: "center" });
-        doc.setFontSize(7);
-        doc.setFont("helvetica", "normal");
-        doc.text("Aprobar para confirmar", 54, finalY + 23, { align: "center" });
-      }
+      const totalsX = pageWidth - margin - 65;
+      const totalsWidth = 65;
       
-      // Totals box (right side)
-      const totalsX = 110;
-      const totalsWidth = 88;
-      const totalsHeight = hasShipping ? 52 : 44;
-      
-      doc.setFillColor(...lightGray);
-      doc.roundedRect(totalsX, finalY, totalsWidth, totalsHeight, 4, 4, "F");
-      
-      doc.setTextColor(...darkGray);
+      doc.setTextColor(...colors.textSecondary);
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
       
-      let totY = finalY + 10;
-      doc.text("Subtotal:", totalsX + 5, totY);
-      doc.text(`$${inv.subtotal.toFixed(2)}`, totalsX + totalsWidth - 5, totY, { align: "right" });
+      // Subtotal
+      doc.text("Subtotal:", totalsX, finalY);
+      doc.setTextColor(...colors.textPrimary);
+      doc.text(`$${inv.subtotal.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       
-      totY += 8;
-      doc.text("Impuestos:", totalsX + 5, totY);
-      doc.text(`$${inv.total_tax.toFixed(2)}`, totalsX + totalsWidth - 5, totY, { align: "right" });
+      finalY += 6;
+      doc.setTextColor(...colors.textSecondary);
+      doc.text("Impuestos:", totalsX, finalY);
+      doc.setTextColor(...colors.textPrimary);
+      doc.text(`$${inv.total_tax.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       
-      totY += 8;
-      doc.text("Comisiones:", totalsX + 5, totY);
-      doc.text(`$${inv.total_commission.toFixed(2)}`, totalsX + totalsWidth - 5, totY, { align: "right" });
+      finalY += 6;
+      doc.setTextColor(...colors.textSecondary);
+      doc.text("Comisiones:", totalsX, finalY);
+      doc.setTextColor(...colors.textPrimary);
+      doc.text(`$${inv.total_commission.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       
-      if (hasShipping) {
-        totY += 8;
-        doc.setTextColor(...purple);
-        doc.text("Envío:", totalsX + 5, totY);
-        doc.text(`$${shipment.shipping_cost.toFixed(2)}`, totalsX + totalsWidth - 5, totY, { align: "right" });
+      // Shipping cost if applicable
+      if (shipment && shipment.shipping_cost > 0) {
+        finalY += 6;
+        doc.setTextColor(...colors.textSecondary);
+        doc.text("Envío:", totalsX, finalY);
+        doc.setTextColor(...colors.textPrimary);
+        doc.text(`$${shipment.shipping_cost.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       }
       
-      // Total line
-      totY += 4;
-      doc.setDrawColor(...primary);
-      doc.setLineWidth(0.5);
-      doc.line(totalsX + 5, totY, totalsX + totalsWidth - 5, totY);
+      // Divider line before total
+      finalY += 4;
+      doc.setDrawColor(...colors.divider);
+      doc.setLineWidth(0.3);
+      doc.line(totalsX, finalY, pageWidth - margin, finalY);
       
-      // Grand total
-      const grandTotal = inv.total + (hasShipping ? shipment.shipping_cost : 0);
-      totY += 10;
-      doc.setFillColor(...primary);
-      doc.roundedRect(totalsX, totY - 6, totalsWidth, 14, 0, 4, "F");
+      // TOTAL (larger, bold)
+      finalY += 8;
+      const grandTotal = inv.total + (shipment?.shipping_cost || 0);
       
-      doc.setTextColor(255, 255, 255);
+      doc.setTextColor(...colors.textPrimary);
       doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
-      doc.text("TOTAL:", totalsX + 8, totY + 3);
+      doc.text("TOTAL:", totalsX, finalY);
       doc.setFontSize(14);
-      doc.text(`$${grandTotal.toFixed(2)}`, totalsX + totalsWidth - 8, totY + 3, { align: "right" });
+      doc.text(`$${grandTotal.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       
-      // ========== FOOTER ==========
-      // Tracking URL
-      if (shipment?.tracking_number && tenant?.tracking_url_template) {
-        const trackingUrl = tenant.tracking_url_template.replace('{tracking}', shipment.tracking_number);
-        doc.setFontSize(7);
-        doc.setTextColor(100, 100, 100);
-        doc.text(`Seguimiento: ${trackingUrl}`, 12, 275);
-      }
+      // ========== FOOTER SECTION ==========
+      const footerY = containerY + 273 - 25;
       
-      // Footer bar
-      doc.setFillColor(...primary);
-      doc.rect(0, 282, 210, 15, "F");
+      // Divider before footer
+      doc.setDrawColor(...colors.divider);
+      doc.setLineWidth(0.3);
+      doc.line(margin, footerY - 8, pageWidth - margin, footerY - 8);
       
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(9);
+      // Footer text (left side)
+      doc.setTextColor(...colors.textPrimary);
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text("Gracias por su compra", margin, footerY);
+      
+      doc.setTextColor(...colors.textSecondary);
+      doc.setFontSize(8);
       doc.setFont("helvetica", "normal");
-      doc.text("Gracias por su preferencia", 105, 289, { align: "center" });
+      doc.text(`${tenant?.business_name || "Outlets USA EC"} – Compras en USA → Entregas en Ecuador`, margin, footerY + 5);
+      
+      // Generation timestamp (bottom left)
+      const genDate = new Date().toLocaleString("es-ES", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
       doc.setFontSize(7);
-      doc.text(`Generado: ${new Date().toLocaleString("es-ES")}`, 105, 294, { align: "center" });
+      doc.text(`Generado: ${genDate}`, margin, footerY + 12);
+      
+      // QR Code (bottom right)
+      try {
+        const qrData = `INV:${inv.invoice_number}|CLI:${cli?.customer_id || ""}|TOTAL:${grandTotal.toFixed(2)}`;
+        const qrDataUrl = await QRCode.toDataURL(qrData, {
+          width: 200,
+          margin: 1,
+          color: {
+            dark: '#0F172A',
+            light: '#FFFFFF'
+          }
+        });
+        doc.addImage(qrDataUrl, 'PNG', pageWidth - margin - 22, footerY - 6, 22, 22);
+      } catch (e) {
+        console.log("Could not generate QR:", e);
+      }
       
       // Save PDF
       doc.save(`Factura_${inv.invoice_number}_${cli?.customer_id || ""}.pdf`);
