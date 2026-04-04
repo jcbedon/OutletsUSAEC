@@ -453,6 +453,13 @@ async def log_audit_action(
     )
     await db.audit_logs.insert_one(audit_log.model_dump())
 
+async def check_employee_permission(user_id: str, permission: str) -> bool:
+    """Check if an employee has a specific permission"""
+    employee = await db.employees.find_one({"id": user_id}, {"_id": 0})
+    if not employee:
+        return False
+    return employee.get("permissions", {}).get(permission, False)
+
 # ==================== AUTH ENDPOINTS ====================
 
 @api_router.post("/auth/register")
@@ -771,7 +778,7 @@ async def get_my_tenant(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/admin/tenant/logo")
 async def upload_tenant_logo(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tenant_id = current_user["tenant_id"]
     ext = file.filename.split(".")[-1] if "." in file.filename else "png"
@@ -787,7 +794,7 @@ async def upload_tenant_logo(file: UploadFile = File(...), current_user: dict = 
 
 @api_router.get("/admin/clients")
 async def get_all_clients(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     users = await db.users.find({"role": "client", "tenant_id": tid}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(1000)
@@ -836,7 +843,7 @@ async def get_all_clients(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/admin/clients/create")
 async def admin_create_client(data: AdminClientCreate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     existing = await db.users.find_one({"whatsapp": data.whatsapp, "tenant_id": tid}, {"_id": 0})
@@ -863,7 +870,7 @@ async def admin_create_client(data: AdminClientCreate, current_user: dict = Depe
 
 @api_router.get("/admin/clients/active")
 async def get_active_clients(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     wallets = await db.wallets.find({"available": {"$gt": 0}, "tenant_id": tid}, {"_id": 0}).to_list(1000)
@@ -876,7 +883,7 @@ async def get_active_clients(current_user: dict = Depends(get_current_user)):
 
 @api_router.put("/admin/clients/{user_id}/commission")
 async def update_client_commission(user_id: str, commission_fee: float, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     if commission_fee < 0:
         raise HTTPException(status_code=400, detail="La comisión no puede ser negativa")
@@ -896,7 +903,7 @@ class ClientUpdate(BaseModel):
 
 @api_router.put("/admin/clients/{user_id}")
 async def update_client(user_id: str, data: ClientUpdate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -927,7 +934,7 @@ async def update_client(user_id: str, data: ClientUpdate, current_user: dict = D
 
 @api_router.get("/admin/clients/{customer_id}/info")
 async def get_client_info(customer_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     user = await db.users.find_one({"customer_id": customer_id.upper(), "tenant_id": tid}, {"_id": 0, "password_hash": 0})
@@ -941,7 +948,7 @@ async def get_client_info(customer_id: str, current_user: dict = Depends(get_cur
 
 @api_router.get("/wallet/pending-deposits")
 async def get_pending_deposits(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     transactions = await db.wallet_transactions.find({"type": "deposit", "status": "pending", "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(100)
@@ -953,7 +960,7 @@ async def get_pending_deposits(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/wallet/all-deposits")
 async def get_all_deposits(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     transactions = await db.wallet_transactions.find(
@@ -1185,7 +1192,7 @@ async def admin_balance_adjustment(data: AdminBalanceAdjustment, current_user: d
 
 @api_router.post("/lives")
 async def create_live(live_data: LiveCreate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     live = Live(tenant_id=current_user["tenant_id"], title=live_data.title, store=live_data.store)
     await db.lives.insert_one(live.model_dump())
@@ -1193,7 +1200,7 @@ async def create_live(live_data: LiveCreate, current_user: dict = Depends(get_cu
 
 @api_router.post("/lives/{live_id}/start")
 async def start_live(live_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     result = await db.lives.update_one({"id": live_id, "tenant_id": current_user["tenant_id"]},
         {"$set": {"status": "active", "started_at": datetime.now(timezone.utc).isoformat()}})
@@ -1203,7 +1210,7 @@ async def start_live(live_id: str, current_user: dict = Depends(get_current_user
 
 @api_router.post("/lives/{live_id}/end")
 async def end_live(live_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     result = await db.lives.update_one({"id": live_id, "tenant_id": current_user["tenant_id"]},
         {"$set": {"status": "completed", "ended_at": datetime.now(timezone.utc).isoformat()}})
@@ -1240,7 +1247,7 @@ CUSTOM_TAX_RATE = 0.15  # 15% custom tax
 
 @api_router.post("/purchases")
 async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     user = await db.users.find_one({"customer_id": purchase_data.customer_id.upper(), "tenant_id": tid}, {"_id": 0})
@@ -1348,7 +1355,7 @@ class PurchaseUpdate(BaseModel):
 
 @api_router.put("/purchases/{purchase_id}")
 async def update_purchase(purchase_id: str, data: PurchaseUpdate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     purchase = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0})
@@ -1425,7 +1432,7 @@ async def update_purchase(purchase_id: str, data: PurchaseUpdate, current_user: 
 
 @api_router.delete("/purchases/{purchase_id}")
 async def delete_purchase(purchase_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     purchase = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0})
@@ -1452,8 +1459,13 @@ async def delete_purchase(purchase_id: str, current_user: dict = Depends(get_cur
 
 @api_router.post("/shipments")
 async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
+    # Check employee permission
+    if current_user["role"] == "employee":
+        has_permission = await check_employee_permission(current_user["user_id"], "manage_shipments")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="No tienes permiso para gestionar envíos")
     tid = current_user["tenant_id"]
     user = await db.users.find_one({"id": shipment_data.user_id, "tenant_id": tid}, {"_id": 0})
     if not user:
@@ -1470,7 +1482,7 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
 
 @api_router.put("/shipments/{shipment_id}/tracking")
 async def update_tracking(shipment_id: str, tracking_number: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     result = await db.shipments.update_one({"id": shipment_id, "tenant_id": current_user["tenant_id"]},
         {"$set": {"tracking_number": tracking_number, "updated_at": datetime.now(timezone.utc).isoformat()}})
@@ -1480,7 +1492,7 @@ async def update_tracking(shipment_id: str, tracking_number: str, current_user: 
 
 @api_router.put("/shipments/{shipment_id}/status")
 async def update_shipment_status(shipment_id: str, status: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     if status not in ["preparing", "in_transit", "delivered"]:
         raise HTTPException(status_code=400, detail="Estado inválido")
@@ -1497,7 +1509,7 @@ async def update_shipment_status(shipment_id: str, status: str, current_user: di
 
 @api_router.post("/shipments/{shipment_id}/attachments")
 async def upload_shipment_attachment(shipment_id: str, file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     shipment = await db.shipments.find_one({"id": shipment_id, "tenant_id": tid}, {"_id": 0})
@@ -1535,8 +1547,13 @@ async def get_user_shipments(user_id: str, current_user: dict = Depends(get_curr
 
 @api_router.get("/shipments")
 async def get_all_shipments(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
+    # Check employee permission
+    if current_user["role"] == "employee":
+        has_permission = await check_employee_permission(current_user["user_id"], "manage_shipments")
+        if not has_permission:
+            raise HTTPException(status_code=403, detail="No tienes permiso para ver envíos")
     tid = current_user["tenant_id"]
     query = {"tenant_id": tid}
     if status:
@@ -1568,7 +1585,7 @@ class ShipmentUpdate(BaseModel):
 
 @api_router.put("/shipments/{shipment_id}")
 async def update_shipment(shipment_id: str, data: ShipmentUpdate, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     shipment = await db.shipments.find_one({"id": shipment_id, "tenant_id": tid}, {"_id": 0})
@@ -1599,7 +1616,7 @@ async def update_shipment(shipment_id: str, data: ShipmentUpdate, current_user: 
 
 @api_router.delete("/shipments/{shipment_id}")
 async def delete_shipment(shipment_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     shipment = await db.shipments.find_one({"id": shipment_id, "tenant_id": tid}, {"_id": 0})
@@ -1615,7 +1632,7 @@ async def delete_shipment(shipment_id: str, current_user: dict = Depends(get_cur
 @api_router.get("/invoices/client/{customer_id}/pending-purchases")
 async def get_pending_purchases_for_invoice(customer_id: str, current_user: dict = Depends(get_current_user)):
     """Get all purchases not yet invoiced for a client"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -1634,7 +1651,7 @@ async def get_pending_purchases_for_invoice(customer_id: str, current_user: dict
 @api_router.post("/invoices")
 async def create_invoice(data: dict, current_user: dict = Depends(get_current_user)):
     """Create a new invoice for a client with pending purchases"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     customer_id = data.get("customer_id", "").upper()
@@ -1709,7 +1726,7 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
 @api_router.get("/invoices/client/{customer_id}")
 async def get_client_invoices(customer_id: str, current_user: dict = Depends(get_current_user)):
     """Get all invoices for a client"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -1723,7 +1740,7 @@ async def get_client_invoices(customer_id: str, current_user: dict = Depends(get
 @api_router.get("/invoices/{invoice_id}")
 async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_current_user)):
     """Get invoice with full details"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -1767,7 +1784,7 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
 @api_router.put("/invoices/{invoice_id}/remove-item")
 async def remove_item_from_invoice(invoice_id: str, data: dict, current_user: dict = Depends(get_current_user)):
     """Remove an item from an invoice (works for both pending and approved invoices)"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     purchase_id = data.get("purchase_id")
@@ -1837,7 +1854,7 @@ async def remove_item_from_invoice(invoice_id: str, data: dict, current_user: di
 @api_router.put("/invoices/{invoice_id}/reopen")
 async def reopen_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
     """Reopen an approved invoice for modifications"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -1865,7 +1882,7 @@ async def reopen_invoice(invoice_id: str, current_user: dict = Depends(get_curre
 @api_router.put("/invoices/{invoice_id}/approve")
 async def approve_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
     """Approve an invoice - moves purchases to paid history"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -1903,7 +1920,7 @@ async def approve_invoice(invoice_id: str, current_user: dict = Depends(get_curr
 @api_router.get("/invoices/client/{customer_id}/history")
 async def get_client_purchase_history(customer_id: str, current_user: dict = Depends(get_current_user)):
     """Get purchase history (paid purchases from approved invoices)"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -1927,7 +1944,7 @@ async def get_user_notifications(user_id: str, current_user: dict = Depends(get_
 
 @api_router.get("/admin/reports/live/{live_id}")
 async def get_live_report(live_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     live = await db.lives.find_one({"id": live_id, "tenant_id": tid}, {"_id": 0})
@@ -1978,7 +1995,7 @@ async def get_reports_summary(current_user: dict = Depends(get_current_user)):
 @api_router.get("/admin/reports/business-stats")
 async def get_business_stats(current_user: dict = Depends(get_current_user)):
     """Get detailed business statistics including sales by store, time-based trends, and profit analysis"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -2117,7 +2134,7 @@ async def get_business_stats(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/admin/reports/clients-purchases")
 async def get_all_clients_purchases_report(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     clients = await db.users.find({"role": "client", "tenant_id": tid}, {"_id": 0, "password_hash": 0}).to_list(1000)
@@ -2184,7 +2201,7 @@ async def get_all_clients_purchases_report(current_user: dict = Depends(get_curr
 
 @api_router.get("/admin/reports/all-purchases")
 async def get_all_purchases_report(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     purchases = await db.purchases.find({"tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(5000)
@@ -2212,14 +2229,14 @@ async def get_all_purchases_report(current_user: dict = Depends(get_current_user
 
 @api_router.get("/admin/settings/referral-bonus")
 async def get_referral_bonus_setting(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     bonus = await get_referral_bonus(current_user["tenant_id"])
     return {"referral_bonus": bonus}
 
 @api_router.put("/admin/settings/referral-bonus")
 async def set_referral_bonus_setting(amount: float, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     if amount < 0:
         raise HTTPException(status_code=400, detail="El bono no puede ser negativo")
@@ -2231,7 +2248,7 @@ async def set_referral_bonus_setting(amount: float, current_user: dict = Depends
 @api_router.get("/admin/settings")
 async def get_tenant_settings(current_user: dict = Depends(get_current_user)):
     """Get all tenant settings including tax options"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "tax_options": 1})
@@ -2250,7 +2267,7 @@ async def get_tenant_settings(current_user: dict = Depends(get_current_user)):
 @api_router.put("/admin/settings/tax-options")
 async def update_tenant_tax_options(data: dict, current_user: dict = Depends(get_current_user)):
     """Update tax options for the tenant"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     tax_options = data.get("tax_options", [])
@@ -2261,7 +2278,7 @@ async def update_tenant_tax_options(data: dict, current_user: dict = Depends(get
 
 @api_router.get("/admin/referrals")
 async def get_referral_stats(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     top_referrers = await db.users.find({"referral_count": {"$gt": 0}, "tenant_id": tid},
@@ -2278,7 +2295,7 @@ async def get_referral_stats(current_user: dict = Depends(get_current_user)):
 @api_router.post("/auth/generate-access-token")
 async def generate_temporary_access_token(data: dict, current_user: dict = Depends(get_current_user)):
     """Generate a temporary access token for QR code access to client dashboard"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     
     customer_id = data.get("customer_id")
@@ -2367,7 +2384,7 @@ async def verify_temporary_access_token(token: str):
 @api_router.get("/admin/employees")
 async def get_employees(current_user: dict = Depends(get_current_user)):
     """Get all employees for the tenant"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -2377,7 +2394,7 @@ async def get_employees(current_user: dict = Depends(get_current_user)):
 @api_router.post("/admin/employees")
 async def create_employee(data: EmployeeCreate, current_user: dict = Depends(get_current_user)):
     """Create a new employee"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -2429,7 +2446,7 @@ async def create_employee(data: EmployeeCreate, current_user: dict = Depends(get
 @api_router.get("/admin/employees/{employee_id}")
 async def get_employee(employee_id: str, current_user: dict = Depends(get_current_user)):
     """Get employee details including password"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -2442,7 +2459,7 @@ async def get_employee(employee_id: str, current_user: dict = Depends(get_curren
 @api_router.put("/admin/employees/{employee_id}")
 async def update_employee(employee_id: str, data: EmployeeUpdate, current_user: dict = Depends(get_current_user)):
     """Update employee information"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -2505,7 +2522,7 @@ async def update_employee(employee_id: str, data: EmployeeUpdate, current_user: 
 @api_router.delete("/admin/employees/{employee_id}")
 async def delete_employee(employee_id: str, current_user: dict = Depends(get_current_user)):
     """Delete an employee"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -2547,7 +2564,7 @@ async def get_audit_logs(
     skip: int = 0
 ):
     """Get audit logs with filtering options"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -2580,7 +2597,7 @@ async def get_audit_logs(
 @api_router.get("/admin/audit-logs/users")
 async def get_audit_users(current_user: dict = Depends(get_current_user)):
     """Get list of users who have audit logs"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
@@ -2603,7 +2620,7 @@ async def get_audit_users(current_user: dict = Depends(get_current_user)):
 @api_router.get("/admin/audit-logs/actions")
 async def get_audit_actions(current_user: dict = Depends(get_current_user)):
     """Get list of action types"""
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     
     # Return predefined action types

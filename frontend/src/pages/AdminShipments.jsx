@@ -48,6 +48,12 @@ export default function AdminShipments() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const logoUrl = user?.tenant_logo || LOGO_URL_DEFAULT;
+  
+  // Check permissions for employees
+  const permissions = user?.permissions || {};
+  const isAdmin = user?.role === "admin";
+  const hasPermission = isAdmin || permissions.manage_shipments === true;
+  
   const [shipments, setShipments] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +71,14 @@ export default function AdminShipments() {
     additional_info: "",
     tracking_number: ""
   });
+  
+  // Redirect if no permission
+  useEffect(() => {
+    if (!hasPermission) {
+      toast.error("No tienes permiso para acceder a este módulo");
+      navigate("/admin");
+    }
+  }, [hasPermission, navigate]);
   
   // Create shipment form
   const [selectedClient, setSelectedClient] = useState(null);

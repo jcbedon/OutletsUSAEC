@@ -57,6 +57,41 @@ export default function AdminDashboard() {
     navigate("/login");
   };
 
+  // Get employee permissions (if employee)
+  const permissions = user?.permissions || {};
+  const isAdmin = user?.role === "admin";
+
+  // Filter menu items based on role and permissions
+  const getFilteredMenuItems = () => {
+    const allItems = [
+      { icon: Radio, label: "Live Shopping", path: "/admin/live", color: "#1E3A5F", description: "Gestionar ventas en vivo", permission: "manage_lives" },
+      { icon: Users, label: "Clientes", path: "/admin/clients", color: "#2a4f7f", description: "Ver y gestionar clientes", permission: "manage_clients" },
+      { icon: Wallet, label: "Recargas", path: "/admin/wallet", color: "#2ECC71", description: "Aprobar depósitos", permission: "approve_recharges" },
+      { icon: Truck, label: "Envíos", path: "/admin/shipments", color: "#1E3A5F", description: "Gestionar envíos", permission: "manage_shipments" },
+      { icon: Gift, label: "Referidos", path: "/admin/referrals", color: "#27ae60", description: "Configurar bonos", adminOnly: true },
+      { icon: BarChart3, label: "Reportes", path: "/admin/reports", color: "#2a4f7f", description: "Ver estadísticas", permission: "view_reports" },
+      { icon: TrendingUp, label: "Estadisticas", path: "/admin/stats", color: "#E74C3C", description: "Ver ganancias del negocio", permission: "view_statistics" },
+    ];
+    
+    // Admin sees everything
+    if (isAdmin) {
+      return [
+        ...allItems,
+        { icon: UserCog, label: "Empleados", path: "/admin/employees", color: "#8E44AD", description: "Gestionar empleados y permisos" },
+        { icon: ClipboardList, label: "Auditoría", path: "/admin/audit", color: "#34495E", description: "Registro de acciones" },
+      ];
+    }
+    
+    // Employee sees only items they have permission for
+    return allItems.filter(item => {
+      if (item.adminOnly) return false;
+      if (!item.permission) return true;
+      return permissions[item.permission] === true;
+    });
+  };
+
+  const menuItems = getFilteredMenuItems();
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -64,20 +99,6 @@ export default function AdminDashboard() {
       </div>
     );
   }
-
-  const menuItems = [
-    { icon: Radio, label: "Live Shopping", path: "/admin/live", color: "#1E3A5F", description: "Gestionar ventas en vivo" },
-    { icon: Users, label: "Clientes", path: "/admin/clients", color: "#2a4f7f", description: "Ver y gestionar clientes" },
-    { icon: Wallet, label: "Recargas", path: "/admin/wallet", color: "#2ECC71", description: "Aprobar depósitos" },
-    { icon: Truck, label: "Envíos", path: "/admin/shipments", color: "#1E3A5F", description: "Gestionar envíos" },
-    { icon: Gift, label: "Referidos", path: "/admin/referrals", color: "#27ae60", description: "Configurar bonos" },
-    { icon: BarChart3, label: "Reportes", path: "/admin/reports", color: "#2a4f7f", description: "Ver estadísticas" },
-    { icon: TrendingUp, label: "Estadisticas", path: "/admin/stats", color: "#E74C3C", description: "Ver ganancias del negocio" },
-    ...(user?.role === "admin" ? [
-      { icon: UserCog, label: "Empleados", path: "/admin/employees", color: "#8E44AD", description: "Gestionar empleados y permisos" },
-      { icon: ClipboardList, label: "Auditoría", path: "/admin/audit", color: "#34495E", description: "Registro de acciones" },
-    ] : []),
-  ];
 
   return (
     <div className="min-h-screen bg-gray-50">

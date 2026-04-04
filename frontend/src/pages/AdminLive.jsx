@@ -58,6 +58,12 @@ export default function AdminLive() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const logoUrl = user?.tenant_logo || "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+  
+  // Check permissions for employees
+  const permissions = user?.permissions || {};
+  const isAdmin = user?.role === "admin";
+  const hasPermission = isAdmin || permissions.manage_lives === true;
+  
   const [activeLive, setActiveLive] = useState(null);
   const [selectedLive, setSelectedLive] = useState(null); // Live currently being viewed/edited
   const [lives, setLives] = useState([]);
@@ -68,6 +74,14 @@ export default function AdminLive() {
   const [newLiveTitle, setNewLiveTitle] = useState("");
   const [newLiveStore, setNewLiveStore] = useState("");
   const [createLiveDialogOpen, setCreateLiveDialogOpen] = useState(false);
+  
+  // Redirect if no permission
+  useEffect(() => {
+    if (!hasPermission) {
+      toast.error("No tienes permiso para acceder a este módulo");
+      navigate("/admin");
+    }
+  }, [hasPermission, navigate]);
 
   // Purchase form state
   const [purchaseForm, setPurchaseForm] = useState({

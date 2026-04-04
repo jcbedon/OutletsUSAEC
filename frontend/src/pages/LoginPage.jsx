@@ -24,7 +24,7 @@ export default function LoginPage() {
       login(userData);
       toast.success(`Bienvenido, ${userData.name}!`);
       if (userData.role === "superadmin") navigate("/superadmin");
-      else if (userData.role === "admin") navigate("/admin");
+      else if (userData.role === "admin" || userData.role === "employee") navigate("/admin");
       else navigate("/dashboard");
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al iniciar sesión");
