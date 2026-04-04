@@ -159,18 +159,27 @@ export default function AdminEmployees() {
           <h1 className="text-2xl font-bold text-slate-800">Empleados</h1>
           <p className="text-slate-500">Gestiona los empleados y sus permisos</p>
         </div>
-        <Button onClick={() => handleOpenDialog()} data-testid="add-employee-btn">
+        <Button 
+          onClick={() => handleOpenDialog()} 
+          data-testid="add-employee-btn"
+          className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white shadow-lg"
+        >
           <Plus className="h-4 w-4 mr-2" />
           Nuevo Empleado
         </Button>
       </div>
 
       {employees.length === 0 ? (
-        <Card>
+        <Card className="border-dashed border-2 border-slate-200">
           <CardContent className="py-12 text-center">
-            <Users className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-500">No hay empleados registrados</p>
-            <Button className="mt-4" onClick={() => handleOpenDialog()}>
+            <div className="bg-gradient-to-r from-indigo-100 to-purple-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Users className="h-10 w-10 text-indigo-500" />
+            </div>
+            <p className="text-slate-500 mb-4">No hay empleados registrados</p>
+            <Button 
+              onClick={() => handleOpenDialog()}
+              className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white"
+            >
               Crear primer empleado
             </Button>
           </CardContent>
@@ -178,11 +187,21 @@ export default function AdminEmployees() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {employees.map((employee) => (
-            <Card key={employee.id} className={employee.status === "inactive" ? "opacity-60" : ""}>
+            <Card 
+              key={employee.id} 
+              className={`overflow-hidden transition-all duration-200 hover:shadow-lg ${
+                employee.status === "inactive" ? "opacity-60 bg-slate-50" : "bg-white"
+              }`}
+            >
+              <div className={`h-1 ${employee.status === "active" ? "bg-gradient-to-r from-green-400 to-emerald-500" : "bg-slate-300"}`} />
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-full ${employee.status === "active" ? "bg-green-100" : "bg-slate-100"}`}>
+                    <div className={`p-2.5 rounded-xl ${
+                      employee.status === "active" 
+                        ? "bg-gradient-to-br from-green-100 to-emerald-100" 
+                        : "bg-slate-100"
+                    }`}>
                       {employee.status === "active" ? (
                         <UserCheck className="h-5 w-5 text-green-600" />
                       ) : (
@@ -190,11 +209,16 @@ export default function AdminEmployees() {
                       )}
                     </div>
                     <div>
-                      <CardTitle className="text-lg">{employee.name}</CardTitle>
+                      <CardTitle className="text-lg text-slate-800">{employee.name}</CardTitle>
                       <p className="text-sm text-slate-500">{employee.email}</p>
                     </div>
                   </div>
-                  <Badge variant={employee.status === "active" ? "default" : "secondary"}>
+                  <Badge 
+                    className={employee.status === "active" 
+                      ? "bg-green-100 text-green-700 border-green-200" 
+                      : "bg-slate-100 text-slate-600"
+                    }
+                  >
                     {employee.status === "active" ? "Activo" : "Inactivo"}
                   </Badge>
                 </div>
@@ -204,14 +228,15 @@ export default function AdminEmployees() {
                   <p className="text-sm text-slate-600">WhatsApp: {employee.whatsapp}</p>
                 )}
                 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg">
                   <span className="text-sm text-slate-500">Contraseña:</span>
-                  <code className="bg-slate-100 px-2 py-1 rounded text-sm font-mono">
+                  <code className="bg-white px-2 py-1 rounded text-sm font-mono border border-slate-200 flex-1">
                     {showPassword[employee.id] ? employee.password_plain : "••••••••"}
                   </code>
                   <Button
                     variant="ghost"
                     size="sm"
+                    className="text-slate-400 hover:text-indigo-600"
                     onClick={() => toggleShowPassword(employee.id)}
                   >
                     {showPassword[employee.id] ? (
@@ -222,14 +247,14 @@ export default function AdminEmployees() {
                   </Button>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-slate-400" />
-                  <span className="text-sm text-slate-600">
+                <div className="flex items-center gap-2 bg-indigo-50 p-2 rounded-lg">
+                  <Shield className="h-4 w-4 text-indigo-500" />
+                  <span className="text-sm text-indigo-700 font-medium">
                     {countActivePermissions(employee.permissions)} permisos activos
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between pt-3 border-t">
+                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
                   <div className="flex items-center gap-2">
                     <Switch
                       checked={employee.status === "active"}
@@ -243,6 +268,7 @@ export default function AdminEmployees() {
                     <Button
                       variant="outline"
                       size="sm"
+                      className="border-indigo-200 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300"
                       onClick={() => handleOpenDialog(employee)}
                     >
                       <Edit className="h-4 w-4" />
@@ -250,7 +276,7 @@ export default function AdminEmployees() {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-red-600 hover:text-red-700"
+                      className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300"
                       onClick={() => handleDelete(employee)}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -265,32 +291,44 @@ export default function AdminEmployees() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle>
-              {editingEmployee ? "Editar Empleado" : "Nuevo Empleado"}
+        <DialogContent className="max-w-2xl max-h-[90vh] bg-gradient-to-b from-white to-slate-50">
+          <DialogHeader className="border-b pb-4">
+            <DialogTitle className="text-xl font-bold text-slate-800 flex items-center gap-2">
+              {editingEmployee ? (
+                <>
+                  <Edit className="h-5 w-5 text-indigo-500" />
+                  Editar Empleado
+                </>
+              ) : (
+                <>
+                  <Plus className="h-5 w-5 text-green-500" />
+                  Nuevo Empleado
+                </>
+              )}
             </DialogTitle>
           </DialogHeader>
           
           <ScrollArea className="max-h-[60vh] pr-4">
-            <div className="space-y-6">
+            <div className="space-y-6 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Nombre *</Label>
+                  <Label className="text-slate-700 font-medium">Nombre *</Label>
                   <Input
                     value={formData.name}
                     onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
                     placeholder="Nombre completo"
+                    className="border-slate-300 focus:border-indigo-500 focus:ring-indigo-500"
                     data-testid="employee-name-input"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Email *</Label>
+                  <Label className="text-slate-700 font-medium">Email *</Label>
                   <Input
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
                     placeholder="email@ejemplo.com"
+                    className="border-slate-300 focus:border-indigo-500 focus:ring-indigo-500"
                     data-testid="employee-email-input"
                   />
                 </div>
@@ -298,28 +336,30 @@ export default function AdminEmployees() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>WhatsApp</Label>
+                  <Label className="text-slate-700 font-medium">WhatsApp</Label>
                   <Input
                     value={formData.whatsapp}
                     onChange={(e) => setFormData(prev => ({ ...prev, whatsapp: e.target.value }))}
                     placeholder="+593999999999"
+                    className="border-slate-300 focus:border-indigo-500 focus:ring-indigo-500"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Contraseña {!editingEmployee && "*"}</Label>
+                  <Label className="text-slate-700 font-medium">Contraseña {!editingEmployee && "*"}</Label>
                   <div className="relative">
                     <Input
                       type={showPassword.form ? "text" : "password"}
                       value={formData.password}
                       onChange={(e) => setFormData(prev => ({ ...prev, password: e.target.value }))}
                       placeholder={editingEmployee ? "Dejar vacío para mantener" : "Contraseña"}
+                      className="border-slate-300 focus:border-indigo-500 focus:ring-indigo-500 pr-10"
                       data-testid="employee-password-input"
                     />
                     <Button
                       type="button"
                       variant="ghost"
                       size="sm"
-                      className="absolute right-2 top-1/2 -translate-y-1/2"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                       onClick={() => setShowPassword(prev => ({ ...prev, form: !prev.form }))}
                     >
                       {showPassword.form ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -329,37 +369,59 @@ export default function AdminEmployees() {
               </div>
 
               <div className="space-y-4">
-                <Label className="text-base font-semibold">Permisos</Label>
-                <div className="grid gap-3">
-                  {PERMISSIONS.map((perm) => (
-                    <div
-                      key={perm.key}
-                      className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg"
-                    >
-                      <Checkbox
-                        id={perm.key}
-                        checked={formData.permissions[perm.key] || false}
-                        onCheckedChange={(checked) => handlePermissionChange(perm.key, checked)}
-                        data-testid={`permission-${perm.key}`}
-                      />
-                      <div className="flex-1">
-                        <Label htmlFor={perm.key} className="font-medium cursor-pointer">
-                          {perm.label}
-                        </Label>
-                        <p className="text-sm text-slate-500">{perm.description}</p>
+                <Label className="text-base font-semibold text-slate-800">Permisos</Label>
+                <div className="grid gap-2">
+                  {PERMISSIONS.map((perm) => {
+                    const isChecked = formData.permissions[perm.key] || false;
+                    return (
+                      <div
+                        key={perm.key}
+                        onClick={() => handlePermissionChange(perm.key, !isChecked)}
+                        className={`flex items-start gap-3 p-4 rounded-xl cursor-pointer transition-all duration-200 border-2 ${
+                          isChecked 
+                            ? "bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-400 shadow-sm" 
+                            : "bg-slate-50 border-transparent hover:bg-slate-100 hover:border-slate-200"
+                        }`}
+                      >
+                        <div className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center transition-all ${
+                          isChecked 
+                            ? "bg-gradient-to-r from-indigo-500 to-purple-500 shadow-md" 
+                            : "bg-white border-2 border-slate-300"
+                        }`}>
+                          {isChecked && (
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <Label htmlFor={perm.key} className={`font-medium cursor-pointer ${isChecked ? "text-indigo-900" : "text-slate-700"}`}>
+                            {perm.label}
+                          </Label>
+                          <p className={`text-sm ${isChecked ? "text-indigo-600" : "text-slate-500"}`}>{perm.description}</p>
+                        </div>
+                        {isChecked && (
+                          <div className="text-indigo-500">
+                            <Shield className="h-5 w-5" />
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
           </ScrollArea>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+          <DialogFooter className="border-t pt-4">
+            <Button variant="outline" onClick={() => setDialogOpen(false)} className="border-slate-300">
               Cancelar
             </Button>
-            <Button onClick={handleSubmit} data-testid="save-employee-btn">
+            <Button 
+              onClick={handleSubmit} 
+              data-testid="save-employee-btn"
+              className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white shadow-md"
+            >
               {editingEmployee ? "Guardar Cambios" : "Crear Empleado"}
             </Button>
           </DialogFooter>

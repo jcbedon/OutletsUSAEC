@@ -160,5 +160,24 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 
 ## P2 - Future
 - [ ] Multi-language support
-- [ ] Backend refactoring (split server.py into routers - currently ~2000 lines)
+- [ ] Backend refactoring (split server.py into routers - currently ~2600 lines)
 - [ ] InvoiceDialog.jsx refactoring (currently ~920 lines)
+
+## Recently Completed (Apr 2026)
+
+### Employee Management Module
+- [x] CRUD de empleados con permisos granulares
+- [x] 9 permisos disponibles como checkboxes visuales:
+  - manage_clients, manage_purchases, manage_lives
+  - approve_recharges, manage_shipments, manage_invoices
+  - view_reports, adjust_wallet, view_statistics
+- [x] Estado activo/inactivo con switch
+- [x] Contraseña visible para el admin (texto plano almacenado)
+- [x] Login de empleados con validación de permisos
+- [x] UI moderna con gradientes indigo/púrpura
+
+### Audit Log System
+- [x] Registro completo de acciones de admin y empleados
+- [x] Filtros por usuario, acción, fecha
+- [x] Acciones rastreadas: login, CRUD clientes, compras, recargas, facturas, envíos, empleados
+- [x] Vista detallada con JSON expandible
