@@ -1491,6 +1491,11 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     # Get client info
     client = await db.users.find_one({"customer_id": invoice["customer_id"], "tenant_id": tid}, {"_id": 0})
     
+    # Get client wallet for balance
+    client_wallet = None
+    if client:
+        client_wallet = await db.wallets.find_one({"user_id": client["id"], "tenant_id": tid}, {"_id": 0})
+    
     # Get purchases
     purchases = await db.purchases.find({
         "id": {"$in": invoice["purchase_ids"]},
@@ -1510,6 +1515,7 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     return {
         **invoice,
         "client": client,
+        "client_balance": client_wallet.get("available", 0) if client_wallet else 0,
         "purchases": purchases,
         "tenant": tenant,
         "shipment": shipment

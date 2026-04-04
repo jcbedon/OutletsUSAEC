@@ -417,9 +417,45 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
         }
       });
       
-      // ========== TOTALS SECTION (right aligned) ==========
+      // ========== SHIPPING INFO SECTION (if available) ==========
       let finalY = doc.lastAutoTable.finalY + 12;
       
+      if (shipment && (shipment.tracking_number || shipment.shipping_cost > 0)) {
+        // Shipping info box
+        doc.setFillColor(249, 250, 251); // Very light gray
+        doc.roundedRect(margin, finalY - 2, contentWidth, 18, 3, 3, "F");
+        
+        doc.setTextColor(...colors.textSecondary);
+        doc.setFontSize(8);
+        doc.setFont("helvetica", "bold");
+        doc.text("INFORMACIÓN DE ENVÍO", margin + 4, finalY + 4);
+        
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(...colors.textPrimary);
+        
+        const shipInfoY = finalY + 11;
+        let shipX = margin + 4;
+        
+        if (shipment.shipping_cost > 0) {
+          doc.text(`Costo: $${shipment.shipping_cost.toFixed(2)}`, shipX, shipInfoY);
+          shipX += 45;
+        }
+        
+        if (shipment.weight_pounds) {
+          doc.text(`Peso: ${shipment.weight_pounds} lbs`, shipX, shipInfoY);
+          shipX += 35;
+        }
+        
+        if (shipment.tracking_number) {
+          doc.setFont("helvetica", "bold");
+          doc.text(`Tracking: ${shipment.tracking_number}`, shipX, shipInfoY);
+        }
+        
+        finalY += 22;
+      }
+      
+      // ========== TOTALS SECTION (right aligned) ==========
       const totalsX = pageWidth - margin - 65;
       const totalsWidth = 65;
       
@@ -444,7 +480,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       doc.setTextColor(...colors.textPrimary);
       doc.text(`$${inv.total_commission.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       
-      // Shipping cost if applicable
+      // Shipping cost in totals
       if (shipment && shipment.shipping_cost > 0) {
         finalY += 6;
         doc.setTextColor(...colors.textSecondary);
@@ -469,6 +505,23 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       doc.text("TOTAL:", totalsX, finalY);
       doc.setFontSize(14);
       doc.text(`$${grandTotal.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+      
+      // ========== CLIENT BALANCE (if negative / owes money) ==========
+      const clientBalance = currentInvoice.client_balance || 0;
+      if (clientBalance < 0) {
+        finalY += 10;
+        
+        // Red warning box for pending balance
+        doc.setFillColor(254, 226, 226); // Light red background
+        doc.roundedRect(totalsX - 5, finalY - 4, totalsWidth + 10, 14, 3, 3, "F");
+        
+        doc.setTextColor(185, 28, 28); // Red text
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "bold");
+        doc.text("SALDO PENDIENTE:", totalsX, finalY + 4);
+        doc.setFontSize(12);
+        doc.text(`$${Math.abs(clientBalance).toFixed(2)}`, pageWidth - margin, finalY + 4, { align: "right" });
+      }
       
       // ========== FOOTER SECTION ==========
       const footerY = containerY + 273 - 25;
@@ -500,10 +553,11 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       doc.setFontSize(7);
       doc.text(`Generado: ${genDate}`, margin, footerY + 12);
       
-      // QR Code (bottom right)
+      // QR Code (bottom right) - Links to client portal
       try {
-        const qrData = `INV:${inv.invoice_number}|CLI:${cli?.customer_id || ""}|TOTAL:${grandTotal.toFixed(2)}`;
-        const qrDataUrl = await QRCode.toDataURL(qrData, {
+        // QR data: URL to client portal with client ID pre-filled
+        const portalUrl = `https://outletsusaec.shop/login?user=${encodeURIComponent(cli?.customer_id || "")}`;
+        const qrDataUrl = await QRCode.toDataURL(portalUrl, {
           width: 200,
           margin: 1,
           color: {
@@ -512,6 +566,11 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
           }
         });
         doc.addImage(qrDataUrl, 'PNG', pageWidth - margin - 22, footerY - 6, 22, 22);
+        
+        // Small text below QR
+        doc.setFontSize(6);
+        doc.setTextColor(...colors.textSecondary);
+        doc.text("Escanea para ver tu portal", pageWidth - margin - 11, footerY + 18, { align: "center" });
       } catch (e) {
         console.log("Could not generate QR:", e);
       }
