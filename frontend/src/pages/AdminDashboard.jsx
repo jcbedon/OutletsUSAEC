@@ -17,7 +17,9 @@ import {
   LogOut,
   Play,
   Gift,
-  Upload
+  Upload,
+  UserCog,
+  ClipboardList
 } from "lucide-react";
 import { uploadTenantLogo } from "@/lib/api";
 
@@ -71,6 +73,10 @@ export default function AdminDashboard() {
     { icon: Gift, label: "Referidos", path: "/admin/referrals", color: "#27ae60", description: "Configurar bonos" },
     { icon: BarChart3, label: "Reportes", path: "/admin/reports", color: "#2a4f7f", description: "Ver estadísticas" },
     { icon: TrendingUp, label: "Estadisticas", path: "/admin/stats", color: "#E74C3C", description: "Ver ganancias del negocio" },
+    ...(user?.role === "admin" ? [
+      { icon: UserCog, label: "Empleados", path: "/admin/employees", color: "#8E44AD", description: "Gestionar empleados y permisos" },
+      { icon: ClipboardList, label: "Auditoría", path: "/admin/audit", color: "#34495E", description: "Registro de acciones" },
+    ] : []),
   ];
 
   return (

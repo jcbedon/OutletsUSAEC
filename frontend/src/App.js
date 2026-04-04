@@ -14,6 +14,8 @@ import AdminShipments from "@/pages/AdminShipments";
 import AdminReports from "@/pages/AdminReports";
 import AdminReferrals from "@/pages/AdminReferrals";
 import AdminStats from "@/pages/AdminStats";
+import AdminEmployees from "@/pages/AdminEmployees";
+import AdminAuditLog from "@/pages/AdminAuditLog";
 import SuperadminDashboard from "@/pages/SuperadminDashboard";
 
 const AuthContext = createContext(null);
@@ -71,7 +73,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     if (user.role === "superadmin") return <Navigate to="/superadmin" replace />;
-    if (user.role === "admin") return <Navigate to="/admin" replace />;
+    if (user.role === "admin" || user.role === "employee") return <Navigate to="/admin" replace />;
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -91,14 +93,16 @@ function App() {
 
           <Route path="/superadmin" element={<ProtectedRoute allowedRoles={["superadmin"]}><SuperadminDashboard /></ProtectedRoute>} />
 
-          <Route path="/admin" element={<ProtectedRoute allowedRoles={["admin"]}><AdminDashboard /></ProtectedRoute>} />
-          <Route path="/admin/live" element={<ProtectedRoute allowedRoles={["admin"]}><AdminLive /></ProtectedRoute>} />
-          <Route path="/admin/clients" element={<ProtectedRoute allowedRoles={["admin"]}><AdminClients /></ProtectedRoute>} />
-          <Route path="/admin/wallet" element={<ProtectedRoute allowedRoles={["admin"]}><AdminWallet /></ProtectedRoute>} />
-          <Route path="/admin/shipments" element={<ProtectedRoute allowedRoles={["admin"]}><AdminShipments /></ProtectedRoute>} />
-          <Route path="/admin/reports" element={<ProtectedRoute allowedRoles={["admin"]}><AdminReports /></ProtectedRoute>} />
+          <Route path="/admin" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminDashboard /></ProtectedRoute>} />
+          <Route path="/admin/live" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminLive /></ProtectedRoute>} />
+          <Route path="/admin/clients" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminClients /></ProtectedRoute>} />
+          <Route path="/admin/wallet" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminWallet /></ProtectedRoute>} />
+          <Route path="/admin/shipments" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminShipments /></ProtectedRoute>} />
+          <Route path="/admin/reports" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminReports /></ProtectedRoute>} />
           <Route path="/admin/referrals" element={<ProtectedRoute allowedRoles={["admin"]}><AdminReferrals /></ProtectedRoute>} />
-          <Route path="/admin/stats" element={<ProtectedRoute allowedRoles={["admin"]}><AdminStats /></ProtectedRoute>} />
+          <Route path="/admin/stats" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminStats /></ProtectedRoute>} />
+          <Route path="/admin/employees" element={<ProtectedRoute allowedRoles={["admin"]}><AdminEmployees /></ProtectedRoute>} />
+          <Route path="/admin/audit" element={<ProtectedRoute allowedRoles={["admin"]}><AdminAuditLog /></ProtectedRoute>} />
 
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />

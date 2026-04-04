@@ -200,6 +200,50 @@ class TemporaryAccessToken(BaseModel):
     expires_at: str = Field(default_factory=lambda: (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat())
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+class EmployeePermissions(BaseModel):
+    """Granular permissions for employees"""
+    manage_clients: bool = False       # Crear, editar, eliminar clientes
+    manage_purchases: bool = False     # Crear, editar, eliminar compras
+    manage_lives: bool = False         # Crear, iniciar, cerrar lives
+    approve_recharges: bool = False    # Aprobar/Rechazar recargas
+    manage_shipments: bool = False     # Gestionar envíos
+    manage_invoices: bool = False      # Generar/Aprobar facturas
+    view_reports: bool = False         # Ver reportes
+    adjust_wallet: bool = False        # Ajustar saldos de wallet
+    view_statistics: bool = False      # Ver estadísticas
+
+class Employee(BaseModel):
+    """Employee model with granular permissions"""
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    name: str
+    email: str
+    whatsapp: Optional[str] = None
+    password_plain: str  # Stored in plain text so admin can view/change it
+    password_hash: str
+    permissions: EmployeePermissions = Field(default_factory=EmployeePermissions)
+    status: str = "active"  # active, inactive
+    created_by: str  # Admin user_id who created this employee
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+class AuditLog(BaseModel):
+    """Audit log for tracking all employee/admin actions"""
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    user_id: str  # ID of user who performed action (admin or employee)
+    user_name: str  # Name for display
+    user_role: str  # "admin" or "employee"
+    action: str  # Action type: create_client, delete_purchase, approve_recharge, etc.
+    entity_type: str  # Type of affected entity: client, purchase, recharge, etc.
+    entity_id: Optional[str] = None  # ID of affected entity
+    entity_name: Optional[str] = None  # Name/description of affected entity
+    details: Optional[dict] = None  # Additional details about the action
+    ip_address: Optional[str] = None
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
 # ==================== REQUEST MODELS ====================
 
 class UserLogin(BaseModel):
@@ -273,6 +317,21 @@ class AdminClientCreate(BaseModel):
     password: str
     commission_fee: float = DEFAULT_COMMISSION_FEE
     initial_balance: float = 0.0
+
+class EmployeeCreate(BaseModel):
+    name: str
+    email: str
+    whatsapp: Optional[str] = None
+    password: str
+    permissions: dict = {}  # Will be converted to EmployeePermissions
+
+class EmployeeUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    whatsapp: Optional[str] = None
+    password: Optional[str] = None
+    permissions: Optional[dict] = None
+    status: Optional[str] = None
 
 # ==================== JWT & AUTH ====================
 
@@ -367,6 +426,33 @@ async def process_referral(tenant_id: str, referrer_customer_id: str, new_user_i
             "Bono de Bienvenida!", f"Recibiste ${bonus:.2f} USD por usar un código de referido.")
     return True
 
+# ==================== AUDIT LOG HELPER ====================
+
+async def log_audit_action(
+    tenant_id: str,
+    user_id: str,
+    user_name: str,
+    user_role: str,
+    action: str,
+    entity_type: str,
+    entity_id: str = None,
+    entity_name: str = None,
+    details: dict = None
+):
+    """Log an action to the audit trail"""
+    audit_log = AuditLog(
+        tenant_id=tenant_id,
+        user_id=user_id,
+        user_name=user_name,
+        user_role=user_role,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        entity_name=entity_name,
+        details=details
+    )
+    await db.audit_logs.insert_one(audit_log.model_dump())
+
 # ==================== AUTH ENDPOINTS ====================
 
 @api_router.post("/auth/register")
@@ -414,6 +500,7 @@ async def register_user(data: UserRegister):
 
 @api_router.post("/auth/login")
 async def login_user(login_data: UserLogin):
+    # First, try to find user in users collection
     user = await db.users.find_one({
         "$or": [
             {"email": login_data.identifier},
@@ -421,6 +508,55 @@ async def login_user(login_data: UserLogin):
             {"customer_id": login_data.identifier.upper()}
         ]
     }, {"_id": 0})
+    
+    # If not found, try employees collection
+    employee = None
+    if not user:
+        employee = await db.employees.find_one({
+            "$or": [
+                {"email": login_data.identifier},
+                {"whatsapp": login_data.identifier}
+            ]
+        }, {"_id": 0})
+    
+    # Handle employee login
+    if employee:
+        if not verify_password(login_data.password, employee["password_hash"]):
+            raise HTTPException(status_code=401, detail="Credenciales inválidas")
+        if employee.get("status") != "active":
+            raise HTTPException(status_code=403, detail="Tu cuenta está inactiva. Contacta al administrador.")
+        
+        tenant_id = employee["tenant_id"]
+        tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+        if not tenant or tenant.get("status") != "active":
+            raise HTTPException(status_code=403, detail="El negocio está suspendido.")
+        
+        # Log employee login
+        await log_audit_action(
+            tenant_id=tenant_id,
+            user_id=employee["id"],
+            user_name=employee["name"],
+            user_role="employee",
+            action="login",
+            entity_type="session",
+            entity_name="Inicio de sesión"
+        )
+        
+        token = create_token(employee["id"], "employee", tenant_id)
+        return {
+            "message": "Login exitoso",
+            "token": token,
+            "user_id": employee["id"],
+            "customer_id": None,
+            "name": employee["name"],
+            "role": "employee",
+            "tenant_id": tenant_id,
+            "tenant_name": tenant["business_name"],
+            "tenant_logo": tenant.get("logo_url"),
+            "permissions": employee.get("permissions", {})
+        }
+    
+    # Handle regular user login
     if not user or not verify_password(login_data.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
     tenant_id = user.get("tenant_id")
@@ -433,6 +569,19 @@ async def login_user(login_data: UserLogin):
                 raise HTTPException(status_code=403, detail="Tu negocio está suspendido. Contacta al administrador.")
             tenant_name = tenant["business_name"]
             tenant_logo = tenant.get("logo_url")
+    
+    # Log admin login for audit
+    if user["role"] == "admin":
+        await log_audit_action(
+            tenant_id=tenant_id,
+            user_id=user["id"],
+            user_name=user["name"],
+            user_role="admin",
+            action="login",
+            entity_type="session",
+            entity_name="Inicio de sesión"
+        )
+    
     token = create_token(user["id"], user["role"], tenant_id)
     return {
         "message": "Login exitoso",
@@ -880,9 +1029,16 @@ async def request_deposit_with_proof(
 
 @api_router.post("/wallet/approve-deposit/{transaction_id}")
 async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
+    
+    # Check employee permissions
+    if current_user["role"] == "employee":
+        employee = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+        if not employee or not employee.get("permissions", {}).get("approve_recharges"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para aprobar recargas")
+    
     transaction = await db.wallet_transactions.find_one({"id": transaction_id, "tenant_id": tid}, {"_id": 0})
     if not transaction:
         raise HTTPException(status_code=404, detail="Transacción no encontrada")
@@ -896,13 +1052,40 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
         {"$set": {"status": "approved", "balance_after": new_balance, "approved_at": datetime.now(timezone.utc).isoformat()}})
     await create_notification(tid, transaction["user_id"], transaction["customer_id"], "wallet_credited",
         "Saldo Acreditado", f"Se han acreditado ${transaction['amount']:.2f} USD. Saldo actual: ${new_balance:.2f} USD")
+    
+    # Get user name for audit
+    user = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0})
+    if not user:
+        user = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+    user_name = user["name"] if user else "Usuario"
+    
+    # Audit log
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=user_name,
+        user_role=current_user["role"],
+        action="approve_recharge",
+        entity_type="wallet_transaction",
+        entity_id=transaction_id,
+        entity_name=f"${transaction['amount']:.2f} - {transaction['customer_id']}",
+        details={"amount": transaction["amount"], "customer_id": transaction["customer_id"], "new_balance": new_balance}
+    )
+    
     return {"message": "Depósito aprobado", "new_balance": new_balance}
 
 @api_router.post("/wallet/reject-deposit/{transaction_id}")
 async def reject_deposit(transaction_id: str, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
+    
+    # Check employee permissions
+    if current_user["role"] == "employee":
+        employee = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+        if not employee or not employee.get("permissions", {}).get("approve_recharges"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para rechazar recargas")
+    
     transaction = await db.wallet_transactions.find_one({"id": transaction_id, "tenant_id": tid}, {"_id": 0})
     if not transaction:
         raise HTTPException(status_code=404, detail="Transacción no encontrada")
@@ -912,6 +1095,26 @@ async def reject_deposit(transaction_id: str, current_user: dict = Depends(get_c
         {"$set": {"status": "rejected", "approved_at": datetime.now(timezone.utc).isoformat()}})
     await create_notification(tid, transaction["user_id"], transaction["customer_id"], "deposit_rejected",
         "Recarga Rechazada", f"Tu solicitud de recarga por ${transaction['amount']:.2f} USD ha sido rechazada. Contacta al administrador para más información.")
+    
+    # Get user name for audit
+    user = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0})
+    if not user:
+        user = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+    user_name = user["name"] if user else "Usuario"
+    
+    # Audit log
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=user_name,
+        user_role=current_user["role"],
+        action="reject_recharge",
+        entity_type="wallet_transaction",
+        entity_id=transaction_id,
+        entity_name=f"${transaction['amount']:.2f} - {transaction['customer_id']}",
+        details={"amount": transaction["amount"], "customer_id": transaction["customer_id"]}
+    )
+    
     return {"message": "Depósito rechazado"}
 
 class AdminBalanceAdjustment(BaseModel):
@@ -921,9 +1124,16 @@ class AdminBalanceAdjustment(BaseModel):
 
 @api_router.post("/wallet/admin-adjustment")
 async def admin_balance_adjustment(data: AdminBalanceAdjustment, current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
+    
+    # Check employee permissions
+    if current_user["role"] == "employee":
+        employee = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+        if not employee or not employee.get("permissions", {}).get("adjust_wallet"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para ajustar saldos")
+    
     if data.amount <= 0:
         raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
     wallet = await db.wallets.find_one({"user_id": data.user_id, "tenant_id": tid}, {"_id": 0})
@@ -949,6 +1159,26 @@ async def admin_balance_adjustment(data: AdminBalanceAdjustment, current_user: d
     await db.wallet_transactions.insert_one(tx.model_dump())
     await create_notification(tid, data.user_id, user["customer_id"], "balance_adjustment",
         "Ajuste de Balance", f"Se ha realizado un ajuste de -${data.amount:.2f} USD en tu cuenta. Motivo: {data.description}")
+    
+    # Get actor name for audit
+    actor = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0})
+    if not actor:
+        actor = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+    actor_name = actor["name"] if actor else "Usuario"
+    
+    # Audit log
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=actor_name,
+        user_role=current_user["role"],
+        action="adjust_wallet",
+        entity_type="wallet",
+        entity_id=wallet["id"],
+        entity_name=f"{user['name']} ({user['customer_id']})",
+        details={"amount": -data.amount, "description": data.description, "new_balance": new_balance}
+    )
+    
     return {"message": "Ajuste realizado", "new_balance": new_balance, "amount_deducted": data.amount}
 
 # ==================== LIVE SHOPPING ENDPOINTS ====================
@@ -1717,7 +1947,7 @@ async def get_live_report(live_id: str, current_user: dict = Depends(get_current
 
 @api_router.get("/admin/reports/summary")
 async def get_reports_summary(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] != "admin":
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     total_sales = await db.purchases.aggregate([
@@ -2131,6 +2361,276 @@ async def verify_temporary_access_token(token: str):
         "invoice_id": token_doc.get("invoice_id"),
         "message": "Acceso temporal verificado"
     }
+
+# ==================== EMPLOYEE MANAGEMENT ====================
+
+@api_router.get("/admin/employees")
+async def get_employees(current_user: dict = Depends(get_current_user)):
+    """Get all employees for the tenant"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    employees = await db.employees.find({"tenant_id": tid}, {"_id": 0}).to_list(100)
+    return employees
+
+@api_router.post("/admin/employees")
+async def create_employee(data: EmployeeCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new employee"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    # Check if email already exists
+    existing = await db.employees.find_one({"email": data.email, "tenant_id": tid}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="Ya existe un empleado con este email")
+    
+    # Also check in users collection
+    existing_user = await db.users.find_one({"email": data.email, "tenant_id": tid}, {"_id": 0})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Ya existe un usuario con este email")
+    
+    # Create permissions object
+    permissions = EmployeePermissions(**data.permissions)
+    
+    employee = Employee(
+        tenant_id=tid,
+        name=data.name,
+        email=data.email,
+        whatsapp=data.whatsapp,
+        password_plain=data.password,  # Store plain text for admin viewing
+        password_hash=hash_password(data.password),
+        permissions=permissions,
+        created_by=current_user["user_id"]
+    )
+    
+    await db.employees.insert_one(employee.model_dump())
+    
+    # Get admin name for audit
+    admin = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0})
+    admin_name = admin["name"] if admin else "Admin"
+    
+    # Log audit
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=admin_name,
+        user_role="admin",
+        action="create_employee",
+        entity_type="employee",
+        entity_id=employee.id,
+        entity_name=data.name,
+        details={"email": data.email, "permissions": data.permissions}
+    )
+    
+    return {"message": "Empleado creado exitosamente", "employee_id": employee.id}
+
+@api_router.get("/admin/employees/{employee_id}")
+async def get_employee(employee_id: str, current_user: dict = Depends(get_current_user)):
+    """Get employee details including password"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    employee = await db.employees.find_one({"id": employee_id, "tenant_id": tid}, {"_id": 0})
+    if not employee:
+        raise HTTPException(status_code=404, detail="Empleado no encontrado")
+    
+    return employee
+
+@api_router.put("/admin/employees/{employee_id}")
+async def update_employee(employee_id: str, data: EmployeeUpdate, current_user: dict = Depends(get_current_user)):
+    """Update employee information"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    employee = await db.employees.find_one({"id": employee_id, "tenant_id": tid}, {"_id": 0})
+    if not employee:
+        raise HTTPException(status_code=404, detail="Empleado no encontrado")
+    
+    update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    changes = {}
+    
+    if data.name is not None:
+        update_data["name"] = data.name
+        changes["name"] = data.name
+    if data.email is not None:
+        # Check if new email is already in use
+        existing = await db.employees.find_one({
+            "email": data.email, 
+            "tenant_id": tid, 
+            "id": {"$ne": employee_id}
+        }, {"_id": 0})
+        if existing:
+            raise HTTPException(status_code=400, detail="Email ya está en uso")
+        update_data["email"] = data.email
+        changes["email"] = data.email
+    if data.whatsapp is not None:
+        update_data["whatsapp"] = data.whatsapp
+        changes["whatsapp"] = data.whatsapp
+    if data.password is not None:
+        update_data["password_plain"] = data.password
+        update_data["password_hash"] = hash_password(data.password)
+        changes["password"] = "***changed***"
+    if data.permissions is not None:
+        update_data["permissions"] = data.permissions
+        changes["permissions"] = data.permissions
+    if data.status is not None:
+        update_data["status"] = data.status
+        changes["status"] = data.status
+    
+    await db.employees.update_one({"id": employee_id}, {"$set": update_data})
+    
+    # Get admin name for audit
+    admin = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0})
+    admin_name = admin["name"] if admin else "Admin"
+    
+    # Log audit
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=admin_name,
+        user_role="admin",
+        action="update_employee",
+        entity_type="employee",
+        entity_id=employee_id,
+        entity_name=employee["name"],
+        details=changes
+    )
+    
+    return {"message": "Empleado actualizado exitosamente"}
+
+@api_router.delete("/admin/employees/{employee_id}")
+async def delete_employee(employee_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete an employee"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    employee = await db.employees.find_one({"id": employee_id, "tenant_id": tid}, {"_id": 0})
+    if not employee:
+        raise HTTPException(status_code=404, detail="Empleado no encontrado")
+    
+    await db.employees.delete_one({"id": employee_id})
+    
+    # Get admin name for audit
+    admin = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0})
+    admin_name = admin["name"] if admin else "Admin"
+    
+    # Log audit
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=admin_name,
+        user_role="admin",
+        action="delete_employee",
+        entity_type="employee",
+        entity_id=employee_id,
+        entity_name=employee["name"]
+    )
+    
+    return {"message": "Empleado eliminado exitosamente"}
+
+# ==================== AUDIT LOG ====================
+
+@api_router.get("/admin/audit-logs")
+async def get_audit_logs(
+    current_user: dict = Depends(get_current_user),
+    user_id: str = None,
+    action: str = None,
+    entity_type: str = None,
+    start_date: str = None,
+    end_date: str = None,
+    limit: int = 100,
+    skip: int = 0
+):
+    """Get audit logs with filtering options"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    query = {"tenant_id": tid}
+    
+    if user_id:
+        query["user_id"] = user_id
+    if action:
+        query["action"] = action
+    if entity_type:
+        query["entity_type"] = entity_type
+    if start_date:
+        query["created_at"] = {"$gte": start_date}
+    if end_date:
+        if "created_at" in query:
+            query["created_at"]["$lte"] = end_date
+        else:
+            query["created_at"] = {"$lte": end_date}
+    
+    total = await db.audit_logs.count_documents(query)
+    logs = await db.audit_logs.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    return {
+        "total": total,
+        "logs": logs,
+        "limit": limit,
+        "skip": skip
+    }
+
+@api_router.get("/admin/audit-logs/users")
+async def get_audit_users(current_user: dict = Depends(get_current_user)):
+    """Get list of users who have audit logs"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    # Get unique users from audit logs
+    pipeline = [
+        {"$match": {"tenant_id": tid}},
+        {"$group": {
+            "_id": {"user_id": "$user_id", "user_name": "$user_name", "user_role": "$user_role"}
+        }},
+        {"$project": {
+            "_id": 0,
+            "user_id": "$_id.user_id",
+            "user_name": "$_id.user_name",
+            "user_role": "$_id.user_role"
+        }}
+    ]
+    users = await db.audit_logs.aggregate(pipeline).to_list(100)
+    return users
+
+@api_router.get("/admin/audit-logs/actions")
+async def get_audit_actions(current_user: dict = Depends(get_current_user)):
+    """Get list of action types"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    # Return predefined action types
+    return [
+        {"value": "login", "label": "Inicio de sesión"},
+        {"value": "create_client", "label": "Crear cliente"},
+        {"value": "update_client", "label": "Editar cliente"},
+        {"value": "delete_client", "label": "Eliminar cliente"},
+        {"value": "create_purchase", "label": "Crear compra"},
+        {"value": "update_purchase", "label": "Editar compra"},
+        {"value": "delete_purchase", "label": "Eliminar compra"},
+        {"value": "approve_recharge", "label": "Aprobar recarga"},
+        {"value": "reject_recharge", "label": "Rechazar recarga"},
+        {"value": "adjust_wallet", "label": "Ajustar saldo"},
+        {"value": "create_shipment", "label": "Crear envío"},
+        {"value": "update_shipment", "label": "Editar envío"},
+        {"value": "delete_shipment", "label": "Eliminar envío"},
+        {"value": "create_invoice", "label": "Crear factura"},
+        {"value": "approve_invoice", "label": "Aprobar factura"},
+        {"value": "reopen_invoice", "label": "Reabrir factura"},
+        {"value": "create_live", "label": "Crear live"},
+        {"value": "start_live", "label": "Iniciar live"},
+        {"value": "end_live", "label": "Finalizar live"},
+        {"value": "create_employee", "label": "Crear empleado"},
+        {"value": "update_employee", "label": "Editar empleado"},
+        {"value": "delete_employee", "label": "Eliminar empleado"}
+    ]
 
 # ==================== HEALTH ====================
 

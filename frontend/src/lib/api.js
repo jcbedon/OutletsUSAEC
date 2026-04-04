@@ -122,6 +122,18 @@ export const getClientPurchaseHistory = (customerId) => api.get(`/invoices/clien
 export const generateAccessToken = (data) => api.post("/auth/generate-access-token", data);
 export const verifyAccessToken = (token) => api.get(`/auth/verify-access-token/${token}`);
 
+// Employees
+export const getEmployees = () => api.get("/admin/employees");
+export const createEmployee = (data) => api.post("/admin/employees", data);
+export const getEmployeeDetail = (employeeId) => api.get(`/admin/employees/${employeeId}`);
+export const updateEmployee = (employeeId, data) => api.put(`/admin/employees/${employeeId}`, data);
+export const deleteEmployee = (employeeId) => api.delete(`/admin/employees/${employeeId}`);
+
+// Audit Logs
+export const getAuditLogs = (params) => api.get("/admin/audit-logs", { params });
+export const getAuditUsers = () => api.get("/admin/audit-logs/users");
+export const getAuditActions = () => api.get("/admin/audit-logs/actions");
+
 // Superadmin - Tenant Settings
 export const updateTenantTaxOptionsSuperadmin = (tenantId, taxOptions) => 
   api.put(`/superadmin/tenants/${tenantId}/tax-options`, { tax_options: taxOptions });
