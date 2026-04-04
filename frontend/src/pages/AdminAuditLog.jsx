@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/App";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getAuditLogs, getAuditUsers, getAuditActions } from "@/lib/api";
 import { toast } from "sonner";
-import { FileText, Search, User, Calendar, Filter, ChevronLeft, ChevronRight, Clock, Activity } from "lucide-react";
+import { FileText, Search, User, Calendar, Filter, ChevronLeft, ChevronRight, Clock, Activity, ArrowLeft } from "lucide-react";
 
 const ACTION_COLORS = {
   login: "bg-blue-100 text-blue-700",
@@ -35,6 +37,10 @@ const ACTION_COLORS = {
 };
 
 export default function AdminAuditLog() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const logoUrl = user?.tenant_logo || "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+  
   const [logs, setLogs] = useState([]);
   const [users, setUsers] = useState([]);
   const [actions, setActions] = useState([]);
@@ -114,11 +120,21 @@ export default function AdminAuditLog() {
   const totalPages = Math.ceil(total / limit);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Registro de Auditoría</h1>
-        <p className="text-slate-500">Historial completo de acciones en el sistema</p>
+    <div className="app-bg min-h-screen">
+      {/* Header con logo */}
+      <div className="sticky top-0 z-50 border-b" style={{ background: 'rgba(255,255,255,0.95)', borderColor: '#E5E7EB' }}>
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} data-testid="back-btn">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="bg-white rounded-lg p-1">
+            <img src={logoUrl} alt="Logo" className="h-10 object-contain logo-transparent" />
+          </div>
+          <span className="font-bold text-slate-800 flex-1">Registro de Auditoría</span>
+        </div>
       </div>
+
+      <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
 
       {/* Filters */}
       <Card>
@@ -336,6 +352,7 @@ export default function AdminAuditLog() {
           )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

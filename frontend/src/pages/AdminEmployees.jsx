@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/App";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee, getEmployeeDetail } from "@/lib/api";
 import { toast } from "sonner";
-import { Users, Plus, Edit, Trash2, Eye, EyeOff, Shield, UserCheck, UserX } from "lucide-react";
+import { Users, Plus, Edit, Trash2, Eye, EyeOff, Shield, UserCheck, UserX, ArrowLeft } from "lucide-react";
 
 const PERMISSIONS = [
   { key: "manage_clients", label: "Gestionar Clientes", description: "Crear, editar y eliminar clientes" },
@@ -25,6 +27,10 @@ const PERMISSIONS = [
 ];
 
 export default function AdminEmployees() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const logoUrl = user?.tenant_logo || "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+  
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -146,28 +152,36 @@ export default function AdminEmployees() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-600 border-t-transparent"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Empleados</h1>
-          <p className="text-slate-500">Gestiona los empleados y sus permisos</p>
+    <div className="app-bg min-h-screen">
+      {/* Header con logo */}
+      <div className="sticky top-0 z-50 border-b" style={{ background: 'rgba(255,255,255,0.95)', borderColor: '#E5E7EB' }}>
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} data-testid="back-btn">
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div className="bg-white rounded-lg p-1">
+            <img src={logoUrl} alt="Logo" className="h-10 object-contain logo-transparent" />
+          </div>
+          <span className="font-bold text-slate-800 flex-1">Empleados</span>
+          <Button 
+            onClick={() => handleOpenDialog()} 
+            data-testid="add-employee-btn"
+            className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white shadow-lg rounded-xl"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Nuevo Empleado
+          </Button>
         </div>
-        <Button 
-          onClick={() => handleOpenDialog()} 
-          data-testid="add-employee-btn"
-          className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white shadow-lg"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Nuevo Empleado
-        </Button>
       </div>
+
+      <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
 
       {employees.length === 0 ? (
         <Card className="border-dashed border-2 border-slate-200">
@@ -427,6 +441,7 @@ export default function AdminEmployees() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      </div>
     </div>
   );
 }
