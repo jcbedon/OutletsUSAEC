@@ -80,11 +80,14 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] Admin: Approve/Reopen invoices
 - [x] Admin: Remove items from invoices
 - [x] Admin: View invoice history per client
-- [x] **PDF Download**: Generate modern styled PDF with tenant logo (Apr 3, 2026)
-  - jspdf + jspdf-autotable v5.x integration
-  - Tenant logo loaded from /api/uploads/
-  - Shipping info (cost, weight, tracking) in PDF
-  - Status badge (PAGADA/PENDIENTE)
+- [x] **PDF Download v2**: Modern SaaS-style invoice PDF (Apr 4, 2026)
+  - Diseño minimalista tipo Stripe/Shopify
+  - Logo del tenant con proporciones originales (object-fit: contain)
+  - Código QR en footer con datos de factura
+  - Estados dinámicos: PAGADA (verde), PENDIENTE (amarillo), CANCELADA (rojo)
+  - Colores: fondo #F8FAFC, texto #0F172A, contenedor blanco con sombra
+  - Footer: "Gracias por su compra" + fecha de generación
+  - jspdf + jspdf-autotable v5.x + qrcode
 - [x] Tracking URL configuration per tenant (SuperAdmin)
 
 ### Reports
