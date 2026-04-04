@@ -187,6 +187,19 @@ class Notification(BaseModel):
     whatsapp_sent: bool = False
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+class TemporaryAccessToken(BaseModel):
+    """Temporary token for QR code access to client dashboard"""
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    token: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    user_id: str
+    customer_id: str
+    invoice_id: Optional[str] = None
+    used: bool = False
+    expires_at: str = Field(default_factory=lambda: (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
 # ==================== REQUEST MODELS ====================
 
 class UserLogin(BaseModel):
@@ -2029,6 +2042,95 @@ async def get_referral_stats(current_user: dict = Depends(get_current_user)):
     ]).to_list(1)
     return {"top_referrers": top_referrers, "total_bonus_paid": referral_bonuses[0]["total"] if referral_bonuses else 0,
         "current_bonus": await get_referral_bonus(tid)}
+
+# ==================== TEMPORARY ACCESS TOKENS ====================
+
+@api_router.post("/auth/generate-access-token")
+async def generate_temporary_access_token(data: dict, current_user: dict = Depends(get_current_user)):
+    """Generate a temporary access token for QR code access to client dashboard"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    customer_id = data.get("customer_id")
+    invoice_id = data.get("invoice_id")
+    
+    if not customer_id:
+        raise HTTPException(status_code=400, detail="customer_id es requerido")
+    
+    tid = current_user["tenant_id"]
+    
+    # Find the user
+    user = await db.users.find_one({"customer_id": customer_id, "tenant_id": tid}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    # Create temporary token
+    token_data = TemporaryAccessToken(
+        tenant_id=tid,
+        user_id=user["id"],
+        customer_id=customer_id,
+        invoice_id=invoice_id
+    )
+    
+    await db.temp_access_tokens.insert_one(token_data.model_dump())
+    
+    return {"token": token_data.token, "expires_at": token_data.expires_at}
+
+@api_router.get("/auth/verify-access-token/{token}")
+async def verify_temporary_access_token(token: str):
+    """Verify and use a temporary access token - returns JWT for client dashboard access"""
+    
+    # Find the token
+    token_doc = await db.temp_access_tokens.find_one({"token": token}, {"_id": 0})
+    
+    if not token_doc:
+        raise HTTPException(status_code=404, detail="Token inválido o expirado")
+    
+    # Check if already used - but allow grace period of 30 seconds for duplicate requests
+    if token_doc.get("used"):
+        used_at = token_doc.get("used_at")
+        if used_at:
+            used_time = datetime.fromisoformat(used_at.replace("Z", "+00:00"))
+            grace_period = timedelta(seconds=30)
+            if datetime.now(timezone.utc) - used_time > grace_period:
+                raise HTTPException(status_code=400, detail="Este enlace ya fue utilizado")
+            # Within grace period - allow the request but don't update anything
+        else:
+            raise HTTPException(status_code=400, detail="Este enlace ya fue utilizado")
+    else:
+        # Mark as used (first time)
+        await db.temp_access_tokens.update_one(
+            {"token": token},
+            {"$set": {"used": True, "used_at": datetime.now(timezone.utc).isoformat()}}
+        )
+    
+    # Check expiration
+    expires_at = datetime.fromisoformat(token_doc["expires_at"].replace("Z", "+00:00"))
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Este enlace ha expirado")
+    
+    # Get user and tenant info
+    user = await db.users.find_one({"id": token_doc["user_id"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    tenant = await db.tenants.find_one({"id": token_doc["tenant_id"]}, {"_id": 0})
+    
+    # Generate JWT token for the client
+    jwt_token = create_token(user["id"], user["role"], token_doc["tenant_id"])
+    
+    return {
+        "token": jwt_token,
+        "user_id": user["id"],
+        "customer_id": user["customer_id"],
+        "name": user["name"],
+        "role": user["role"],
+        "tenant_id": token_doc["tenant_id"],
+        "tenant_name": tenant["business_name"] if tenant else None,
+        "tenant_logo": tenant.get("logo_url") if tenant else None,
+        "invoice_id": token_doc.get("invoice_id"),
+        "message": "Acceso temporal verificado"
+    }
 
 # ==================== HEALTH ====================
 

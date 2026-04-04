@@ -118,6 +118,10 @@ export const removeItemFromInvoice = (invoiceId, purchaseId) => api.put(`/invoic
 export const reopenInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/reopen`);
 export const getClientPurchaseHistory = (customerId) => api.get(`/invoices/client/${customerId}/history`);
 
+// Temporary Access Tokens (for QR codes)
+export const generateAccessToken = (data) => api.post("/auth/generate-access-token", data);
+export const verifyAccessToken = (token) => api.get(`/auth/verify-access-token/${token}`);
+
 // Superadmin - Tenant Settings
 export const updateTenantTaxOptionsSuperadmin = (tenantId, taxOptions) => 
   api.put(`/superadmin/tenants/${tenantId}/tax-options`, { tax_options: taxOptions });

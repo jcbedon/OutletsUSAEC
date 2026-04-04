@@ -83,7 +83,12 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] **PDF Download v2**: Modern SaaS-style invoice PDF (Apr 4, 2026)
   - Diseño minimalista tipo Stripe/Shopify
   - Logo del tenant con proporciones originales (object-fit: contain)
-  - Código QR en footer con datos de factura
+  - **Información de envío**: Costo, Peso, Tracking en el PDF
+  - **Saldo pendiente del cliente**: Mostrado si tiene deuda (rojo)
+  - **QR con token temporal**: Acceso directo al dashboard del cliente
+    - Token de un solo uso con 30s de gracia
+    - Expira en 24 horas
+    - Ruta: /access/{token} → Dashboard del cliente
   - Estados dinámicos: PAGADA (verde), PENDIENTE (amarillo), CANCELADA (rojo)
   - Colores: fondo #F8FAFC, texto #0F172A, contenedor blanco con sombra
   - Footer: "Gracias por su compra" + fecha de generación

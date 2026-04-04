@@ -4,6 +4,7 @@ import { useState, useEffect, createContext, useContext } from "react";
 
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
+import AccessPage from "@/pages/AccessPage";
 import ClientDashboard from "@/pages/ClientDashboard";
 import AdminDashboard from "@/pages/AdminDashboard";
 import AdminLive from "@/pages/AdminLive";
@@ -84,6 +85,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/access/:token" element={<AccessPage />} />
 
           <Route path="/dashboard" element={<ProtectedRoute allowedRoles={["client"]}><ClientDashboard /></ProtectedRoute>} />
 

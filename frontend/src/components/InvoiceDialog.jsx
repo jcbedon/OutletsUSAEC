@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice } from "@/lib/api";
+import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken } from "@/lib/api";
 import { toast } from "sonner";
 import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2 } from "lucide-react";
 import { jsPDF } from "jspdf";
@@ -553,10 +553,16 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       doc.setFontSize(7);
       doc.text(`Generado: ${genDate}`, margin, footerY + 12);
       
-      // QR Code (bottom right) - Links to client portal
+      // QR Code (bottom right) - Links to client dashboard with temporary token
       try {
-        // QR data: URL to client portal with client ID pre-filled
-        const portalUrl = `https://outletsusaec.shop/login?user=${encodeURIComponent(cli?.customer_id || "")}`;
+        // Generate temporary access token
+        const tokenResponse = await generateAccessToken({
+          customer_id: cli?.customer_id,
+          invoice_id: inv.id
+        });
+        
+        // QR data: URL to client dashboard with temporary token
+        const portalUrl = `https://outletsusaec.shop/access/${tokenResponse.data.token}`;
         const qrDataUrl = await QRCode.toDataURL(portalUrl, {
           width: 200,
           margin: 1,
@@ -572,7 +578,25 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
         doc.setTextColor(...colors.textSecondary);
         doc.text("Escanea para ver tu portal", pageWidth - margin - 11, footerY + 18, { align: "center" });
       } catch (e) {
-        console.log("Could not generate QR:", e);
+        console.log("Could not generate QR with token:", e);
+        // Fallback: Generate QR with just the login page
+        try {
+          const fallbackUrl = `https://outletsusaec.shop/login?user=${encodeURIComponent(cli?.customer_id || "")}`;
+          const qrDataUrl = await QRCode.toDataURL(fallbackUrl, {
+            width: 200,
+            margin: 1,
+            color: {
+              dark: '#0F172A',
+              light: '#FFFFFF'
+            }
+          });
+          doc.addImage(qrDataUrl, 'PNG', pageWidth - margin - 22, footerY - 6, 22, 22);
+          doc.setFontSize(6);
+          doc.setTextColor(...colors.textSecondary);
+          doc.text("Escanea para ver tu portal", pageWidth - margin - 11, footerY + 18, { align: "center" });
+        } catch (e2) {
+          console.log("Could not generate fallback QR:", e2);
+        }
       }
       
       // Save PDF
