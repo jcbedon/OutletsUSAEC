@@ -138,10 +138,11 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 
 ### Reports Module
 - `GET /api/admin/reports/summary` - Basic summary stats
-- `GET /api/admin/reports/business-stats` - **NEW** Comprehensive business statistics
+- `GET /api/admin/reports/business-stats` - Comprehensive business statistics
 - `GET /api/admin/reports/clients-purchases` - Client purchase reports
 - `GET /api/admin/reports/all-purchases` - All purchases report
 - `GET /api/admin/reports/live/{id}` - Live-specific report
+- `GET /api/admin/reports/clients-debts` - **NEW** Client debts report with balance analysis
 
 ## Key Credentials
 - Superadmin: superadmin@outletsusaec.com / super123
@@ -181,3 +182,12 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] Filtros por usuario, acción, fecha
 - [x] Acciones rastreadas: login, CRUD clientes, compras, recargas, facturas, envíos, empleados
 - [x] Vista detallada con JSON expandible
+
+### Client Debts Dashboard (Apr 6, 2026)
+- [x] **NEW: Panel de Deudas de Clientes** - Nueva pestaña en Estadísticas
+  - Tarjetas resumen: Total Clientes, Con Deuda, Sin Deuda, Deuda Total
+  - Gráfico de barras "Balance por Cliente" (rojo = debe, verde = a favor)
+  - Gráfico pie "Distribución" de clientes con/sin deuda
+  - Gráfico combinado "Clientes por Mes de Registro" (barras + línea de deuda)
+  - Tabla detallada con: Cliente, ID, Fecha registro, Wallet, Envíos, Balance
+  - Endpoint: `GET /api/admin/reports/clients-debts`

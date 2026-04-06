@@ -2225,6 +2225,107 @@ async def get_all_purchases_report(current_user: dict = Depends(get_current_user
         p["live_title"] = lives_dict.get(p.get("live_id"), "N/A")
     return purchases
 
+# ==================== CLIENT DEBTS REPORT ====================
+
+@api_router.get("/admin/reports/clients-debts")
+async def get_clients_debts_report(current_user: dict = Depends(get_current_user)):
+    """Get detailed report of client debts including creation date and pending balance"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    # Get all clients
+    clients = await db.users.find(
+        {"role": "client", "tenant_id": tid}, 
+        {"_id": 0, "password_hash": 0}
+    ).to_list(1000)
+    
+    if not clients:
+        return {"clients": [], "summary": {"total_clients": 0, "clients_with_debt": 0, "total_debt": 0}}
+    
+    user_ids = [c["id"] for c in clients]
+    
+    # Batch fetch wallets
+    wallets_list = await db.wallets.find(
+        {"user_id": {"$in": user_ids}, "tenant_id": tid}, 
+        {"_id": 0}
+    ).to_list(len(user_ids))
+    wallets_dict = {w["user_id"]: w for w in wallets_list}
+    
+    # Aggregate total purchases per client
+    purchases_agg = await db.purchases.aggregate([
+        {"$match": {"user_id": {"$in": user_ids}, "tenant_id": tid}},
+        {"$group": {
+            "_id": "$user_id", 
+            "total_spent": {"$sum": "$total"}, 
+            "purchase_count": {"$sum": 1}
+        }}
+    ]).to_list(len(user_ids))
+    purchases_dict = {p["_id"]: p for p in purchases_agg}
+    
+    # Aggregate shipments per client
+    shipments_agg = await db.shipments.aggregate([
+        {"$match": {"user_id": {"$in": user_ids}, "tenant_id": tid}},
+        {"$group": {
+            "_id": "$user_id", 
+            "total_shipping": {"$sum": "$shipping_cost"},
+            "shipment_count": {"$sum": 1}
+        }}
+    ]).to_list(len(user_ids))
+    shipments_dict = {s["_id"]: s for s in shipments_agg}
+    
+    result = []
+    total_debt = 0
+    clients_with_debt = 0
+    
+    for client in clients:
+        uid = client["id"]
+        wallet = wallets_dict.get(uid)
+        wallet_balance = wallet["available"] if wallet else 0
+        
+        purch = purchases_dict.get(uid, {"total_spent": 0, "purchase_count": 0})
+        ship = shipments_dict.get(uid, {"total_shipping": 0, "shipment_count": 0})
+        
+        # Pending balance = what client still owes (wallet balance - shipping costs)
+        # Negative means they owe money
+        pending_balance = round(wallet_balance - ship["total_shipping"], 2)
+        
+        # If pending_balance is negative, the client has debt
+        debt_amount = abs(pending_balance) if pending_balance < 0 else 0
+        
+        if debt_amount > 0:
+            total_debt += debt_amount
+            clients_with_debt += 1
+        
+        result.append({
+            "id": client["id"],
+            "customer_id": client["customer_id"],
+            "name": client["name"],
+            "whatsapp": client.get("whatsapp", ""),
+            "country": client.get("country", ""),
+            "created_at": client.get("created_at", ""),
+            "wallet_balance": round(wallet_balance, 2),
+            "total_spent": round(purch["total_spent"], 2),
+            "total_shipping": round(ship["total_shipping"], 2),
+            "pending_balance": pending_balance,
+            "debt_amount": debt_amount,
+            "purchase_count": purch["purchase_count"],
+            "shipment_count": ship["shipment_count"]
+        })
+    
+    # Sort by debt amount (highest first), then by pending_balance (most negative first)
+    result.sort(key=lambda x: (-x["debt_amount"], x["pending_balance"]))
+    
+    return {
+        "clients": result,
+        "summary": {
+            "total_clients": len(clients),
+            "clients_with_debt": clients_with_debt,
+            "total_debt": round(total_debt, 2),
+            "clients_positive_balance": len(clients) - clients_with_debt
+        }
+    }
+
 # ==================== SETTINGS ====================
 
 @api_router.get("/admin/settings/referral-bonus")
