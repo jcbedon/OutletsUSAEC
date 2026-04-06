@@ -185,6 +185,7 @@ export function ClientsDebtsChart({ data }) {
       name: c.name.length > 12 ? c.name.slice(0, 12) + "..." : c.name,
       fullName: c.name,
       customerId: c.customer_id,
+      whatsapp: c.whatsapp || 'N/A',
       balance: c.pending_balance,
       debt: c.debt_amount,
       wallet: c.wallet_balance,
@@ -197,11 +198,12 @@ export function ClientsDebtsChart({ data }) {
       const data = payload[0].payload;
       const isDebt = data.balance < 0;
       return (
-        <div className="bg-white p-3 border rounded-lg shadow-lg text-sm">
+        <div className="bg-white p-3 border rounded-lg shadow-lg text-sm min-w-[200px]">
           <p className="font-bold text-slate-800">{data.fullName}</p>
           <p className="text-gray-500 text-xs">ID: {data.customerId}</p>
+          <p className="text-green-600 text-xs font-medium">WhatsApp: {data.whatsapp}</p>
           <p className="text-gray-500 text-xs">Registrado: {data.createdAt}</p>
-          <div className="mt-2 space-y-1">
+          <div className="mt-2 space-y-1 border-t pt-2">
             <p className="text-blue-600">Wallet: {formatMoney(data.wallet)}</p>
             <p className="text-purple-600">Envíos: {formatMoney(data.shipping)}</p>
             <p className={`font-bold ${isDebt ? 'text-red-600' : 'text-green-600'}`}>
