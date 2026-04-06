@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
 import { getBusinessStats, getClientsDebtsReport } from "@/lib/api";
@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, DollarSign, TrendingUp, Wallet, Store, Radio, BarChart3, PieChart as PieChartIcon, Users, AlertTriangle } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ArrowLeft, DollarSign, TrendingUp, Wallet, Store, Radio, BarChart3, PieChart as PieChartIcon, Users, AlertTriangle, Search, Filter, ChevronDown, ChevronUp } from "lucide-react";
 import { SalesTrendChart, StoreBarChart, ProfitPieChart, LiveBarChart, ClientsDebtsChart, ClientsDebtsPieChart, ClientsByDateChart } from "@/components/StatsCharts";
 
 function formatMoney(n) {
@@ -42,6 +43,14 @@ export default function AdminStats() {
   const [debtsData, setDebtsData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("resumen");
+  
+  // Filtros para deudas
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all"); // all, with_debt, no_debt
+  const [chartLimit, setChartLimit] = useState(15);
+  const [tableLimit, setTableLimit] = useState(20);
+  const [sortBy, setSortBy] = useState("debt"); // debt, name, date, balance
+  const [sortAsc, setSortAsc] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -61,6 +70,68 @@ export default function AdminStats() {
     load();
   }, []);
 
+  // Datos filtrados y ordenados
+  const filteredClients = useMemo(() => {
+    if (!debtsData?.clients) return [];
+    
+    let result = [...debtsData.clients];
+    
+    // Filtro de búsqueda
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(c => 
+        c.name.toLowerCase().includes(term) ||
+        c.customer_id.toLowerCase().includes(term) ||
+        (c.whatsapp && c.whatsapp.includes(term))
+      );
+    }
+    
+    // Filtro de estado
+    if (statusFilter === "with_debt") {
+      result = result.filter(c => c.pending_balance < 0);
+    } else if (statusFilter === "no_debt") {
+      result = result.filter(c => c.pending_balance >= 0);
+    }
+    
+    // Ordenamiento
+    result.sort((a, b) => {
+      let comparison = 0;
+      switch (sortBy) {
+        case "debt":
+          comparison = b.debt_amount - a.debt_amount;
+          break;
+        case "name":
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case "date":
+          comparison = new Date(b.created_at) - new Date(a.created_at);
+          break;
+        case "balance":
+          comparison = a.pending_balance - b.pending_balance;
+          break;
+        default:
+          comparison = b.debt_amount - a.debt_amount;
+      }
+      return sortAsc ? -comparison : comparison;
+    });
+    
+    return result;
+  }, [debtsData?.clients, searchTerm, statusFilter, sortBy, sortAsc]);
+
+  // Resumen filtrado
+  const filteredSummary = useMemo(() => {
+    const clients = filteredClients;
+    const withDebt = clients.filter(c => c.pending_balance < 0);
+    const totalDebt = withDebt.reduce((sum, c) => sum + c.debt_amount, 0);
+    
+    return {
+      total_clients: clients.length,
+      clients_with_debt: withDebt.length,
+      clients_positive_balance: clients.length - withDebt.length,
+      total_debt: totalDebt
+    };
+  }, [filteredClients]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -79,6 +150,21 @@ export default function AdminStats() {
   // Debts data
   const clientsDebts = debtsData?.clients || [];
   const debtsSummary = debtsData?.summary || {};
+  
+  // Toggle sort
+  const handleSort = (column) => {
+    if (sortBy === column) {
+      setSortAsc(!sortAsc);
+    } else {
+      setSortBy(column);
+      setSortAsc(false);
+    }
+  };
+
+  const SortIcon = ({ column }) => {
+    if (sortBy !== column) return null;
+    return sortAsc ? <ChevronUp className="h-3 w-3 inline ml-1" /> : <ChevronDown className="h-3 w-3 inline ml-1" />;
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -242,39 +328,127 @@ export default function AdminStats() {
           {/* Deudas Tab */}
           <TabsContent value="deudas" className="mt-6">
             <div className="space-y-6">
-              {/* Summary Cards */}
+              {/* Filters */}
+              <Card className="rounded-xl">
+                <CardContent className="p-4">
+                  <div className="flex flex-col md:flex-row gap-4">
+                    {/* Search */}
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        placeholder="Buscar por nombre, ID o WhatsApp..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10"
+                        data-testid="debt-search-input"
+                      />
+                    </div>
+                    
+                    {/* Status Filter */}
+                    <div className="flex gap-2">
+                      <Button
+                        variant={statusFilter === "all" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setStatusFilter("all")}
+                        className={statusFilter === "all" ? "bg-slate-800" : ""}
+                        data-testid="filter-all"
+                      >
+                        Todos ({clientsDebts.length})
+                      </Button>
+                      <Button
+                        variant={statusFilter === "with_debt" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setStatusFilter("with_debt")}
+                        className={statusFilter === "with_debt" ? "bg-red-600 hover:bg-red-700" : "text-red-600 border-red-300"}
+                        data-testid="filter-with-debt"
+                      >
+                        Con Deuda ({debtsSummary.clients_with_debt || 0})
+                      </Button>
+                      <Button
+                        variant={statusFilter === "no_debt" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setStatusFilter("no_debt")}
+                        className={statusFilter === "no_debt" ? "bg-green-600 hover:bg-green-700" : "text-green-600 border-green-300"}
+                        data-testid="filter-no-debt"
+                      >
+                        Sin Deuda ({debtsSummary.clients_positive_balance || 0})
+                      </Button>
+                    </div>
+                    
+                    {/* Chart Limit */}
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-4 w-4 text-gray-400" />
+                      <select
+                        value={chartLimit}
+                        onChange={(e) => setChartLimit(Number(e.target.value))}
+                        className="border rounded-md px-2 py-1 text-sm bg-white"
+                        data-testid="chart-limit-select"
+                      >
+                        <option value={10}>Top 10</option>
+                        <option value={15}>Top 15</option>
+                        <option value={25}>Top 25</option>
+                        <option value={50}>Top 50</option>
+                        <option value={100}>Top 100</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  {/* Active filters indicator */}
+                  {(searchTerm || statusFilter !== "all") && (
+                    <div className="mt-3 flex items-center gap-2 text-sm">
+                      <span className="text-gray-500">Filtros activos:</span>
+                      {searchTerm && (
+                        <Badge variant="secondary" className="text-xs">
+                          Búsqueda: "{searchTerm}"
+                          <button onClick={() => setSearchTerm("")} className="ml-1 hover:text-red-500">×</button>
+                        </Badge>
+                      )}
+                      {statusFilter !== "all" && (
+                        <Badge variant="secondary" className="text-xs">
+                          {statusFilter === "with_debt" ? "Con Deuda" : "Sin Deuda"}
+                          <button onClick={() => setStatusFilter("all")} className="ml-1 hover:text-red-500">×</button>
+                        </Badge>
+                      )}
+                      <span className="text-gray-400">|</span>
+                      <span className="font-medium text-slate-700">{filteredClients.length} resultados</span>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Summary Cards - Using filtered data */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <Card className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200">
                   <CardContent className="p-4">
                     <Users className="h-5 w-5 text-slate-600 mb-2" />
-                    <p className="text-2xl font-extrabold text-slate-700">{debtsSummary.total_clients || 0}</p>
+                    <p className="text-2xl font-extrabold text-slate-700">{filteredSummary.total_clients}</p>
                     <p className="text-xs text-slate-600">Total Clientes</p>
                   </CardContent>
                 </Card>
                 <Card className="rounded-xl bg-gradient-to-br from-red-50 to-red-100 border-red-200">
                   <CardContent className="p-4">
                     <AlertTriangle className="h-5 w-5 text-red-600 mb-2" />
-                    <p className="text-2xl font-extrabold text-red-700">{debtsSummary.clients_with_debt || 0}</p>
+                    <p className="text-2xl font-extrabold text-red-700">{filteredSummary.clients_with_debt}</p>
                     <p className="text-xs text-red-600">Con Deuda</p>
                   </CardContent>
                 </Card>
                 <Card className="rounded-xl bg-gradient-to-br from-green-50 to-green-100 border-green-200">
                   <CardContent className="p-4">
                     <Wallet className="h-5 w-5 text-green-600 mb-2" />
-                    <p className="text-2xl font-extrabold text-green-700">{debtsSummary.clients_positive_balance || 0}</p>
+                    <p className="text-2xl font-extrabold text-green-700">{filteredSummary.clients_positive_balance}</p>
                     <p className="text-xs text-green-600">Sin Deuda</p>
                   </CardContent>
                 </Card>
                 <Card className="rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
                   <CardContent className="p-4">
                     <DollarSign className="h-5 w-5 text-orange-600 mb-2" />
-                    <p className="text-2xl font-extrabold text-orange-700">{formatMoney(debtsSummary.total_debt || 0)}</p>
+                    <p className="text-2xl font-extrabold text-orange-700">{formatMoney(filteredSummary.total_debt)}</p>
                     <p className="text-xs text-orange-600">Deuda Total</p>
                   </CardContent>
                 </Card>
               </div>
 
-              {/* Charts */}
+              {/* Charts - Using filtered data */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Main Debts Chart */}
                 <Card className="rounded-xl md:col-span-2">
@@ -282,11 +456,12 @@ export default function AdminStats() {
                     <CardTitle className="text-lg flex items-center gap-2">
                       <BarChart3 className="h-5 w-5 text-red-600" />
                       Balance por Cliente
+                      <Badge variant="outline" className="ml-auto text-xs">{Math.min(chartLimit, filteredClients.length)} de {filteredClients.length}</Badge>
                     </CardTitle>
                     <p className="text-xs text-gray-500">Rojo = Debe | Verde = A favor</p>
                   </CardHeader>
                   <CardContent>
-                    <ClientsDebtsChart data={clientsDebts} />
+                    <ClientsDebtsChart data={filteredClients.slice(0, chartLimit)} />
                   </CardContent>
                 </Card>
 
@@ -299,7 +474,7 @@ export default function AdminStats() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <ClientsDebtsPieChart summary={debtsSummary} />
+                    <ClientsDebtsPieChart summary={filteredSummary} />
                   </CardContent>
                 </Card>
               </div>
@@ -314,33 +489,65 @@ export default function AdminStats() {
                   <p className="text-xs text-gray-500">Cantidad de clientes y deuda acumulada por mes</p>
                 </CardHeader>
                 <CardContent>
-                  <ClientsByDateChart data={clientsDebts} />
+                  <ClientsByDateChart data={filteredClients} />
                 </CardContent>
               </Card>
 
-              {/* Clients Table */}
+              {/* Clients Table with sortable headers */}
               <Card className="rounded-xl">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Users className="h-5 w-5 text-slate-600" />
-                    Detalle de Clientes
-                  </CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <Users className="h-5 w-5 text-slate-600" />
+                      Detalle de Clientes
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-500">Mostrar:</span>
+                      <select
+                        value={tableLimit}
+                        onChange={(e) => setTableLimit(Number(e.target.value))}
+                        className="border rounded-md px-2 py-1 text-sm bg-white"
+                        data-testid="table-limit-select"
+                      >
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                        <option value={100}>100</option>
+                        <option value={500}>500</option>
+                        <option value={1000}>1000</option>
+                      </select>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b bg-gray-50">
-                          <th className="text-left p-2 font-medium">Cliente</th>
+                          <th 
+                            className="text-left p-2 font-medium cursor-pointer hover:bg-gray-100"
+                            onClick={() => handleSort("name")}
+                          >
+                            Cliente <SortIcon column="name" />
+                          </th>
                           <th className="text-left p-2 font-medium">ID</th>
-                          <th className="text-left p-2 font-medium hidden md:table-cell">Registrado</th>
+                          <th 
+                            className="text-left p-2 font-medium hidden md:table-cell cursor-pointer hover:bg-gray-100"
+                            onClick={() => handleSort("date")}
+                          >
+                            Registrado <SortIcon column="date" />
+                          </th>
                           <th className="text-right p-2 font-medium">Wallet</th>
                           <th className="text-right p-2 font-medium">Envios</th>
-                          <th className="text-right p-2 font-medium">Balance</th>
+                          <th 
+                            className="text-right p-2 font-medium cursor-pointer hover:bg-gray-100"
+                            onClick={() => handleSort("balance")}
+                          >
+                            Balance <SortIcon column="balance" />
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {clientsDebts.slice(0, 20).map((client, idx) => (
+                        {filteredClients.slice(0, tableLimit).map((client) => (
                           <tr key={client.id} className={`border-b hover:bg-gray-50 ${client.debt_amount > 0 ? 'bg-red-50/50' : ''}`}>
                             <td className="p-2">
                               <div className="font-medium text-slate-800">{client.name}</div>
@@ -363,8 +570,20 @@ export default function AdminStats() {
                         ))}
                       </tbody>
                     </table>
-                    {clientsDebts.length > 20 && (
-                      <p className="text-center text-gray-500 text-sm py-3">Mostrando 20 de {clientsDebts.length} clientes</p>
+                    {filteredClients.length > tableLimit && (
+                      <div className="text-center py-3 space-y-2">
+                        <p className="text-gray-500 text-sm">Mostrando {tableLimit} de {filteredClients.length} clientes</p>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => setTableLimit(Math.min(tableLimit + 50, filteredClients.length))}
+                        >
+                          Cargar más
+                        </Button>
+                      </div>
+                    )}
+                    {filteredClients.length === 0 && (
+                      <p className="text-center text-gray-400 py-8">No se encontraron clientes con los filtros aplicados</p>
                     )}
                   </div>
                 </CardContent>
