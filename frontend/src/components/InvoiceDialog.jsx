@@ -189,7 +189,12 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
     
     try {
       const doc = new jsPDF();
-      const tenant = currentInvoice.tenant || tenantInfo;
+      // Always prioritize current tenantInfo (fetched live) over stored tenant data
+      const tenant = { 
+        ...(currentInvoice.tenant || {}), 
+        ...tenantInfo, // tenantInfo overrides with fresh data
+        logo_url: tenantInfo?.logo_url || currentInvoice.tenant?.logo_url // Explicitly use fresh logo
+      };
       const inv = currentInvoice;
       const cli = currentInvoice.client || client;
       const shipment = inv.shipment;
@@ -231,8 +236,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       let currentY = containerY + 20;
       
       // ========== HEADER SECTION ==========
-      // Load and add logo with proper proportions
-      let logoUrl = tenant?.logo_url || tenantInfo?.logo_url;
+      // Load and add logo with proper proportions - prioritize fresh tenantInfo logo
+      let logoUrl = tenantInfo?.logo_url || tenant?.logo_url;
       let logoEndX = margin;
       
       if (logoUrl) {

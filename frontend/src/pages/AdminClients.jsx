@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getAllClients, updateClientCommission, createClient, updateClient } from "@/lib/api";
+import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,14 +35,34 @@ export default function AdminClients() {
   // Invoice dialog state
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
   const [selectedClientForInvoice, setSelectedClientForInvoice] = useState(null);
+  const [tenantInfo, setTenantInfo] = useState(null);
 
-  const logoUrl = user?.tenant_logo || "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+  const logoUrl = user?.tenant_logo || "";
   
-  const tenantInfo = {
+  // Default tenant info from user context (fallback)
+  const defaultTenantInfo = {
     business_name: user?.tenant_name || "Personal Shopper",
     owner_name: user?.name || "",
     email: user?.email || "",
     logo_url: logoUrl
+  };
+
+  // Fetch fresh tenant info when opening invoice dialog
+  const openInvoiceDialog = async (client) => {
+    setSelectedClientForInvoice(client);
+    try {
+      const res = await getMyTenant();
+      setTenantInfo({
+        business_name: res.data.business_name || user?.tenant_name || "Personal Shopper",
+        owner_name: res.data.owner_name || user?.name || "",
+        email: res.data.admin_email || user?.email || "",
+        logo_url: res.data.logo_url || logoUrl
+      });
+    } catch (error) {
+      console.error("Error fetching tenant info:", error);
+      setTenantInfo(defaultTenantInfo);
+    }
+    setInvoiceDialogOpen(true);
   };
 
   useEffect(() => { loadClients(); }, []);
@@ -322,10 +342,7 @@ export default function AdminClients() {
                         variant="outline" 
                         size="sm" 
                         className="rounded-lg border-blue-200 text-blue-600 hover:bg-blue-50"
-                        onClick={() => {
-                          setSelectedClientForInvoice(client);
-                          setInvoiceDialogOpen(true);
-                        }}
+                        onClick={() => openInvoiceDialog(client)}
                         data-testid={`invoice-client-${client.customer_id}`}
                       >
                         <FileText className="h-4 w-4 mr-1" /> Factura
@@ -454,7 +471,7 @@ export default function AdminClients() {
           open={invoiceDialogOpen}
           onOpenChange={setInvoiceDialogOpen}
           client={selectedClientForInvoice}
-          tenantInfo={tenantInfo}
+          tenantInfo={tenantInfo || defaultTenantInfo}
         />
       </div>
     </div>

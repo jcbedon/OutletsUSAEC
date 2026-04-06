@@ -769,7 +769,7 @@ async def get_superadmin_stats(current_user: dict = Depends(get_current_user)):
 
 @api_router.get("/admin/tenant")
 async def get_my_tenant(current_user: dict = Depends(get_current_user)):
-    if current_user["role"] not in ["admin"]:
+    if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tenant = await db.tenants.find_one({"id": current_user["tenant_id"]}, {"_id": 0})
     if not tenant:
