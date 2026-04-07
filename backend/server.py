@@ -507,22 +507,35 @@ async def register_user(data: UserRegister):
 
 @api_router.post("/auth/login")
 async def login_user(login_data: UserLogin):
+    identifier = login_data.identifier.strip()
+    identifier_lower = identifier.lower()
+    
     # First, try to find user in users collection
     user = await db.users.find_one({
         "$or": [
-            {"email": login_data.identifier},
-            {"whatsapp": login_data.identifier},
-            {"customer_id": login_data.identifier.upper()}
+            {"email": identifier},
+            {"whatsapp": identifier},
+            {"customer_id": identifier.upper()}
         ]
     }, {"_id": 0})
+    
+    # If not found, try to find admin by tenant slug
+    if not user:
+        tenant_by_slug = await db.tenants.find_one({"slug": identifier_lower}, {"_id": 0})
+        if tenant_by_slug:
+            # Find the admin of this tenant
+            user = await db.users.find_one({
+                "tenant_id": tenant_by_slug["id"],
+                "role": "admin"
+            }, {"_id": 0})
     
     # If not found, try employees collection
     employee = None
     if not user:
         employee = await db.employees.find_one({
             "$or": [
-                {"email": login_data.identifier},
-                {"whatsapp": login_data.identifier}
+                {"email": identifier},
+                {"whatsapp": identifier}
             ]
         }, {"_id": 0})
     
