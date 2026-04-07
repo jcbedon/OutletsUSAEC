@@ -241,6 +241,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       let logoEndX = margin;
       
       if (logoUrl) {
+        // Ensure full URL
         if (logoUrl.startsWith('/')) {
           const baseUrl = process.env.REACT_APP_BACKEND_URL || window.location.origin;
           logoUrl = baseUrl + logoUrl;
@@ -251,11 +252,16 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
           const targetHeight = 14; // ~40px in mm
           const logoWidth = targetHeight * logoData.aspectRatio;
           
+          // Determine image format from URL
+          const isJpg = logoUrl.toLowerCase().includes('.jpg') || logoUrl.toLowerCase().includes('.jpeg');
+          const format = isJpg ? 'JPEG' : 'PNG';
+          
           // Add logo maintaining exact proportions (object-fit: contain)
-          doc.addImage(logoData.dataURL, 'PNG', margin, currentY - 4, logoWidth, targetHeight);
-          logoEndX = margin + logoWidth + 5; // 14px spacing after logo
+          doc.addImage(logoData.dataURL, format, margin, currentY - 4, logoWidth, targetHeight);
+          logoEndX = margin + logoWidth + 5; // spacing after logo
         } catch (e) {
           console.log("Could not load logo:", e);
+          // Continue without logo
         }
       }
       
@@ -263,12 +269,16 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       doc.setTextColor(...colors.textPrimary);
       doc.setFontSize(14);
       doc.setFont("helvetica", "bold");
-      doc.text(tenant?.business_name || "Outlets USA EC", logoEndX, currentY + 2);
+      doc.text(tenant?.business_name || tenantInfo?.business_name || "Outlets USA EC", logoEndX, currentY + 2);
       
       doc.setFontSize(9);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(...colors.textSecondary);
-      doc.text(tenant?.email || "admin@outletsusaec.com", logoEndX, currentY + 8);
+      // Use tenant's business email, not admin email
+      const tenantEmail = tenantInfo?.email || tenant?.email || "";
+      if (tenantEmail && !tenantEmail.startsWith("admin@")) {
+        doc.text(tenantEmail, logoEndX, currentY + 8);
+      }
       
       // Invoice info (right side)
       const rightX = pageWidth - margin;
@@ -276,7 +286,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       doc.setTextColor(...colors.textSecondary);
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
-      doc.text("FACTURA", rightX, currentY - 2, { align: "right" });
+      doc.text("DETALLE DE COMPRA", rightX, currentY - 2, { align: "right" });
       
       doc.setTextColor(...colors.textPrimary);
       doc.setFontSize(16);
@@ -827,15 +837,27 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
               <div className="p-6 rounded-2xl text-white" style={{ background: 'linear-gradient(135deg, #1E3A5F 0%, #2c5282 100%)' }}>
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: '#2ECC71' }}>
+                    {(tenantInfo?.logo_url || currentInvoice.tenant?.logo_url) ? (
+                      <img 
+                        src={`${process.env.REACT_APP_BACKEND_URL || ''}${tenantInfo?.logo_url || currentInvoice.tenant?.logo_url}`}
+                        alt="Logo"
+                        className="w-16 h-16 rounded-2xl object-contain bg-white p-1"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <div className="w-16 h-16 rounded-2xl items-center justify-center" style={{ background: '#2ECC71', display: (tenantInfo?.logo_url || currentInvoice.tenant?.logo_url) ? 'none' : 'flex' }}>
                       <span className="text-2xl font-bold text-white">
-                        {currentInvoice.tenant?.business_name?.substring(0, 2)?.toUpperCase() || "PS"}
+                        {(tenantInfo?.business_name || currentInvoice.tenant?.business_name)?.substring(0, 2)?.toUpperCase() || "PS"}
                       </span>
                     </div>
                     <div>
-                      <h2 className="text-2xl font-bold">{currentInvoice.tenant?.business_name || "Personal Shopper"}</h2>
-                      <p className="text-blue-200 text-sm">{currentInvoice.tenant?.email}</p>
-                      <p className="text-blue-200 text-sm">{currentInvoice.tenant?.owner_name}</p>
+                      <h2 className="text-2xl font-bold">{tenantInfo?.business_name || currentInvoice.tenant?.business_name || "Personal Shopper"}</h2>
+                      <p className="text-blue-200 text-sm">{tenantInfo?.email || currentInvoice.tenant?.email}</p>
+                      <p className="text-blue-200 text-sm">{tenantInfo?.owner_name || currentInvoice.tenant?.owner_name}</p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -857,7 +879,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
                   <p className="text-sm text-gray-600">País: {currentInvoice.client?.country}</p>
                 </div>
                 <div className="p-4 rounded-xl bg-gray-50">
-                  <p className="text-xs font-semibold text-gray-500 mb-2">DETALLES DE FACTURA</p>
+                  <p className="text-xs font-semibold text-gray-500 mb-2">DETALLE DE COMPRA</p>
                   <p className="text-sm text-gray-600">Fecha: {new Date(currentInvoice.created_at).toLocaleDateString("es-ES")}</p>
                   <p className="text-sm text-gray-600">Items: {currentInvoice.purchases?.length || 0}</p>
                   {currentInvoice.approved_at && (
