@@ -162,8 +162,25 @@ export default function AdminShipments() {
       ? selectedPurchases 
       : pendingPurchases.map(p => p.id);
     
-    if (!selectedClient || purchasesToSend.length === 0 || !shipmentForm.shipping_type || !shipmentForm.address || !shipmentForm.shipping_cost) {
-      toast.error("Completa todos los campos requeridos");
+    // Validate each field and show specific error
+    if (!selectedClient) {
+      toast.error("Selecciona un cliente");
+      return;
+    }
+    if (purchasesToSend.length === 0) {
+      toast.error("No hay compras pendientes para enviar");
+      return;
+    }
+    if (!shipmentForm.shipping_type) {
+      toast.error("Selecciona el tipo de envío");
+      return;
+    }
+    if (!shipmentForm.address) {
+      toast.error("Ingresa la dirección completa");
+      return;
+    }
+    if (!shipmentForm.shipping_cost) {
+      toast.error("Ingresa el costo de envío");
       return;
     }
 
@@ -634,7 +651,6 @@ export default function AdminShipments() {
                     <Button
                       onClick={handleCreateShipment}
                       className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
-                      disabled={tenantSettings.shipment_show_product_list ? selectedPurchases.length === 0 : pendingPurchases.length === 0}
                       data-testid="submit-shipment-btn"
                     >
                       <Truck className="h-5 w-5 mr-2" />
