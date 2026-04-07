@@ -10,7 +10,8 @@ import {
   createShipment,
   uploadShipmentAttachment,
   updateShipment,
-  deleteShipment
+  deleteShipment,
+  getMyTenant
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -95,6 +96,11 @@ export default function AdminShipments() {
     phone: "",
     additional_info: ""
   });
+  
+  // Tenant settings
+  const [tenantSettings, setTenantSettings] = useState({
+    shipment_show_product_list: true
+  });
 
   // Filter and sort clients
   const sortedClients = [...clients].sort((a, b) => a.name.localeCompare(b.name));
@@ -109,12 +115,18 @@ export default function AdminShipments() {
 
   const loadData = async () => {
     try {
-      const [shipmentsRes, clientsRes] = await Promise.all([
+      const [shipmentsRes, clientsRes, tenantRes] = await Promise.all([
         getAllShipments(),
-        getAllClients()
+        getAllClients(),
+        getMyTenant()
       ]);
       setShipments(shipmentsRes.data);
       setClients(clientsRes.data);
+      // Load tenant settings
+      const productListSetting = tenantRes.data.shipment_show_product_list;
+      setTenantSettings({
+        shipment_show_product_list: productListSetting !== false
+      });
     } catch (error) {
       toast.error("Error al cargar datos");
     } finally {
@@ -403,43 +415,51 @@ export default function AdminShipments() {
                 {/* Pending Purchases */}
                 {selectedClient && (
                   <>
-                    <div>
-                      <Label>Compras a enviar ({pendingPurchases.length} disponibles)</Label>
-                      {pendingPurchases.length === 0 ? (
-                        <p className="text-sm text-gray-500 mt-2">No hay compras pendientes de envío</p>
-                      ) : (
-                        <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
-                          {pendingPurchases.map((purchase) => (
-                            <label 
-                              key={purchase.id}
-                              className={`flex items-center p-3 rounded-xl border cursor-pointer transition-colors ${
-                                selectedPurchases.includes(purchase.id) 
-                                  ? 'bg-red-50 border-red-200' 
-                                  : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedPurchases.includes(purchase.id)}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedPurchases([...selectedPurchases, purchase.id]);
-                                  } else {
-                                    setSelectedPurchases(selectedPurchases.filter(id => id !== purchase.id));
-                                  }
-                                }}
-                                className="mr-3"
-                              />
-                              <div className="flex-1">
-                                <p className="font-medium text-sm">{purchase.item_name}</p>
-                                <p className="text-xs text-gray-500">{purchase.store}</p>
-                              </div>
-                              <span className="font-bold text-red-600">${purchase.price.toFixed(2)}</span>
-                            </label>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    {tenantSettings.shipment_show_product_list ? (
+                      <div>
+                        <Label>Compras a enviar ({pendingPurchases.length} disponibles)</Label>
+                        {pendingPurchases.length === 0 ? (
+                          <p className="text-sm text-gray-500 mt-2">No hay compras pendientes de envío</p>
+                        ) : (
+                          <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
+                            {pendingPurchases.map((purchase) => (
+                              <label 
+                                key={purchase.id}
+                                className={`flex items-center p-3 rounded-xl border cursor-pointer transition-colors ${
+                                  selectedPurchases.includes(purchase.id) 
+                                    ? 'bg-red-50 border-red-200' 
+                                    : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedPurchases.includes(purchase.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedPurchases([...selectedPurchases, purchase.id]);
+                                    } else {
+                                      setSelectedPurchases(selectedPurchases.filter(id => id !== purchase.id));
+                                    }
+                                  }}
+                                  className="mr-3"
+                                />
+                                <div className="flex-1">
+                                  <p className="font-medium text-sm">{purchase.item_name}</p>
+                                  <p className="text-xs text-gray-500">{purchase.store}</p>
+                                </div>
+                                <span className="font-bold text-red-600">${purchase.price.toFixed(2)}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-blue-50 rounded-xl">
+                        <p className="text-sm text-blue-800">
+                          <span className="font-bold">{pendingPurchases.length}</span> compras pendientes serán incluidas automáticamente en este envío.
+                        </p>
+                      </div>
+                    )}
 
                     {/* Shipping Type */}
                     <div>

@@ -59,6 +59,11 @@ class Tenant(BaseModel):
         {"value": "other", "label": "Otro"}
     ])
     tracking_url_template: Optional[str] = None  # URL template with {tracking} placeholder
+    # Invoice settings
+    invoice_show_tax_per_item: bool = True  # Show tax column in product table
+    invoice_show_tax_summary: bool = True   # Show tax total at the bottom
+    # Shipment settings  
+    shipment_show_product_list: bool = True  # Show product list when creating shipment
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class User(BaseModel):
@@ -762,6 +767,88 @@ async def create_admin_for_tenant(tenant_id: str, data: CreateAdminRequest, curr
         password_hash=hash_password(data.password), role="admin")
     await db.users.insert_one(admin.model_dump())
     return {"message": "Admin creado", "admin_id": admin.id, "customer_id": customer_id}
+
+@api_router.put("/superadmin/tenants/{tenant_id}/reset-password")
+async def reset_tenant_admin_password(tenant_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Reset the admin password for a tenant"""
+    if current_user["role"] != "superadmin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    new_password = data.get("new_password")
+    if not new_password or len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
+    
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    
+    # Find the admin of this tenant
+    admin = await db.users.find_one({"tenant_id": tenant_id, "role": "admin"}, {"_id": 0})
+    if not admin:
+        raise HTTPException(status_code=404, detail="Admin no encontrado para este tenant")
+    
+    # Update password
+    hashed = hash_password(new_password)
+    await db.users.update_one(
+        {"id": admin["id"]},
+        {"$set": {"password_hash": hashed, "password_updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    return {"message": "Contraseña actualizada exitosamente", "admin_email": admin["email"]}
+
+@api_router.get("/superadmin/tenants/{tenant_id}/admin-info")
+async def get_tenant_admin_info(tenant_id: str, current_user: dict = Depends(get_current_user)):
+    """Get admin info for a tenant including last password update"""
+    if current_user["role"] != "superadmin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    
+    admin = await db.users.find_one({"tenant_id": tenant_id, "role": "admin"}, {"_id": 0, "password_hash": 0})
+    if not admin:
+        return {"has_admin": False}
+    
+    return {
+        "has_admin": True,
+        "admin_id": admin["id"],
+        "admin_name": admin["name"],
+        "admin_email": admin["email"],
+        "admin_whatsapp": admin.get("whatsapp", ""),
+        "password_updated_at": admin.get("password_updated_at"),
+        "created_at": admin.get("created_at")
+    }
+
+@api_router.put("/superadmin/tenants/{tenant_id}/settings")
+async def update_tenant_settings(tenant_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update tenant invoice and shipment settings"""
+    if current_user["role"] != "superadmin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    
+    # Prepare update fields
+    update_fields = {}
+    
+    # Invoice settings
+    if "invoice_show_tax_per_item" in data:
+        update_fields["invoice_show_tax_per_item"] = bool(data["invoice_show_tax_per_item"])
+    if "invoice_show_tax_summary" in data:
+        update_fields["invoice_show_tax_summary"] = bool(data["invoice_show_tax_summary"])
+    
+    # Shipment settings
+    if "shipment_show_product_list" in data:
+        update_fields["shipment_show_product_list"] = bool(data["shipment_show_product_list"])
+    
+    if update_fields:
+        await db.tenants.update_one({"id": tenant_id}, {"$set": update_fields})
+    
+    # Return updated tenant
+    updated_tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+    return updated_tenant
 
 @api_router.get("/superadmin/stats")
 async def get_superadmin_stats(current_user: dict = Depends(get_current_user)):

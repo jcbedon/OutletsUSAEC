@@ -31,6 +31,9 @@ export const listTenants = () => api.get("/superadmin/tenants");
 export const createTenant = (data) => api.post("/superadmin/tenants", data);
 export const updateTenantStatus = (tenantId, status) => api.put(`/superadmin/tenants/${tenantId}?status=${status}`);
 export const createAdminForTenant = (tenantId, data) => api.post(`/superadmin/tenants/${tenantId}/admin`, data);
+export const resetTenantAdminPassword = (tenantId, newPassword) => api.put(`/superadmin/tenants/${tenantId}/reset-password`, { new_password: newPassword });
+export const getTenantAdminInfo = (tenantId) => api.get(`/superadmin/tenants/${tenantId}/admin-info`);
+export const updateTenantSettings = (tenantId, settings) => api.put(`/superadmin/tenants/${tenantId}/settings`, settings);
 
 // Admin Tenant
 export const getMyTenant = () => api.get("/admin/tenant");

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/App";
 import { useNavigate } from "react-router-dom";
-import { listTenants, createTenant, updateTenantStatus, getSuperadminStats, updateTenantTaxOptionsSuperadmin, updateTenantTrackingUrl } from "@/lib/api";
+import { listTenants, createTenant, updateTenantStatus, getSuperadminStats, updateTenantTaxOptionsSuperadmin, updateTenantTrackingUrl, resetTenantAdminPassword, getTenantAdminInfo, updateTenantSettings } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Settings, Percent, X, Link, Truck } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Settings, Percent, X, Link, Truck, Key, Eye, EyeOff, FileText, Package } from "lucide-react";
 
 export default function SuperadminDashboard() {
   const { user, logout } = useAuth();
@@ -35,6 +36,21 @@ export default function SuperadminDashboard() {
   // Tracking URL configuration state
   const [trackingDialogOpen, setTrackingDialogOpen] = useState(false);
   const [trackingUrl, setTrackingUrl] = useState("");
+  
+  // Password reset state
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [adminInfo, setAdminInfo] = useState(null);
+  const [loadingAdminInfo, setLoadingAdminInfo] = useState(false);
+  
+  // Settings dialog state
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [tenantSettings, setTenantSettings] = useState({
+    invoice_show_tax_per_item: true,
+    invoice_show_tax_summary: true,
+    shipment_show_product_list: true
+  });
 
   const DEFAULT_TAX_OPTIONS = [
     { value: "8.25", label: "8.25%" },
@@ -154,6 +170,65 @@ export default function SuperadminDashboard() {
       loadData();
     } catch (error) {
       toast.error("Error al guardar");
+    }
+  };
+
+  const openPasswordDialog = async (tenant) => {
+    setSelectedTenant(tenant);
+    setNewPassword("");
+    setShowPassword(false);
+    setAdminInfo(null);
+    setLoadingAdminInfo(true);
+    setPasswordDialogOpen(true);
+    
+    try {
+      const res = await getTenantAdminInfo(tenant.id);
+      setAdminInfo(res.data);
+    } catch (error) {
+      console.error("Error loading admin info:", error);
+    } finally {
+      setLoadingAdminInfo(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!selectedTenant || !newPassword) {
+      toast.error("Ingresa la nueva contraseña");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("La contraseña debe tener al menos 6 caracteres");
+      return;
+    }
+    try {
+      await resetTenantAdminPassword(selectedTenant.id, newPassword);
+      toast.success("Contraseña actualizada exitosamente");
+      setPasswordDialogOpen(false);
+      setNewPassword("");
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al actualizar contraseña");
+    }
+  };
+
+  const openSettingsDialog = (tenant) => {
+    setSelectedTenant(tenant);
+    setTenantSettings({
+      invoice_show_tax_per_item: tenant.invoice_show_tax_per_item !== false,
+      invoice_show_tax_summary: tenant.invoice_show_tax_summary !== false,
+      shipment_show_product_list: tenant.shipment_show_product_list !== false
+    });
+    setSettingsDialogOpen(true);
+  };
+
+  const handleSaveSettings = async () => {
+    if (!selectedTenant) return;
+    try {
+      await updateTenantSettings(selectedTenant.id, tenantSettings);
+      toast.success("Configuración actualizada");
+      setSettingsDialogOpen(false);
+      loadData();
+    } catch (error) {
+      toast.error("Error al guardar configuración");
     }
   };
 
@@ -340,6 +415,24 @@ export default function SuperadminDashboard() {
                       <div className="flex gap-2 flex-wrap">
                         <Button
                           variant="outline" size="sm"
+                          className="rounded-lg border-green-200 text-green-600 hover:bg-green-50"
+                          onClick={() => openPasswordDialog(tenant)}
+                          data-testid={`reset-password-${tenant.id}`}
+                        >
+                          <Key className="h-4 w-4 mr-1" />
+                          Password
+                        </Button>
+                        <Button
+                          variant="outline" size="sm"
+                          className="rounded-lg border-orange-200 text-orange-600 hover:bg-orange-50"
+                          onClick={() => openSettingsDialog(tenant)}
+                          data-testid={`config-settings-${tenant.id}`}
+                        >
+                          <Settings className="h-4 w-4 mr-1" />
+                          Config
+                        </Button>
+                        <Button
+                          variant="outline" size="sm"
                           className="rounded-lg border-blue-200 text-blue-600 hover:bg-blue-50"
                           onClick={() => openTaxDialog(tenant)}
                           data-testid={`config-taxes-${tenant.id}`}
@@ -500,6 +593,176 @@ export default function SuperadminDashboard() {
                 style={{ background: '#1E3A5F', color: 'white' }}
               >
                 Guardar URL de Tracking
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Password Reset Dialog */}
+        <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+          <DialogContent className="rounded-2xl max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Key className="h-5 w-5 text-green-600" />
+                Gestionar Contraseña - {selectedTenant?.business_name}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              {loadingAdminInfo ? (
+                <div className="flex items-center justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-2 border-green-600 border-t-transparent"></div>
+                </div>
+              ) : adminInfo?.has_admin ? (
+                <>
+                  {/* Admin Info */}
+                  <div className="p-4 bg-gray-50 rounded-xl space-y-2">
+                    <p className="text-sm font-semibold text-gray-700">Información del Admin</p>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>
+                        <span className="text-gray-500">Nombre:</span>
+                        <p className="font-medium">{adminInfo.admin_name}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Email:</span>
+                        <p className="font-medium text-blue-600">{adminInfo.admin_email}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">WhatsApp:</span>
+                        <p className="font-medium">{adminInfo.admin_whatsapp || "N/A"}</p>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Última actualización:</span>
+                        <p className="font-medium">
+                          {adminInfo.password_updated_at 
+                            ? new Date(adminInfo.password_updated_at).toLocaleDateString('es-ES')
+                            : "Nunca"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* New Password */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">Nueva Contraseña</Label>
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Mínimo 6 caracteres"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="h-11 rounded-lg pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      El admin podrá usar esta contraseña para iniciar sesión con su email, slug o WhatsApp.
+                    </p>
+                  </div>
+
+                  <Button
+                    onClick={handleResetPassword}
+                    disabled={!newPassword || newPassword.length < 6}
+                    className="w-full h-11 font-bold rounded-xl"
+                    style={{ background: '#2ECC71', color: 'white' }}
+                  >
+                    <Key className="h-4 w-4 mr-2" />
+                    Actualizar Contraseña
+                  </Button>
+                </>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-gray-500">Este tenant no tiene un admin asignado.</p>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Settings Dialog */}
+        <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
+          <DialogContent className="rounded-2xl max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5 text-orange-600" />
+                Configuración - {selectedTenant?.business_name}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-6 pt-2">
+              {/* Invoice Settings */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-blue-600" />
+                  <p className="text-sm font-semibold text-gray-700">Configuración de Facturas</p>
+                </div>
+                
+                <div className="space-y-3 pl-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Mostrar Tax por Producto</p>
+                      <p className="text-xs text-gray-500">Muestra la columna de impuestos en la tabla de productos</p>
+                    </div>
+                    <Switch
+                      checked={tenantSettings.invoice_show_tax_per_item}
+                      onCheckedChange={(checked) => setTenantSettings({...tenantSettings, invoice_show_tax_per_item: checked})}
+                    />
+                  </div>
+                  
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Mostrar Resumen de Tax</p>
+                      <p className="text-xs text-gray-500">Muestra el total de impuestos al final de la factura</p>
+                    </div>
+                    <Switch
+                      checked={tenantSettings.invoice_show_tax_summary}
+                      onCheckedChange={(checked) => setTenantSettings({...tenantSettings, invoice_show_tax_summary: checked})}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <hr />
+
+              {/* Shipment Settings */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Package className="h-4 w-4 text-purple-600" />
+                  <p className="text-sm font-semibold text-gray-700">Configuración de Envíos</p>
+                </div>
+                
+                <div className="space-y-3 pl-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">Mostrar Lista de Productos</p>
+                      <p className="text-xs text-gray-500">Muestra el detalle de productos al crear un envío</p>
+                    </div>
+                    <Switch
+                      checked={tenantSettings.shipment_show_product_list}
+                      onCheckedChange={(checked) => setTenantSettings({...tenantSettings, shipment_show_product_list: checked})}
+                    />
+                  </div>
+                </div>
+                
+                <div className="p-3 bg-orange-50 rounded-xl">
+                  <p className="text-xs text-orange-800">
+                    <strong>¿Por qué mostrar la lista de productos?</strong><br/>
+                    • <strong>Activado:</strong> El admin ve qué productos va a enviar para verificar antes de crear el envío. Útil para evitar errores.<br/>
+                    • <strong>Desactivado:</strong> Vista más limpia y rápida. Ideal cuando el admin ya sabe qué productos incluye cada envío.
+                  </p>
+                </div>
+              </div>
+
+              <Button
+                onClick={handleSaveSettings}
+                className="w-full h-11 font-bold rounded-xl"
+                style={{ background: '#1E3A5F', color: 'white' }}
+              >
+                Guardar Configuración
               </Button>
             </div>
           </DialogContent>

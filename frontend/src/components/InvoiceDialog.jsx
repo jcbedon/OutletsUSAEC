@@ -371,19 +371,62 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       currentY += 12;
       
       // ========== PRODUCTS TABLE ==========
-      const tableData = (inv.purchases || []).map((p, idx) => [
-        (idx + 1).toString(),
-        p.item_name,
-        p.store,
-        `$${p.price.toFixed(2)}`,
-        `$${(p.tax || 0).toFixed(2)}`,
-        `$${(p.commission || 0).toFixed(2)}`,
-        `$${p.total.toFixed(2)}`
-      ]);
+      // Check tenant settings for tax display
+      const showTaxPerItem = tenantInfo?.invoice_show_tax_per_item !== false;
+      const showTaxSummary = tenantInfo?.invoice_show_tax_summary !== false;
+      
+      // Build table data based on settings
+      const tableData = (inv.purchases || []).map((p, idx) => {
+        if (showTaxPerItem) {
+          return [
+            (idx + 1).toString(),
+            p.item_name,
+            p.store,
+            `$${p.price.toFixed(2)}`,
+            `$${(p.tax || 0).toFixed(2)}`,
+            `$${(p.commission || 0).toFixed(2)}`,
+            `$${p.total.toFixed(2)}`
+          ];
+        } else {
+          return [
+            (idx + 1).toString(),
+            p.item_name,
+            p.store,
+            `$${p.price.toFixed(2)}`,
+            `$${(p.commission || 0).toFixed(2)}`,
+            `$${p.total.toFixed(2)}`
+          ];
+        }
+      });
+      
+      // Define headers based on settings
+      const tableHeaders = showTaxPerItem 
+        ? [["#", "Producto", "Tienda", "Precio", "Tax", "Comisión", "Total"]]
+        : [["#", "Producto", "Tienda", "Precio", "Comisión", "Total"]];
+      
+      // Define column styles based on settings
+      const columnStyles = showTaxPerItem 
+        ? {
+            0: { cellWidth: 10, halign: "center" },
+            1: { cellWidth: 52 },
+            2: { cellWidth: 25 },
+            3: { cellWidth: 22, halign: "right" },
+            4: { cellWidth: 18, halign: "right" },
+            5: { cellWidth: 22, halign: "right" },
+            6: { cellWidth: 22, halign: "right", fontStyle: "bold" }
+          }
+        : {
+            0: { cellWidth: 10, halign: "center" },
+            1: { cellWidth: 60 },
+            2: { cellWidth: 30 },
+            3: { cellWidth: 25, halign: "right" },
+            4: { cellWidth: 25, halign: "right" },
+            5: { cellWidth: 25, halign: "right", fontStyle: "bold" }
+          };
       
       autoTable(doc, {
         startY: currentY,
-        head: [["#", "Producto", "Tienda", "Precio", "Tax", "Comisión", "Total"]],
+        head: tableHeaders,
         body: tableData,
         theme: "plain",
         headStyles: {
@@ -401,15 +444,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
         alternateRowStyles: {
           fillColor: colors.white
         },
-        columnStyles: {
-          0: { cellWidth: 10, halign: "center" },
-          1: { cellWidth: 52 },
-          2: { cellWidth: 25 },
-          3: { cellWidth: 22, halign: "right" },
-          4: { cellWidth: 18, halign: "right" },
-          5: { cellWidth: 22, halign: "right" },
-          6: { cellWidth: 22, halign: "right", fontStyle: "bold" }
-        },
+        columnStyles: columnStyles,
         margin: { left: margin, right: margin },
         styles: {
           lineColor: colors.divider,
@@ -473,11 +508,14 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       doc.setTextColor(...colors.textPrimary);
       doc.text(`$${inv.subtotal.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       
-      finalY += 6;
-      doc.setTextColor(...colors.textSecondary);
-      doc.text("Impuestos:", totalsX, finalY);
-      doc.setTextColor(...colors.textPrimary);
-      doc.text(`$${inv.total_tax.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+      // Show tax summary only if configured
+      if (showTaxSummary && inv.total_tax > 0) {
+        finalY += 6;
+        doc.setTextColor(...colors.textSecondary);
+        doc.text("Impuestos:", totalsX, finalY);
+        doc.setTextColor(...colors.textPrimary);
+        doc.text(`$${inv.total_tax.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+      }
       
       finalY += 6;
       doc.setTextColor(...colors.textSecondary);
