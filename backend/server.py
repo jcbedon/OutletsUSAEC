@@ -299,13 +299,8 @@ class WalletDepositRequest(BaseModel):
 class CreateTenantRequest(BaseModel):
     business_name: str
     slug: str
-    owner_name: str
-    email: str
-    admin_name: str
-    admin_email: str
-    admin_password: str
-    admin_whatsapp: str
-    admin_country: str
+    owner_name: Optional[str] = ""
+    email: Optional[str] = ""
 
 class CreateAdminRequest(BaseModel):
     name: str
@@ -670,24 +665,49 @@ async def create_tenant(data: CreateTenantRequest, current_user: dict = Depends(
     existing = await db.tenants.find_one({"slug": slug}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Este slug ya está en uso")
-    existing_email = await db.users.find_one({"email": data.admin_email}, {"_id": 0})
-    if existing_email:
-        raise HTTPException(status_code=400, detail="Este email de admin ya está registrado")
-    tenant = Tenant(business_name=data.business_name, slug=slug, owner_name=data.owner_name, email=data.email)
+    
+    tenant = Tenant(
+        business_name=data.business_name, 
+        slug=slug, 
+        owner_name=data.owner_name or "", 
+        email=data.email or ""
+    )
     await db.tenants.insert_one(tenant.model_dump())
-    customer_id = generate_customer_id(data.admin_name)
+    
+    # Create a default admin user for this tenant
+    admin_name = data.owner_name or "Administrador"
+    admin_email = f"admin@{slug}.com"
+    customer_id = generate_customer_id(admin_name)
     while await db.users.find_one({"customer_id": customer_id}, {"_id": 0}):
-        customer_id = generate_customer_id(data.admin_name)
-    admin = User(tenant_id=tenant.id, customer_id=customer_id, referral_code=customer_id,
-        name=data.admin_name, country=data.admin_country, whatsapp=data.admin_whatsapp,
-        email=data.admin_email, password_hash=hash_password(data.admin_password), role="admin")
+        customer_id = generate_customer_id(admin_name)
+    
+    # Check if email already exists, if so, append a number
+    base_email = admin_email
+    counter = 1
+    while await db.users.find_one({"email": admin_email}, {"_id": 0}):
+        admin_email = f"admin{counter}@{slug}.com"
+        counter += 1
+    
+    admin = User(
+        tenant_id=tenant.id, 
+        customer_id=customer_id, 
+        referral_code=customer_id,
+        name=admin_name, 
+        country="", 
+        whatsapp="",
+        email=admin_email, 
+        password_hash=hash_password("temp123456"),  # Temporary password
+        role="admin"
+    )
     await db.users.insert_one(admin.model_dump())
+    
     return {
-        "message": "Tenant y admin creados",
+        "message": "Tenant creado exitosamente",
         "tenant_id": tenant.id,
         "tenant_slug": slug,
         "admin_id": admin.id,
-        "admin_email": data.admin_email
+        "admin_email": admin_email,
+        "note": "Usa el botón 'Password' para establecer la contraseña del admin"
     }
 
 @api_router.put("/superadmin/tenants/{tenant_id}")

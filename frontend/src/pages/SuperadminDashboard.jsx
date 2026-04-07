@@ -22,8 +22,7 @@ export default function SuperadminDashboard() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
-    business_name: "", slug: "", owner_name: "", email: "",
-    admin_name: "", admin_email: "", admin_password: "", admin_whatsapp: "", admin_country: ""
+    business_name: "", slug: "", owner_name: "", email: ""
   });
   
   // Tax options configuration state
@@ -75,17 +74,16 @@ export default function SuperadminDashboard() {
   };
 
   const handleCreateTenant = async () => {
-    if (!form.business_name || !form.slug || !form.admin_email || !form.admin_password) {
+    if (!form.business_name || !form.slug) {
       toast.error("Completa los campos obligatorios");
       return;
     }
     setSubmitting(true);
     try {
       await createTenant(form);
-      toast.success("Tenant y admin creados exitosamente");
+      toast.success("Tenant creado exitosamente");
       setDialogOpen(false);
-      setForm({ business_name: "", slug: "", owner_name: "", email: "",
-        admin_name: "", admin_email: "", admin_password: "", admin_whatsapp: "", admin_country: "" });
+      setForm({ business_name: "", slug: "", owner_name: "", email: "" });
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al crear tenant");
@@ -315,68 +313,42 @@ export default function SuperadminDashboard() {
                 <Plus className="h-4 w-4 mr-2" /> Nuevo Tenant
               </Button>
             </DialogTrigger>
-            <DialogContent className="rounded-2xl max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogContent className="rounded-2xl max-w-md">
               <DialogHeader>
-                <DialogTitle>Crear Nuevo Tenant + Admin</DialogTitle>
+                <DialogTitle>Crear Nuevo Tenant</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-2">
-                <p className="text-sm font-semibold text-slate-600">Datos del Negocio</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Nombre del Negocio *</Label>
-                    <Input data-testid="tenant-business-name" placeholder="Mi Tienda" className="rounded-xl mt-1"
-                      value={form.business_name} onChange={(e) => set("business_name", e.target.value)} />
-                  </div>
-                  <div>
-                    <Label>Slug (URL) *</Label>
-                    <Input data-testid="tenant-slug" placeholder="mi-tienda" className="rounded-xl mt-1"
-                      value={form.slug} onChange={(e) => set("slug", e.target.value.toLowerCase().replace(/\s+/g, "-"))} />
-                  </div>
+                <div>
+                  <Label>Nombre del Negocio *</Label>
+                  <Input data-testid="tenant-business-name" placeholder="Mi Tienda" className="rounded-xl mt-1 h-11"
+                    value={form.business_name} onChange={(e) => set("business_name", e.target.value)} />
+                </div>
+                <div>
+                  <Label>Slug (URL) *</Label>
+                  <Input data-testid="tenant-slug" placeholder="mi-tienda" className="rounded-xl mt-1 h-11"
+                    value={form.slug} onChange={(e) => set("slug", e.target.value.toLowerCase().replace(/\s+/g, "-"))} />
+                  <p className="text-xs text-gray-500 mt-1">Este slug se usará para login del admin</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Propietario</Label>
-                    <Input placeholder="Nombre" className="rounded-xl mt-1" value={form.owner_name} onChange={(e) => set("owner_name", e.target.value)} />
+                    <Input placeholder="Nombre" className="rounded-xl mt-1 h-11" value={form.owner_name} onChange={(e) => set("owner_name", e.target.value)} />
                   </div>
                   <div>
                     <Label>Email Negocio</Label>
-                    <Input type="email" placeholder="contacto@..." className="rounded-xl mt-1" value={form.email} onChange={(e) => set("email", e.target.value)} />
+                    <Input type="email" placeholder="contacto@..." className="rounded-xl mt-1 h-11" value={form.email} onChange={(e) => set("email", e.target.value)} />
                   </div>
                 </div>
 
-                <hr />
-                <p className="text-sm font-semibold text-slate-600">Admin del Tenant</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Nombre Admin *</Label>
-                    <Input data-testid="tenant-admin-name" placeholder="Admin" className="rounded-xl mt-1"
-                      value={form.admin_name} onChange={(e) => set("admin_name", e.target.value)} />
-                  </div>
-                  <div>
-                    <Label>Email Admin *</Label>
-                    <Input data-testid="tenant-admin-email" type="email" placeholder="admin@..." className="rounded-xl mt-1"
-                      value={form.admin_email} onChange={(e) => set("admin_email", e.target.value)} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Contraseña Admin *</Label>
-                    <Input data-testid="tenant-admin-password" type="password" placeholder="******" className="rounded-xl mt-1"
-                      value={form.admin_password} onChange={(e) => set("admin_password", e.target.value)} />
-                  </div>
-                  <div>
-                    <Label>WhatsApp Admin</Label>
-                    <Input placeholder="+593..." className="rounded-xl mt-1" value={form.admin_whatsapp} onChange={(e) => set("admin_whatsapp", e.target.value)} />
-                  </div>
-                </div>
-                <div>
-                  <Label>País Admin</Label>
-                  <Input placeholder="Ecuador" className="rounded-xl mt-1" value={form.admin_country} onChange={(e) => set("admin_country", e.target.value)} />
+                <div className="p-3 bg-blue-50 rounded-xl">
+                  <p className="text-xs text-blue-800">
+                    <strong>Nota:</strong> Después de crear el tenant, usa el botón <strong>"Password"</strong> para asignar credenciales de acceso al administrador del negocio.
+                  </p>
                 </div>
 
                 <Button onClick={handleCreateTenant} disabled={submitting} data-testid="submit-create-tenant-btn"
                   className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}>
-                  {submitting ? "Creando..." : "Crear Tenant + Admin"}
+                  {submitting ? "Creando..." : "Crear Tenant"}
                 </Button>
               </div>
             </DialogContent>
