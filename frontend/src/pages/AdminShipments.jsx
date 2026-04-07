@@ -157,7 +157,12 @@ export default function AdminShipments() {
   };
 
   const handleCreateShipment = async () => {
-    if (!selectedClient || selectedPurchases.length === 0 || !shipmentForm.shipping_type || !shipmentForm.address || !shipmentForm.shipping_cost) {
+    // When product list is hidden, use all pending purchases
+    const purchasesToSend = tenantSettings.shipment_show_product_list 
+      ? selectedPurchases 
+      : pendingPurchases.map(p => p.id);
+    
+    if (!selectedClient || purchasesToSend.length === 0 || !shipmentForm.shipping_type || !shipmentForm.address || !shipmentForm.shipping_cost) {
       toast.error("Completa todos los campos requeridos");
       return;
     }
@@ -173,7 +178,7 @@ export default function AdminShipments() {
     try {
       const response = await createShipment({
         user_id: selectedClient.id,
-        purchase_ids: selectedPurchases,
+        purchase_ids: purchasesToSend,
         shipping_type: shipmentForm.shipping_type,
         shipping_cost: cost,
         weight_pounds: weight,
@@ -629,7 +634,7 @@ export default function AdminShipments() {
                     <Button
                       onClick={handleCreateShipment}
                       className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
-                      disabled={selectedPurchases.length === 0}
+                      disabled={tenantSettings.shipment_show_product_list ? selectedPurchases.length === 0 : pendingPurchases.length === 0}
                       data-testid="submit-shipment-btn"
                     >
                       <Truck className="h-5 w-5 mr-2" />
