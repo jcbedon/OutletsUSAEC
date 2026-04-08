@@ -154,8 +154,10 @@ export default function AdminLive() {
     }).catch(() => {});
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (preserveSelection = false) => {
     try {
+      const currentSelectedId = selectedLive?.id; // Preserve current selection
+      
       const [activeLiveRes, livesRes, clientsRes] = await Promise.all([
         getActiveLive(),
         getLives(),
@@ -166,7 +168,18 @@ export default function AdminLive() {
       setLives(livesRes.data);
       setActiveClients(clientsRes.data);
 
-      // If there's an active live, select it by default
+      // If preserveSelection is true and we had a selected live, keep it
+      if (preserveSelection && currentSelectedId) {
+        const updatedLive = livesRes.data.find(l => l.id === currentSelectedId);
+        if (updatedLive) {
+          setSelectedLive(updatedLive);
+          const purchasesRes = await getLivePurchases(currentSelectedId);
+          setPurchases(purchasesRes.data);
+          return;
+        }
+      }
+
+      // Otherwise, if there's an active live, select it by default
       if (activeLiveRes.data) {
         setSelectedLive(activeLiveRes.data);
         const purchasesRes = await getLivePurchases(activeLiveRes.data.id);
@@ -455,7 +468,7 @@ export default function AdminLive() {
       await updatePurchase(purchaseId, data);
       toast.success("Compra actualizada");
       setEditingPurchase(null);
-      loadData();
+      loadData(true); // Preserve selection to stay on current Live
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al editar");
     }
@@ -465,7 +478,7 @@ export default function AdminLive() {
     try {
       await deletePurchase(purchaseId);
       toast.success("Compra eliminada y saldo reembolsado");
-      loadData();
+      loadData(true); // Preserve selection to stay on current Live
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al eliminar");
     }

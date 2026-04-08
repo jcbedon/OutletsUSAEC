@@ -49,12 +49,17 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] Admin: Create clients with custom commission + initial balance
 - [x] Admin: Client management (search, edit commission)
 - [x] Admin: Search filter by name, initials, ID, WhatsApp
+- [x] **NEW: Duplicate Detection (Apr 8, 2026)** - Warns when creating client with existing WhatsApp, email, or name
+- [x] **NEW: Active/Inactive Tabs (Apr 8, 2026)** - Separate views for active and disabled clients
+- [x] **NEW: Inhabilitar/Habilitar Clients (Apr 8, 2026)** - Toggle client status without deleting
+- [x] **NEW: Admin-only Delete (Apr 8, 2026)** - Only tenant admin can delete clients, employees blocked with 403
 
 ### Live Shopping & Purchases
 - [x] Admin: Live shopping session CRUD
 - [x] Admin: Purchase registration with tax + commission calc
 - [x] **Tax radio buttons**: 8.25% (Illinois), 15% (Custom), Sin Tax (Feb 22, 2026)
 - [x] Admin: Edit/Delete purchases from Live module
+- [x] **FIX: Edit purchase stays on same Live (Apr 8, 2026)** - Previously navigated away after saving
 - [x] Commission set per-purchase (not per-client) for new purchases
 - [x] Client autocomplete in Live Shopping module
 - [x] Dynamic tax configuration per tenant (SuperAdmin)
