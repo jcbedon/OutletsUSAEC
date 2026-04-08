@@ -82,6 +82,7 @@ class User(BaseModel):
     whatsapp_consent: bool = False
     password_hash: str
     role: str = "client"
+    is_active: bool = True
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class Wallet(BaseModel):
@@ -913,11 +914,19 @@ async def upload_tenant_logo(file: UploadFile = File(...), current_user: dict = 
 # ==================== ADMIN CLIENT ENDPOINTS ====================
 
 @api_router.get("/admin/clients")
-async def get_all_clients(current_user: dict = Depends(get_current_user)):
+async def get_all_clients(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
-    users = await db.users.find({"role": "client", "tenant_id": tid}, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(1000)
+    
+    # Build query based on status filter
+    query = {"role": "client", "tenant_id": tid}
+    if status == "active":
+        query["$or"] = [{"is_active": True}, {"is_active": {"$exists": False}}]
+    elif status == "inactive":
+        query["is_active"] = False
+    
+    users = await db.users.find(query, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(1000)
     
     if not users:
         return []
@@ -957,7 +966,8 @@ async def get_all_clients(current_user: dict = Depends(get_current_user)):
             "total_purchases": round(purch["total"], 2),
             "total_shipping": round(total_shipping, 2),
             "pending_balance": round(pending_balance, 2),
-            "purchase_count": purch["count"]
+            "purchase_count": purch["count"],
+            "is_active": user.get("is_active", True)
         })
     return result
 
@@ -966,16 +976,25 @@ async def admin_create_client(data: AdminClientCreate, current_user: dict = Depe
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
-    existing = await db.users.find_one({"whatsapp": data.whatsapp, "tenant_id": tid}, {"_id": 0})
-    if existing:
-        raise HTTPException(status_code=400, detail="Ya existe un usuario con este WhatsApp")
+    
+    # Check for existing client with same WhatsApp
+    existing_whatsapp = await db.users.find_one({"whatsapp": data.whatsapp, "tenant_id": tid, "role": "client"}, {"_id": 0})
+    if existing_whatsapp:
+        raise HTTPException(status_code=400, detail=f"Ya existe un cliente con este WhatsApp: {existing_whatsapp['name']} ({existing_whatsapp['customer_id']})")
+    
+    # Check for existing client with same email
+    if data.email:
+        existing_email = await db.users.find_one({"email": data.email, "tenant_id": tid, "role": "client"}, {"_id": 0})
+        if existing_email:
+            raise HTTPException(status_code=400, detail=f"Ya existe un cliente con este email: {existing_email['name']} ({existing_email['customer_id']})")
+    
     customer_id = generate_customer_id(data.name)
     while await db.users.find_one({"customer_id": customer_id, "tenant_id": tid}, {"_id": 0}):
         customer_id = generate_customer_id(data.name)
     user = User(tenant_id=tid, customer_id=customer_id, referral_code=customer_id,
         commission_fee=data.commission_fee, name=data.name, country=data.country,
         whatsapp=data.whatsapp, email=data.email, whatsapp_consent=True,
-        password_hash=hash_password(data.password), role="client")
+        password_hash=hash_password(data.password), role="client", is_active=True)
     await db.users.insert_one(user.model_dump())
     wallet = Wallet(tenant_id=tid, user_id=user.id, customer_id=customer_id, available=data.initial_balance)
     await db.wallets.insert_one(wallet.model_dump())
@@ -987,6 +1006,91 @@ async def admin_create_client(data: AdminClientCreate, current_user: dict = Depe
         await db.wallet_transactions.insert_one(tx.model_dump())
     return {"message": "Cliente creado exitosamente", "user_id": user.id, "customer_id": customer_id,
         "commission_fee": data.commission_fee, "initial_balance": data.initial_balance}
+
+@api_router.post("/admin/clients/check-duplicate")
+async def check_client_duplicate(data: dict, current_user: dict = Depends(get_current_user)):
+    """Check if a similar client already exists"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    duplicates = []
+    
+    # Check by WhatsApp
+    if data.get("whatsapp"):
+        existing = await db.users.find_one(
+            {"whatsapp": data["whatsapp"], "tenant_id": tid, "role": "client"}, 
+            {"_id": 0, "password_hash": 0}
+        )
+        if existing:
+            duplicates.append({"field": "whatsapp", "client": existing})
+    
+    # Check by email
+    if data.get("email"):
+        existing = await db.users.find_one(
+            {"email": data["email"], "tenant_id": tid, "role": "client"}, 
+            {"_id": 0, "password_hash": 0}
+        )
+        if existing:
+            duplicates.append({"field": "email", "client": existing})
+    
+    # Check by similar name (case insensitive)
+    if data.get("name"):
+        name_lower = data["name"].lower().strip()
+        all_clients = await db.users.find(
+            {"tenant_id": tid, "role": "client"}, 
+            {"_id": 0, "password_hash": 0}
+        ).to_list(1000)
+        for client in all_clients:
+            if client["name"].lower().strip() == name_lower:
+                duplicates.append({"field": "name", "client": client})
+                break
+    
+    return {"has_duplicates": len(duplicates) > 0, "duplicates": duplicates}
+
+@api_router.put("/admin/clients/{user_id}/toggle-status")
+async def toggle_client_status(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Enable/disable a client"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    client = await db.users.find_one({"id": user_id, "tenant_id": tid, "role": "client"}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    new_status = not client.get("is_active", True)
+    await db.users.update_one(
+        {"id": user_id, "tenant_id": tid},
+        {"$set": {"is_active": new_status}}
+    )
+    
+    status_text = "habilitado" if new_status else "inhabilitado"
+    return {"message": f"Cliente {status_text} exitosamente", "is_active": new_status}
+
+@api_router.delete("/admin/clients/{user_id}")
+async def delete_client(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a client - ONLY admin can delete, not employees"""
+    # Only admin can delete clients, NOT employees
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo el administrador puede eliminar clientes")
+    tid = current_user["tenant_id"]
+    
+    client = await db.users.find_one({"id": user_id, "tenant_id": tid, "role": "client"}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    # Only allow deletion of inactive clients
+    if client.get("is_active", True):
+        raise HTTPException(status_code=400, detail="Solo puedes eliminar clientes inhabilitados. Primero inhabilita al cliente.")
+    
+    # Delete client and related data
+    await db.users.delete_one({"id": user_id, "tenant_id": tid})
+    await db.wallets.delete_one({"user_id": user_id, "tenant_id": tid})
+    await db.wallet_transactions.delete_many({"user_id": user_id, "tenant_id": tid})
+    # Note: Purchases and shipments are kept for historical records
+    
+    return {"message": "Cliente eliminado exitosamente", "deleted_id": user_id}
 
 @api_router.get("/admin/clients/active")
 async def get_active_clients(current_user: dict = Depends(get_current_user)):

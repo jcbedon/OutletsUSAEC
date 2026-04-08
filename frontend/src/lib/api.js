@@ -90,9 +90,12 @@ export const uploadShipmentAttachment = (shipmentId, file) => {
 export const getUserNotifications = (userId) => api.get(`/notifications/${userId}`);
 
 // Admin
-export const getAllClients = () => api.get("/admin/clients");
+export const getAllClients = (status) => api.get("/admin/clients", { params: { status } });
 export const getActiveClients = () => api.get("/admin/clients/active");
 export const createClient = (data) => api.post("/admin/clients/create", data);
+export const checkClientDuplicate = (data) => api.post("/admin/clients/check-duplicate", data);
+export const toggleClientStatus = (userId) => api.put(`/admin/clients/${userId}/toggle-status`);
+export const deleteClient = (userId) => api.delete(`/admin/clients/${userId}`);
 export const updateClientCommission = (userId, commissionFee) =>
   api.put(`/admin/clients/${userId}/commission?commission_fee=${commissionFee}`);
 export const updateClient = (userId, data) => api.put(`/admin/clients/${userId}`, data);

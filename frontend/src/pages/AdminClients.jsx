@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant } from "@/lib/api";
+import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,16 +10,20 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText, UserX, Trash2, AlertTriangle, UserCheck } from "lucide-react";
 import InvoiceDialog from "@/components/InvoiceDialog";
 
 export default function AdminClients() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [clients, setClients] = useState([]);
+  const [inactiveClients, setInactiveClients] = useState([]);
   const [filteredClients, setFilteredClients] = useState([]);
+  const [filteredInactiveClients, setFilteredInactiveClients] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("active");
   const [editingClient, setEditingClient] = useState(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -31,6 +35,9 @@ export default function AdminClients() {
     name: "", country: "", whatsapp: "", email: "", password: "",
     commission_fee: 3, initial_balance: 0
   });
+  const [duplicateWarning, setDuplicateWarning] = useState(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState(null);
   
   // Invoice dialog state
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
@@ -38,6 +45,7 @@ export default function AdminClients() {
   const [tenantInfo, setTenantInfo] = useState(null);
 
   const logoUrl = user?.tenant_logo || "";
+  const isAdmin = user?.role === "admin";
   
   // Default tenant info from user context (fallback)
   const defaultTenantInfo = {
@@ -70,30 +78,35 @@ export default function AdminClients() {
   useEffect(() => {
     if (search) {
       const searchTerms = search.toLowerCase().trim().split(/\s+/);
-      setFilteredClients(clients.filter(c => {
+      const filterFn = (c) => {
         const name = c.name?.toLowerCase() || "";
         const customerId = c.customer_id?.toLowerCase() || "";
         const whatsapp = c.whatsapp || "";
-        
-        // Buscar cada término en nombre, ID o WhatsApp
         return searchTerms.every(term => 
           name.includes(term) ||
           customerId.includes(term) ||
           whatsapp.includes(term) ||
-          // Buscar por iniciales (primera letra de cada palabra del nombre)
           name.split(/\s+/).some(word => word.startsWith(term))
         );
-      }));
+      };
+      setFilteredClients(clients.filter(filterFn));
+      setFilteredInactiveClients(inactiveClients.filter(filterFn));
     } else {
       setFilteredClients(clients);
+      setFilteredInactiveClients(inactiveClients);
     }
-  }, [search, clients]);
+  }, [search, clients, inactiveClients]);
 
   const loadClients = async () => {
     try {
-      const response = await getAllClients();
-      setClients(response.data);
-      setFilteredClients(response.data);
+      const [activeRes, inactiveRes] = await Promise.all([
+        getAllClients("active"),
+        getAllClients("inactive")
+      ]);
+      setClients(activeRes.data);
+      setFilteredClients(activeRes.data);
+      setInactiveClients(inactiveRes.data);
+      setFilteredInactiveClients(inactiveRes.data);
     } catch (error) {
       toast.error("Error al cargar clientes");
     } finally {
@@ -144,6 +157,25 @@ export default function AdminClients() {
 
   const setEdit = (key, val) => setEditForm({ ...editForm, [key]: val });
 
+  // Check for duplicate clients before creating
+  const checkForDuplicates = async () => {
+    if (!newClient.name && !newClient.whatsapp && !newClient.email) return;
+    try {
+      const res = await checkClientDuplicate({
+        name: newClient.name,
+        whatsapp: newClient.whatsapp,
+        email: newClient.email
+      });
+      if (res.data.has_duplicates) {
+        setDuplicateWarning(res.data.duplicates);
+      } else {
+        setDuplicateWarning(null);
+      }
+    } catch (error) {
+      console.error("Error checking duplicates:", error);
+    }
+  };
+
   const handleCreateClient = async () => {
     if (!newClient.name || !newClient.whatsapp || !newClient.password) {
       toast.error("Completa nombre, WhatsApp y contraseña");
@@ -155,11 +187,40 @@ export default function AdminClients() {
       toast.success(`Cliente creado: #${res.data.customer_id}`);
       setCreateDialogOpen(false);
       setNewClient({ name: "", country: "", whatsapp: "", email: "", password: "", commission_fee: 3, initial_balance: 0 });
+      setDuplicateWarning(null);
       loadClients();
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al crear cliente");
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleToggleClientStatus = async (client) => {
+    try {
+      await toggleClientStatus(client.id);
+      toast.success(client.is_active ? "Cliente inhabilitado" : "Cliente habilitado");
+      loadClients();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al cambiar estado");
+    }
+  };
+
+  const openDeleteConfirm = (client) => {
+    setClientToDelete(client);
+    setDeleteConfirmOpen(true);
+  };
+
+  const handleDeleteClient = async () => {
+    if (!clientToDelete) return;
+    try {
+      await deleteClient(clientToDelete.id);
+      toast.success("Cliente eliminado");
+      setDeleteConfirmOpen(false);
+      setClientToDelete(null);
+      loadClients();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al eliminar cliente");
     }
   };
 
