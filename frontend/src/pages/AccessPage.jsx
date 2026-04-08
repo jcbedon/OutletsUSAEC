@@ -64,8 +64,8 @@ export default function AccessPage() {
   }, [token, login, navigate]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
-      <div className="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full mx-4 text-center">
+    <div className="app-bg min-h-screen flex items-center justify-center">
+      <div className="bg-white/95 backdrop-blur-sm p-8 rounded-2xl shadow-xl max-w-md w-full mx-4 text-center">
         {status === "verifying" && (
           <>
             <Loader2 className="h-16 w-16 text-blue-600 animate-spin mx-auto mb-4" />

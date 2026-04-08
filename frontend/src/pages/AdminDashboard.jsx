@@ -101,9 +101,9 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="app-bg min-h-screen">
       {/* Header */}
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
+      <div className="bg-white/90 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-white rounded-lg p-1">
