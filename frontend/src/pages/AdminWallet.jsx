@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, getAllClients } from "@/lib/api";
+import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search } from "lucide-react";
+import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, ImageIcon } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -38,6 +38,17 @@ export default function AdminWallet() {
   const [adjustReason, setAdjustReason] = useState("");
   const [adjusting, setAdjusting] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
+
+  // Crear recarga state
+  const [rechargeDialogOpen, setRechargeDialogOpen] = useState(false);
+  const [rechargeClient, setRechargeClient] = useState("");
+  const [rechargeAmount, setRechargeAmount] = useState("");
+  const [rechargeDescription, setRechargeDescription] = useState("");
+  const [rechargeProof, setRechargeProof] = useState(null);
+  const [rechargeProofPreview, setRechargeProofPreview] = useState(null);
+  const [creatingRecharge, setCreatingRecharge] = useState(false);
+  const [rechargeClientSearch, setRechargeClientSearch] = useState("");
+  const rechargeFileInputRef = useRef(null);
 
   useEffect(() => { 
     loadData(); 
@@ -116,6 +127,66 @@ export default function AdminWallet() {
     }
   };
 
+  const handleRechargeProofChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("El archivo es demasiado grande. Máximo 10MB");
+        return;
+      }
+      setRechargeProof(file);
+      const reader = new FileReader();
+      reader.onload = (e) => setRechargeProofPreview(e.target.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleCreateRecharge = async () => {
+    if (!rechargeClient) {
+      toast.error("Selecciona un cliente");
+      return;
+    }
+    if (!rechargeAmount || parseFloat(rechargeAmount) <= 0) {
+      toast.error("Ingresa un monto válido mayor a 0");
+      return;
+    }
+    if (!rechargeProof) {
+      toast.error("El comprobante es obligatorio");
+      return;
+    }
+    
+    setCreatingRecharge(true);
+    try {
+      const formData = new FormData();
+      formData.append("user_id", rechargeClient);
+      formData.append("amount", parseFloat(rechargeAmount));
+      formData.append("description", rechargeDescription || "Recarga creada por administrador");
+      formData.append("proof", rechargeProof);
+      
+      await adminCreateRecharge(formData);
+      toast.success("Recarga creada exitosamente");
+      setRechargeDialogOpen(false);
+      resetRechargeForm();
+      loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al crear la recarga");
+    } finally {
+      setCreatingRecharge(false);
+    }
+  };
+
+  const resetRechargeForm = () => {
+    setRechargeClient("");
+    setRechargeAmount("");
+    setRechargeDescription("");
+    setRechargeProof(null);
+    setRechargeProofPreview(null);
+    setRechargeClientSearch("");
+    if (rechargeFileInputRef.current) {
+      rechargeFileInputRef.current.value = "";
+    }
+  };
+
   const getProofUrl = (deposit) => {
     if (!deposit.proof_url) return null;
     if (deposit.proof_url.startsWith("http")) return deposit.proof_url;
@@ -148,6 +219,14 @@ export default function AdminWallet() {
       clientSearch === "" || 
       c.name?.toLowerCase().includes(clientSearch.toLowerCase()) ||
       c.customer_id?.toLowerCase().includes(clientSearch.toLowerCase())
+    )
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const filteredRechargeClients = clients
+    .filter(c => 
+      rechargeClientSearch === "" || 
+      c.name?.toLowerCase().includes(rechargeClientSearch.toLowerCase()) ||
+      c.customer_id?.toLowerCase().includes(rechargeClientSearch.toLowerCase())
     )
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -319,6 +398,152 @@ export default function AdminWallet() {
                     <>
                       <Minus className="h-4 w-4 mr-2" />
                       Confirmar Ajuste
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Crear Recarga Dialog */}
+          <Dialog open={rechargeDialogOpen} onOpenChange={(open) => {
+            setRechargeDialogOpen(open);
+            if (!open) resetRechargeForm();
+          }}>
+            <DialogTrigger asChild>
+              <Button className="rounded-xl bg-green-600 hover:bg-green-700" data-testid="create-recharge-btn">
+                <Plus className="h-4 w-4 mr-2" />
+                Crear Recarga
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="rounded-2xl max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-green-600" />
+                  Crear Recarga Manual
+                </DialogTitle>
+                <DialogDescription>
+                  Crea una recarga directa para un cliente. El comprobante es obligatorio.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                {/* Cliente selector */}
+                <div className="space-y-2">
+                  <Label>Cliente <span className="text-red-500">*</span></Label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input 
+                      placeholder="Buscar cliente..."
+                      value={rechargeClientSearch}
+                      onChange={(e) => setRechargeClientSearch(e.target.value)}
+                      className="pl-9 rounded-xl mb-2"
+                      data-testid="recharge-client-search-input"
+                    />
+                  </div>
+                  <Select value={rechargeClient} onValueChange={setRechargeClient}>
+                    <SelectTrigger className="rounded-xl" data-testid="recharge-select-client-trigger">
+                      <SelectValue placeholder="Seleccionar cliente" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-60">
+                      {filteredRechargeClients.map(client => (
+                        <SelectItem key={client.id} value={client.id} data-testid={`recharge-client-option-${client.customer_id}`}>
+                          <span className="font-medium">{client.name}</span>
+                          <span className="text-gray-500 ml-2">#{client.customer_id}</span>
+                          <span className="text-green-600 ml-2">${client.wallet_balance?.toFixed(2)}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Monto */}
+                <div className="space-y-2">
+                  <Label>Monto a recargar ($) <span className="text-red-500">*</span></Label>
+                  <Input 
+                    type="number" 
+                    step="0.01"
+                    min="0.01"
+                    placeholder="0.00"
+                    value={rechargeAmount}
+                    onChange={(e) => setRechargeAmount(e.target.value)}
+                    className="rounded-xl"
+                    data-testid="recharge-amount-input"
+                  />
+                </div>
+
+                {/* Descripción */}
+                <div className="space-y-2">
+                  <Label>Descripción (opcional)</Label>
+                  <Textarea 
+                    placeholder="Ej: Transferencia bancaria, Zelle, etc."
+                    value={rechargeDescription}
+                    onChange={(e) => setRechargeDescription(e.target.value)}
+                    className="rounded-xl min-h-[60px]"
+                    data-testid="recharge-description-input"
+                  />
+                </div>
+
+                {/* Comprobante - Obligatorio */}
+                <div className="space-y-2">
+                  <Label>Comprobante de Pago <span className="text-red-500">*</span></Label>
+                  <div 
+                    className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${
+                      rechargeProofPreview ? 'border-green-300 bg-green-50' : 'border-gray-300 hover:border-green-400 hover:bg-green-50/50'
+                    }`}
+                    onClick={() => rechargeFileInputRef.current?.click()}
+                  >
+                    <input
+                      ref={rechargeFileInputRef}
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={handleRechargeProofChange}
+                      className="hidden"
+                      data-testid="recharge-proof-input"
+                    />
+                    {rechargeProofPreview ? (
+                      <div className="space-y-2">
+                        <img 
+                          src={rechargeProofPreview} 
+                          alt="Vista previa" 
+                          className="max-h-32 mx-auto rounded-lg object-contain"
+                        />
+                        <p className="text-sm text-green-600 font-medium flex items-center justify-center gap-1">
+                          <CheckCircle className="h-4 w-4" />
+                          {rechargeProof?.name}
+                        </p>
+                        <p className="text-xs text-gray-500">Clic para cambiar</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 py-4">
+                        <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto">
+                          <Upload className="h-6 w-6 text-gray-400" />
+                        </div>
+                        <p className="text-sm text-gray-600 font-medium">Subir comprobante</p>
+                        <p className="text-xs text-gray-400">JPG, PNG, PDF - Máx 10MB</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <DialogFooter className="gap-2">
+                <DialogClose asChild>
+                  <Button variant="outline" className="rounded-xl">Cancelar</Button>
+                </DialogClose>
+                <Button 
+                  onClick={handleCreateRecharge}
+                  disabled={creatingRecharge || !rechargeClient || !rechargeAmount || !rechargeProof}
+                  className="rounded-xl bg-green-600 hover:bg-green-700"
+                  data-testid="confirm-recharge-btn"
+                >
+                  {creatingRecharge ? (
+                    <span className="flex items-center gap-2">
+                      <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+                      Creando...
+                    </span>
+                  ) : (
+                    <>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Crear Recarga
                     </>
                   )}
                 </Button>

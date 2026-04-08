@@ -1412,6 +1412,116 @@ async def admin_balance_adjustment(data: AdminBalanceAdjustment, current_user: d
     
     return {"message": "Ajuste realizado", "new_balance": new_balance, "amount_deducted": data.amount}
 
+@api_router.post("/wallet/admin-recharge")
+async def admin_create_recharge(
+    user_id: str = FastAPIForm(...),
+    amount: float = FastAPIForm(...),
+    description: str = FastAPIForm(None),
+    proof: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Admin creates a recharge directly for a client with mandatory proof screenshot.
+    This immediately credits the client's wallet and logs to audit.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    # Check employee permissions
+    if current_user["role"] == "employee":
+        employee = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+        if not employee or not employee.get("permissions", {}).get("approve_recharges"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para crear recargas")
+    
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
+    
+    # Validate user exists
+    user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    wallet = await db.wallets.find_one({"user_id": user_id, "tenant_id": tid}, {"_id": 0})
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Wallet no encontrada")
+    
+    # Save proof file (mandatory)
+    if not proof or not proof.filename:
+        raise HTTPException(status_code=400, detail="El comprobante es obligatorio")
+    
+    ext = proof.filename.split(".")[-1].lower()
+    if ext not in ["jpg", "jpeg", "png", "gif", "webp", "pdf"]:
+        raise HTTPException(status_code=400, detail="Formato de archivo no soportado. Use: jpg, jpeg, png, gif, webp, pdf")
+    
+    filename = f"proof_{uuid.uuid4().hex[:8]}.{ext}"
+    file_path = f"uploads/{filename}"
+    with open(file_path, "wb") as f:
+        f.write(await proof.read())
+    proof_url = f"/api/uploads/{filename}"
+    
+    # Update wallet balance immediately
+    new_balance = wallet["available"] + amount
+    await db.wallets.update_one(
+        {"user_id": user_id, "tenant_id": tid},
+        {"$set": {"available": new_balance, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    # Create transaction with "approved" status directly
+    tx = WalletTransaction(
+        tenant_id=tid,
+        user_id=user_id,
+        customer_id=user["customer_id"],
+        type="deposit",
+        amount=amount,
+        balance_after=new_balance,
+        description=description or "Recarga creada por administrador",
+        status="approved",
+        approved_at=datetime.now(timezone.utc).isoformat()
+    )
+    tx_dict = tx.model_dump()
+    tx_dict["proof_url"] = proof_url
+    tx_dict["created_by_admin"] = True
+    await db.wallet_transactions.insert_one(tx_dict)
+    
+    # Create notification for client
+    await create_notification(
+        tid, user_id, user["customer_id"], "wallet_credited",
+        "Recarga Acreditada",
+        f"Se ha acreditado ${amount:.2f} USD a tu cuenta. Nuevo saldo: ${new_balance:.2f} USD"
+    )
+    
+    # Get actor name for audit
+    actor = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0})
+    if not actor:
+        actor = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+    actor_name = actor["name"] if actor else "Administrador"
+    
+    # Audit log
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=actor_name,
+        user_role=current_user["role"],
+        action="create_recharge",
+        entity_type="wallet_transaction",
+        entity_id=tx.id,
+        entity_name=f"{user['name']} ({user['customer_id']})",
+        details={
+            "amount": amount,
+            "description": description or "Recarga creada por administrador",
+            "new_balance": new_balance,
+            "proof_url": proof_url
+        }
+    )
+    
+    return {
+        "message": "Recarga creada exitosamente",
+        "transaction_id": tx.id,
+        "new_balance": new_balance,
+        "amount_credited": amount
+    }
+
 # ==================== LIVE SHOPPING ENDPOINTS ====================
 
 @api_router.post("/lives")
