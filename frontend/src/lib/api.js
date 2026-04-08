@@ -53,6 +53,7 @@ export const getPendingDeposits = () => api.get("/wallet/pending-deposits");
 
 // Lives
 export const createLive = (data) => api.post("/lives", data);
+export const updateLive = (liveId, data) => api.put(`/lives/${liveId}`, data);
 export const startLive = (liveId) => api.post(`/lives/${liveId}/start`);
 export const endLive = (liveId) => api.post(`/lives/${liveId}/end`);
 export const getLives = (status) => api.get("/lives", { params: { status } });

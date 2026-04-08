@@ -1361,6 +1361,29 @@ async def get_live(live_id: str, current_user: dict = Depends(get_current_user))
         raise HTTPException(status_code=404, detail="Live no encontrado")
     return live
 
+@api_router.put("/lives/{live_id}")
+async def update_live(live_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update live title and store"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    live = await db.lives.find_one({"id": live_id, "tenant_id": tid}, {"_id": 0})
+    if not live:
+        raise HTTPException(status_code=404, detail="Live no encontrado")
+    
+    update_fields = {}
+    if "title" in data and data["title"]:
+        update_fields["title"] = data["title"].strip()
+    if "store" in data and data["store"]:
+        update_fields["store"] = data["store"].strip()
+    
+    if update_fields:
+        await db.lives.update_one({"id": live_id, "tenant_id": tid}, {"$set": update_fields})
+    
+    updated_live = await db.lives.find_one({"id": live_id, "tenant_id": tid}, {"_id": 0})
+    return updated_live
+
 # ==================== PURCHASE ENDPOINTS ====================
 
 CUSTOM_TAX_RATE = 0.15  # 15% custom tax

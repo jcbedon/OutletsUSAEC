@@ -3,6 +3,7 @@ import { useAuth } from "@/App";
 import { useNavigate } from "react-router-dom";
 import { 
   createLive, 
+  updateLive,
   startLive, 
   endLive, 
   getActiveLive, 
@@ -74,6 +75,10 @@ export default function AdminLive() {
   const [newLiveTitle, setNewLiveTitle] = useState("");
   const [newLiveStore, setNewLiveStore] = useState("");
   const [createLiveDialogOpen, setCreateLiveDialogOpen] = useState(false);
+  
+  // Edit Live state
+  const [editLiveDialogOpen, setEditLiveDialogOpen] = useState(false);
+  const [editLiveForm, setEditLiveForm] = useState({ title: "", store: "" });
   
   // Redirect if no permission
   useEffect(() => {
@@ -222,6 +227,42 @@ export default function AdminLive() {
       }
     } catch (error) {
       toast.error("Error al iniciar Live");
+    }
+  };
+
+  const openEditLiveDialog = () => {
+    if (selectedLive) {
+      setEditLiveForm({
+        title: selectedLive.title || "",
+        store: selectedLive.store || ""
+      });
+      setEditLiveDialogOpen(true);
+    }
+  };
+
+  const handleUpdateLive = async () => {
+    if (!selectedLive) return;
+    if (!editLiveForm.title.trim()) {
+      toast.error("El título es requerido");
+      return;
+    }
+    try {
+      await updateLive(selectedLive.id, editLiveForm);
+      toast.success("Live actualizado");
+      setEditLiveDialogOpen(false);
+      // Reload lives
+      const livesRes = await getLives();
+      setLives(livesRes.data);
+      // Update selected live
+      const updatedLive = livesRes.data.find(l => l.id === selectedLive.id);
+      if (updatedLive) {
+        setSelectedLive(updatedLive);
+        if (activeLive?.id === updatedLive.id) {
+          setActiveLive(updatedLive);
+        }
+      }
+    } catch (error) {
+      toast.error("Error al actualizar Live");
     }
   };
 
@@ -673,6 +714,15 @@ export default function AdminLive() {
                         <ArrowLeft className="h-4 w-4 mr-1" />
                         Volver
                       </Button>
+                      <Button 
+                        onClick={openEditLiveDialog}
+                        variant="outline"
+                        className="border-white/30 text-white hover:bg-white/10"
+                        data-testid="edit-live-btn"
+                      >
+                        <Edit className="h-4 w-4 mr-1" />
+                        Editar
+                      </Button>
                       {selectedLive.status === "active" && (
                         <Button 
                           onClick={handleEndLive}
@@ -1111,6 +1161,57 @@ export default function AdminLive() {
             </div>
           </div>
         )}
+
+        {/* Edit Live Dialog */}
+        <Dialog open={editLiveDialogOpen} onOpenChange={setEditLiveDialogOpen}>
+          <DialogContent className="rounded-2xl max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Edit className="h-5 w-5 text-blue-600" />
+                Editar Live
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <div>
+                <Label className="text-sm font-semibold">Título del Live *</Label>
+                <Input
+                  placeholder="Ej: Live de Navidad"
+                  value={editLiveForm.title}
+                  onChange={(e) => setEditLiveForm({...editLiveForm, title: e.target.value})}
+                  className="mt-1 h-11 rounded-xl"
+                  data-testid="edit-live-title"
+                />
+              </div>
+              <div>
+                <Label className="text-sm font-semibold">Tienda</Label>
+                <Input
+                  placeholder="Ej: Amazon, Target, Walmart"
+                  value={editLiveForm.store}
+                  onChange={(e) => setEditLiveForm({...editLiveForm, store: e.target.value})}
+                  className="mt-1 h-11 rounded-xl"
+                  data-testid="edit-live-store"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setEditLiveDialogOpen(false)}
+                  className="flex-1 h-11 rounded-xl"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleUpdateLive}
+                  className="flex-1 h-11 rounded-xl font-bold"
+                  style={{ background: '#1E3A5F', color: 'white' }}
+                  data-testid="save-edit-live-btn"
+                >
+                  Guardar Cambios
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
