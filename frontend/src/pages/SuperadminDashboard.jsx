@@ -10,8 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Switch } from "@/components/ui/switch";
-import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Settings, Percent, X, Link, Truck, Key, Eye, EyeOff, FileText, Package } from "lucide-react";
+import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Percent, X, Link, Truck, Key, Eye, EyeOff, FileText, Package } from "lucide-react";
 
 export default function SuperadminDashboard() {
   const { user, logout } = useAuth();
@@ -396,12 +395,12 @@ export default function SuperadminDashboard() {
                         </Button>
                         <Button
                           variant="outline" size="sm"
-                          className="rounded-lg border-orange-200 text-orange-600 hover:bg-orange-50"
+                          className="rounded-lg border-blue-200 text-blue-600 hover:bg-blue-50"
                           onClick={() => openSettingsDialog(tenant)}
                           data-testid={`config-settings-${tenant.id}`}
                         >
-                          <Settings className="h-4 w-4 mr-1" />
-                          Config
+                          <FileText className="h-4 w-4 mr-1" />
+                          Factura
                         </Button>
                         <Button
                           variant="outline" size="sm"
@@ -656,44 +655,65 @@ export default function SuperadminDashboard() {
           </DialogContent>
         </Dialog>
 
-        {/* Settings Dialog */}
+        {/* Invoice Settings Dialog */}
         <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
           <DialogContent className="rounded-2xl max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Settings className="h-5 w-5 text-orange-600" />
-                Configuración - {selectedTenant?.business_name}
+                <FileText className="h-5 w-5 text-blue-600" />
+                Configuración de Factura - {selectedTenant?.business_name}
               </DialogTitle>
             </DialogHeader>
-            <div className="space-y-6 pt-2">
+            <div className="space-y-5 pt-2">
               {/* Invoice Settings */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-blue-600" />
-                  <p className="text-sm font-semibold text-gray-700">Configuración de Facturas</p>
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-gray-700 border-b pb-2">Opciones de Factura PDF</p>
+                
+                {/* Tax per item toggle */}
+                <div 
+                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                    tenantSettings.invoice_show_tax_per_item 
+                      ? 'bg-green-50 border-green-400' 
+                      : 'bg-gray-50 border-gray-200'
+                  }`}
+                  onClick={() => setTenantSettings({...tenantSettings, invoice_show_tax_per_item: !tenantSettings.invoice_show_tax_per_item})}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-800">Mostrar Tax por Producto</p>
+                      <p className="text-xs text-gray-500 mt-1">Columna de impuestos en tabla de productos</p>
+                    </div>
+                    <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+                      tenantSettings.invoice_show_tax_per_item 
+                        ? 'bg-green-500 text-white' 
+                        : 'bg-gray-300 text-gray-600'
+                    }`}>
+                      {tenantSettings.invoice_show_tax_per_item ? 'ACTIVO' : 'INACTIVO'}
+                    </div>
+                  </div>
                 </div>
                 
-                <div className="space-y-3 pl-6">
+                {/* Tax summary toggle */}
+                <div 
+                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                    tenantSettings.invoice_show_tax_summary 
+                      ? 'bg-green-50 border-green-400' 
+                      : 'bg-gray-50 border-gray-200'
+                  }`}
+                  onClick={() => setTenantSettings({...tenantSettings, invoice_show_tax_summary: !tenantSettings.invoice_show_tax_summary})}
+                >
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Mostrar Tax por Producto</p>
-                      <p className="text-xs text-gray-500">Muestra la columna de impuestos en la tabla de productos</p>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-800">Mostrar Resumen de Tax</p>
+                      <p className="text-xs text-gray-500 mt-1">Total de impuestos al final de la factura</p>
                     </div>
-                    <Switch
-                      checked={tenantSettings.invoice_show_tax_per_item}
-                      onCheckedChange={(checked) => setTenantSettings({...tenantSettings, invoice_show_tax_per_item: checked})}
-                    />
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Mostrar Resumen de Tax</p>
-                      <p className="text-xs text-gray-500">Muestra el total de impuestos al final de la factura</p>
+                    <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+                      tenantSettings.invoice_show_tax_summary 
+                        ? 'bg-green-500 text-white' 
+                        : 'bg-gray-300 text-gray-600'
+                    }`}>
+                      {tenantSettings.invoice_show_tax_summary ? 'ACTIVO' : 'INACTIVO'}
                     </div>
-                    <Switch
-                      checked={tenantSettings.invoice_show_tax_summary}
-                      onCheckedChange={(checked) => setTenantSettings({...tenantSettings, invoice_show_tax_summary: checked})}
-                    />
                   </div>
                 </div>
               </div>
@@ -701,31 +721,31 @@ export default function SuperadminDashboard() {
               <hr />
 
               {/* Shipment Settings */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Package className="h-4 w-4 text-purple-600" />
-                  <p className="text-sm font-semibold text-gray-700">Configuración de Envíos</p>
-                </div>
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-gray-700 border-b pb-2">Opciones de Envíos</p>
                 
-                <div className="space-y-3 pl-6">
+                {/* Product list toggle */}
+                <div 
+                  className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                    tenantSettings.shipment_show_product_list 
+                      ? 'bg-green-50 border-green-400' 
+                      : 'bg-gray-50 border-gray-200'
+                  }`}
+                  onClick={() => setTenantSettings({...tenantSettings, shipment_show_product_list: !tenantSettings.shipment_show_product_list})}
+                >
                   <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Mostrar Lista de Productos</p>
-                      <p className="text-xs text-gray-500">Muestra el detalle de productos al crear un envío</p>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-800">Mostrar Lista de Productos</p>
+                      <p className="text-xs text-gray-500 mt-1">Detalle de productos al crear envío</p>
                     </div>
-                    <Switch
-                      checked={tenantSettings.shipment_show_product_list}
-                      onCheckedChange={(checked) => setTenantSettings({...tenantSettings, shipment_show_product_list: checked})}
-                    />
+                    <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+                      tenantSettings.shipment_show_product_list 
+                        ? 'bg-green-500 text-white' 
+                        : 'bg-gray-300 text-gray-600'
+                    }`}>
+                      {tenantSettings.shipment_show_product_list ? 'ACTIVO' : 'INACTIVO'}
+                    </div>
                   </div>
-                </div>
-                
-                <div className="p-3 bg-orange-50 rounded-xl">
-                  <p className="text-xs text-orange-800">
-                    <strong>¿Por qué mostrar la lista de productos?</strong><br/>
-                    • <strong>Activado:</strong> El admin ve qué productos va a enviar para verificar antes de crear el envío. Útil para evitar errores.<br/>
-                    • <strong>Desactivado:</strong> Vista más limpia y rápida. Ideal cuando el admin ya sabe qué productos incluye cada envío.
-                  </p>
                 </div>
               </div>
 
