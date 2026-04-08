@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient } from "@/lib/api";
+import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,7 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText, UserX, Trash2, AlertTriangle, UserCheck } from "lucide-react";
+import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText, UserX, Trash2, AlertTriangle, UserCheck, Hash } from "lucide-react";
 import InvoiceDialog from "@/components/InvoiceDialog";
 
 export default function AdminClients() {
@@ -33,11 +33,12 @@ export default function AdminClients() {
   const [submitting, setSubmitting] = useState(false);
   const [newClient, setNewClient] = useState({
     name: "", country: "", whatsapp: "", email: "", password: "",
-    commission_fee: 3, initial_balance: 0
+    commission_fee: 3, initial_balance: 0, custom_customer_id: ""
   });
   const [duplicateWarning, setDuplicateWarning] = useState(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState(null);
+  const [allowCustomClientId, setAllowCustomClientId] = useState(false);
   
   // Invoice dialog state
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
@@ -99,14 +100,16 @@ export default function AdminClients() {
 
   const loadClients = async () => {
     try {
-      const [activeRes, inactiveRes] = await Promise.all([
+      const [activeRes, inactiveRes, settingsRes] = await Promise.all([
         getAllClients("active"),
-        getAllClients("inactive")
+        getAllClients("inactive"),
+        getTenantSettings()
       ]);
       setClients(activeRes.data);
       setFilteredClients(activeRes.data);
       setInactiveClients(inactiveRes.data);
       setFilteredInactiveClients(inactiveRes.data);
+      setAllowCustomClientId(settingsRes.data.allow_custom_client_id || false);
     } catch (error) {
       toast.error("Error al cargar clientes");
     } finally {
@@ -186,7 +189,7 @@ export default function AdminClients() {
       const res = await createClient(newClient);
       toast.success(`Cliente creado: #${res.data.customer_id}`);
       setCreateDialogOpen(false);
-      setNewClient({ name: "", country: "", whatsapp: "", email: "", password: "", commission_fee: 3, initial_balance: 0 });
+      setNewClient({ name: "", country: "", whatsapp: "", email: "", password: "", commission_fee: 3, initial_balance: 0, custom_customer_id: "" });
       setDuplicateWarning(null);
       loadClients();
     } catch (error) {
@@ -256,6 +259,24 @@ export default function AdminClients() {
                 <DialogTitle>Crear Nuevo Cliente</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-2">
+                {/* Custom Client ID field - only shown if allowed by tenant settings */}
+                {allowCustomClientId && (
+                  <div>
+                    <Label className="flex items-center gap-2">
+                      <Hash className="h-4 w-4" />
+                      Código de Cliente (opcional)
+                    </Label>
+                    <Input 
+                      data-testid="new-client-custom-id" 
+                      placeholder="Ej: ABC123 (dejar vacío para auto-generar)" 
+                      className="rounded-xl mt-1"
+                      value={newClient.custom_customer_id} 
+                      onChange={(e) => setNew("custom_customer_id", e.target.value.toUpperCase())}
+                      maxLength={20}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">2-20 caracteres alfanuméricos. Si lo dejas vacío, se generará automáticamente.</p>
+                  </div>
+                )}
                 <div>
                   <Label>Nombre *</Label>
                   <Input data-testid="new-client-name" placeholder="Nombre completo" className="rounded-xl mt-1"

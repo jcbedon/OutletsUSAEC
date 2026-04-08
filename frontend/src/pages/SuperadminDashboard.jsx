@@ -47,7 +47,8 @@ export default function SuperadminDashboard() {
   const [tenantSettings, setTenantSettings] = useState({
     invoice_show_tax_per_item: true,
     invoice_show_tax_summary: true,
-    shipment_show_product_list: true
+    shipment_show_product_list: true,
+    allow_custom_client_id: false
   });
 
   const DEFAULT_TAX_OPTIONS = [
@@ -212,7 +213,8 @@ export default function SuperadminDashboard() {
     setTenantSettings({
       invoice_show_tax_per_item: tenant.invoice_show_tax_per_item !== false,
       invoice_show_tax_summary: tenant.invoice_show_tax_summary !== false,
-      shipment_show_product_list: tenant.shipment_show_product_list !== false
+      shipment_show_product_list: tenant.shipment_show_product_list !== false,
+      allow_custom_client_id: tenant.allow_custom_client_id === true
     });
     setSettingsDialogOpen(true);
   };
@@ -744,6 +746,37 @@ export default function SuperadminDashboard() {
                         : 'bg-gray-300 text-gray-600'
                     }`}>
                       {tenantSettings.shipment_show_product_list ? 'ACTIVO' : 'INACTIVO'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Clientes Section */}
+              <div className="border border-gray-200 rounded-xl p-4">
+                <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <Users className="h-4 w-4" />
+                  Clientes
+                </h4>
+                <div className="space-y-3">
+                  <div
+                    className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${
+                      tenantSettings.allow_custom_client_id 
+                        ? 'bg-green-50 border border-green-200' 
+                        : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'
+                    }`}
+                    onClick={() => setTenantSettings({...tenantSettings, allow_custom_client_id: !tenantSettings.allow_custom_client_id})}
+                    data-testid="toggle-allow-custom-client-id"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">Código de Cliente Manual</p>
+                      <p className="text-xs text-gray-500 mt-1">Permitir ingresar código personalizado al crear cliente</p>
+                    </div>
+                    <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+                      tenantSettings.allow_custom_client_id 
+                        ? 'bg-green-500 text-white' 
+                        : 'bg-gray-300 text-gray-600'
+                    }`}>
+                      {tenantSettings.allow_custom_client_id ? 'ACTIVO' : 'INACTIVO'}
                     </div>
                   </div>
                 </div>

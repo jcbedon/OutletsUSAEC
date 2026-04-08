@@ -64,6 +64,8 @@ class Tenant(BaseModel):
     invoice_show_tax_summary: bool = True   # Show tax total at the bottom
     # Shipment settings  
     shipment_show_product_list: bool = True  # Show product list when creating shipment
+    # Client ID settings
+    allow_custom_client_id: bool = False  # Allow admin to enter custom client ID instead of auto-generated
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class User(BaseModel):
@@ -318,6 +320,7 @@ class AdminClientCreate(BaseModel):
     password: str
     commission_fee: float = DEFAULT_COMMISSION_FEE
     initial_balance: float = 0.0
+    custom_customer_id: Optional[str] = None  # Optional custom customer ID
 
 class EmployeeCreate(BaseModel):
     name: str
@@ -864,6 +867,10 @@ async def update_tenant_settings(tenant_id: str, data: dict, current_user: dict 
     if "shipment_show_product_list" in data:
         update_fields["shipment_show_product_list"] = bool(data["shipment_show_product_list"])
     
+    # Client ID settings
+    if "allow_custom_client_id" in data:
+        update_fields["allow_custom_client_id"] = bool(data["allow_custom_client_id"])
+    
     if update_fields:
         await db.tenants.update_one({"id": tenant_id}, {"$set": update_fields})
     
@@ -977,6 +984,10 @@ async def admin_create_client(data: AdminClientCreate, current_user: dict = Depe
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
+    # Get tenant settings to check if custom client ID is allowed
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0})
+    allow_custom_id = tenant.get("allow_custom_client_id", False) if tenant else False
+    
     # Check for existing client with same WhatsApp
     existing_whatsapp = await db.users.find_one({"whatsapp": data.whatsapp, "tenant_id": tid, "role": "client"}, {"_id": 0})
     if existing_whatsapp:
@@ -988,9 +999,25 @@ async def admin_create_client(data: AdminClientCreate, current_user: dict = Depe
         if existing_email:
             raise HTTPException(status_code=400, detail=f"Ya existe un cliente con este email: {existing_email['name']} ({existing_email['customer_id']})")
     
-    customer_id = generate_customer_id(data.name)
-    while await db.users.find_one({"customer_id": customer_id, "tenant_id": tid}, {"_id": 0}):
+    # Determine customer_id
+    if data.custom_customer_id and allow_custom_id:
+        # Validate custom ID format (alphanumeric, 3-20 chars)
+        custom_id = data.custom_customer_id.strip().upper()
+        if not custom_id or len(custom_id) < 2 or len(custom_id) > 20:
+            raise HTTPException(status_code=400, detail="El código de cliente debe tener entre 2 y 20 caracteres")
+        if not custom_id.replace("-", "").replace("_", "").isalnum():
+            raise HTTPException(status_code=400, detail="El código de cliente solo puede contener letras, números, guiones y guiones bajos")
+        # Check if custom ID already exists
+        existing_id = await db.users.find_one({"customer_id": custom_id, "tenant_id": tid}, {"_id": 0})
+        if existing_id:
+            raise HTTPException(status_code=400, detail=f"Ya existe un cliente con este código: {existing_id['name']} ({custom_id})")
+        customer_id = custom_id
+    else:
+        # Generate automatic customer_id
         customer_id = generate_customer_id(data.name)
+        while await db.users.find_one({"customer_id": customer_id, "tenant_id": tid}, {"_id": 0}):
+            customer_id = generate_customer_id(data.name)
+    
     user = User(tenant_id=tid, customer_id=customer_id, referral_code=customer_id,
         commission_fee=data.commission_fee, name=data.name, country=data.country,
         whatsapp=data.whatsapp, email=data.email, whatsapp_consent=True,
@@ -1203,6 +1230,63 @@ async def get_wallet_by_customer_id(customer_id: str, current_user: dict = Depen
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
     return wallet
+
+@api_router.get("/wallet/recharge-report")
+async def get_recharge_report(current_user: dict = Depends(get_current_user)):
+    """
+    Get a report of all recharges comparing admin-created vs client-requested deposits.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    # Get all deposit transactions
+    deposits = await db.wallet_transactions.find(
+        {"tenant_id": tid, "type": "deposit"},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(1000)
+    
+    # Get users for names
+    user_ids = list(set(d["user_id"] for d in deposits))
+    users = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1, "customer_id": 1}).to_list(None)
+    users_dict = {u["id"]: u for u in users}
+    
+    # Categorize and enrich with user info
+    admin_created = []
+    client_requested = []
+    
+    totals = {
+        "admin_created": {"count": 0, "total": 0, "approved": 0, "pending": 0},
+        "client_requested": {"count": 0, "total": 0, "approved": 0, "pending": 0, "rejected": 0}
+    }
+    
+    for dep in deposits:
+        user = users_dict.get(dep["user_id"], {})
+        dep["user_name"] = user.get("name", "Desconocido")
+        dep["user_customer_id"] = user.get("customer_id", "N/A")
+        
+        if dep.get("created_by_admin"):
+            admin_created.append(dep)
+            totals["admin_created"]["count"] += 1
+            totals["admin_created"]["total"] += dep["amount"]
+            if dep["status"] == "approved":
+                totals["admin_created"]["approved"] += 1
+        else:
+            client_requested.append(dep)
+            totals["client_requested"]["count"] += 1
+            totals["client_requested"]["total"] += dep["amount"]
+            if dep["status"] == "approved":
+                totals["client_requested"]["approved"] += 1
+            elif dep["status"] == "pending":
+                totals["client_requested"]["pending"] += 1
+            elif dep["status"] == "rejected":
+                totals["client_requested"]["rejected"] += 1
+    
+    return {
+        "admin_created": admin_created,
+        "client_requested": client_requested,
+        "totals": totals
+    }
 
 @api_router.get("/wallet/transactions/{user_id}")
 async def get_wallet_transactions(user_id: str, current_user: dict = Depends(get_current_user)):
@@ -2705,11 +2789,11 @@ async def set_referral_bonus_setting(amount: float, current_user: dict = Depends
 
 @api_router.get("/admin/settings")
 async def get_tenant_settings(current_user: dict = Depends(get_current_user)):
-    """Get all tenant settings including tax options"""
+    """Get all tenant settings including tax options and client ID settings"""
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
-    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "tax_options": 1})
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0})
     default_tax_options = [
         {"value": "8.25", "label": "8.25%"},
         {"value": "10", "label": "10%"},
@@ -2719,7 +2803,11 @@ async def get_tenant_settings(current_user: dict = Depends(get_current_user)):
     ]
     return {
         "tax_options": tenant.get("tax_options", default_tax_options) if tenant else default_tax_options,
-        "referral_bonus": await get_referral_bonus(tid)
+        "referral_bonus": await get_referral_bonus(tid),
+        "allow_custom_client_id": tenant.get("allow_custom_client_id", False) if tenant else False,
+        "shipment_show_product_list": tenant.get("shipment_show_product_list", True) if tenant else True,
+        "invoice_show_tax_per_item": tenant.get("invoice_show_tax_per_item", True) if tenant else True,
+        "invoice_show_tax_summary": tenant.get("invoice_show_tax_summary", True) if tenant else True
     }
 
 @api_router.put("/admin/settings/tax-options")

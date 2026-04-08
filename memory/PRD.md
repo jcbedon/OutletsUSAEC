@@ -53,6 +53,7 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] **NEW: Active/Inactive Tabs (Apr 8, 2026)** - Separate views for active and disabled clients
 - [x] **NEW: Inhabilitar/Habilitar Clients (Apr 8, 2026)** - Toggle client status without deleting
 - [x] **NEW: Admin-only Delete (Apr 8, 2026)** - Only tenant admin can delete clients, employees blocked with 403
+- [x] **NEW: Custom Client ID (Apr 8, 2026)** - Allow admins to enter custom client codes when enabled by Superadmin
 
 ### Live Shopping & Purchases
 - [x] Admin: Live shopping session CRUD
@@ -78,6 +79,11 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
   - Actualiza wallet del cliente inmediatamente
   - Registra en módulo de auditoría (action='create_recharge')
   - Envía notificación al cliente
+- [x] **NEW: Reporte de Recargas (Apr 8, 2026)**
+  - Nueva pestaña "Reporte" en Gestión de Recargas
+  - Comparativa Admin vs Cliente
+  - Cards resumen con totales
+  - Lista detallada por categoría
 
 ### Shipments
 - [x] Admin: Shipment management with tracking and status
@@ -150,7 +156,11 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - `POST /api/wallet/reject-deposit/{id}` - Reject a pending deposit
 - `POST /api/wallet/admin-adjustment` - Manual balance adjustment (subtract)
 - **`POST /api/wallet/admin-recharge` (NEW)** - Admin creates recharge directly with mandatory proof
-- `POST /api/wallet/admin-adjustment` - Manual balance adjustment (subtract)
+- **`GET /api/wallet/recharge-report` (NEW)** - Report comparing admin-created vs client-requested recharges
+
+### Superadmin Settings
+- `PUT /api/superadmin/tenants/{tenant_id}/settings` - Update tenant configuration
+  - `allow_custom_client_id` - Enable/disable custom client codes
 
 ### Reports Module
 - `GET /api/admin/reports/summary` - Basic summary stats

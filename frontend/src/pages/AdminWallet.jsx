@@ -12,7 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, ImageIcon } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart } from "lucide-react";
+import RechargeReport from "@/components/RechargeReport";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -30,6 +32,9 @@ export default function AdminWallet() {
   const [showHistory, setShowHistory] = useState(false);
   const [historyFilter, setHistoryFilter] = useState("all");
   const [historySearch, setHistorySearch] = useState("");
+  
+  // Recharge Report state
+  const [showReport, setShowReport] = useState(false);
   
   // Ajuste de balance state
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
@@ -290,26 +295,41 @@ export default function AdminWallet() {
           </Card>
         </div>
 
+        {/* Navigation Tabs */}
+        <Tabs value={showReport ? "report" : (showHistory ? "history" : "pending")} className="mb-6">
+          <TabsList className="grid w-full grid-cols-3 h-12 rounded-xl bg-gray-100">
+            <TabsTrigger 
+              value="pending"
+              onClick={() => { setShowHistory(false); setShowReport(false); }}
+              className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
+              data-testid="show-pending-btn"
+            >
+              <Clock className="h-4 w-4 mr-2" />
+              Pendientes ({pendingDeposits.length})
+            </TabsTrigger>
+            <TabsTrigger 
+              value="history"
+              onClick={() => { setShowHistory(true); setShowReport(false); }}
+              className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
+              data-testid="show-history-btn"
+            >
+              <History className="h-4 w-4 mr-2" />
+              Historial
+            </TabsTrigger>
+            <TabsTrigger 
+              value="report"
+              onClick={() => { setShowReport(true); setShowHistory(false); }}
+              className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
+              data-testid="show-report-btn"
+            >
+              <FileBarChart className="h-4 w-4 mr-2" />
+              Reporte
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
         {/* Action Buttons */}
         <div className="flex gap-3 mb-6">
-          <Button 
-            variant={!showHistory ? "default" : "outline"}
-            onClick={() => setShowHistory(false)}
-            className="flex-1 rounded-xl"
-            data-testid="show-pending-btn"
-          >
-            <Clock className="h-4 w-4 mr-2" />
-            Pendientes ({pendingDeposits.length})
-          </Button>
-          <Button 
-            variant={showHistory ? "default" : "outline"}
-            onClick={() => setShowHistory(true)}
-            className="flex-1 rounded-xl"
-            data-testid="show-history-btn"
-          >
-            <History className="h-4 w-4 mr-2" />
-            Historial
-          </Button>
           <Dialog open={adjustDialogOpen} onOpenChange={setAdjustDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="rounded-xl border-red-200 text-red-600 hover:bg-red-50" data-testid="adjust-balance-btn">
@@ -760,6 +780,13 @@ export default function AdminWallet() {
             )
           )}
         </ScrollArea>
+
+        {/* Recharge Report Section */}
+        {showReport && (
+          <div className="mt-4">
+            <RechargeReport />
+          </div>
+        )}
       </div>
     </div>
   );
