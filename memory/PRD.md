@@ -64,6 +64,15 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] Admin: Reject pending deposit requests
 - [x] Admin: Global deposit history - view all deposits from all clients
 - [x] Admin: Manual balance adjustment - subtract money with custom reason
+- [x] **NEW: Admin: Crear Recarga Manual (Apr 8, 2026)**
+  - Botón visible "Crear Recarga" en Gestión de Recargas
+  - Selección de cliente obligatoria con búsqueda
+  - Monto obligatorio (>0)
+  - Comprobante de pago obligatorio (imagen/PDF)
+  - Recarga se aprueba automáticamente
+  - Actualiza wallet del cliente inmediatamente
+  - Registra en módulo de auditoría (action='create_recharge')
+  - Envía notificación al cliente
 
 ### Shipments
 - [x] Admin: Shipment management with tracking and status
@@ -134,6 +143,8 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - `GET /api/wallet/all-deposits` - Get all deposits (history) with user names
 - `POST /api/wallet/approve-deposit/{id}` - Approve a pending deposit
 - `POST /api/wallet/reject-deposit/{id}` - Reject a pending deposit
+- `POST /api/wallet/admin-adjustment` - Manual balance adjustment (subtract)
+- **`POST /api/wallet/admin-recharge` (NEW)** - Admin creates recharge directly with mandatory proof
 - `POST /api/wallet/admin-adjustment` - Manual balance adjustment (subtract)
 
 ### Reports Module
