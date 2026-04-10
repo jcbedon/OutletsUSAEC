@@ -197,7 +197,21 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - Superadmin: superadmin@outletsusaec.com / super123
 - Admin (Outlets USA EC): admin@outletsusaec.com / admin123
 - Client (Juan Perez): J2934 / client123
+- Employee (Maria García): maria@outletsusaec.com / empleado123
 - Tenant slug example: outlets-usa
+
+## ✅ Verified P0 Tasks (Apr 10, 2026)
+### Invoice to Shipment Flow
+- [x] InvoiceDialog: "Crear Envío para esta Factura" button with navigation
+- [x] SessionStorage data passing (customer_id, invoice_id, purchases)
+- [x] AdminShipments: Auto-open create dialog and pre-select client/products
+- [x] Backend: POST /shipments accepts invoice_id, updates invoice with shipping_cost
+- [x] Invoice displays shipping info (cost, weight, tracking)
+
+### Employee Permissions System
+- [x] 9 permissions with functional checkboxes in edit dialog
+- [x] Sidebar correctly filters menu items based on permissions
+- [x] Admin-only items hidden from employees
 
 ## P1 - Backlog
 - [ ] Email notifications (pendiente elección de proveedor: Resend/SendGrid)
