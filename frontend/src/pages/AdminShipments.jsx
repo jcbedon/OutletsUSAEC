@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/App";
 import { 
   getAllShipments, 
@@ -40,15 +40,22 @@ import {
   X,
   Image as ImageIcon,
   Trash2,
-  Save
+  Save,
+  FileText,
+  AlertCircle
 } from "lucide-react";
 
 const LOGO_URL_DEFAULT = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
 export default function AdminShipments() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const logoUrl = user?.tenant_logo || LOGO_URL_DEFAULT;
+  
+  // Check if coming from invoice
+  const fromInvoice = searchParams.get('from_invoice') === 'true';
+  const [invoiceData, setInvoiceData] = useState(null);
   
   // Check permissions for employees
   const permissions = user?.permissions || {};
@@ -80,6 +87,21 @@ export default function AdminShipments() {
       navigate("/admin");
     }
   }, [hasPermission, navigate]);
+
+  // Load invoice data if coming from invoice
+  useEffect(() => {
+    if (fromInvoice) {
+      const storedData = sessionStorage.getItem('shipmentFromInvoice');
+      if (storedData) {
+        const parsed = JSON.parse(storedData);
+        setInvoiceData(parsed);
+        // Auto-open create dialog
+        setCreateDialogOpen(true);
+        // Clear the stored data
+        sessionStorage.removeItem('shipmentFromInvoice');
+      }
+    }
+  }, [fromInvoice]);
   
   // Create shipment form
   const [selectedClient, setSelectedClient] = useState(null);
@@ -112,6 +134,22 @@ export default function AdminShipments() {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Auto-select client when coming from invoice
+  useEffect(() => {
+    if (invoiceData && clients.length > 0 && createDialogOpen) {
+      // Find the client by customer_id
+      const client = clients.find(c => c.customer_id === invoiceData.customer_id);
+      if (client) {
+        setSelectedClient(invoiceData.client || client);
+        // Pre-load purchases from the invoice
+        if (invoiceData.purchases && invoiceData.purchases.length > 0) {
+          setPendingPurchases(invoiceData.purchases);
+          setSelectedPurchases(invoiceData.purchases.map(p => p.id));
+        }
+      }
+    }
+  }, [invoiceData, clients, createDialogOpen]);
 
   const loadData = async () => {
     try {
@@ -202,7 +240,8 @@ export default function AdminShipments() {
         address: shipmentForm.address,
         country: shipmentForm.country,
         phone: shipmentForm.phone,
-        additional_info: shipmentForm.additional_info
+        additional_info: shipmentForm.additional_info,
+        invoice_id: invoiceData?.invoice_id || null
       });
       
       const shipmentId = response.data.shipment_id;
@@ -374,7 +413,16 @@ export default function AdminShipments() {
             <span className="font-bold text-slate-800">Envíos</span>
           </div>
           
-          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+          <Dialog open={createDialogOpen} onOpenChange={(open) => {
+            setCreateDialogOpen(open);
+            if (!open) {
+              // Clear invoice data when closing dialog
+              setInvoiceData(null);
+              setSelectedClient(null);
+              setPendingPurchases([]);
+              setSelectedPurchases([]);
+            }
+          }}>
             <DialogTrigger asChild>
               <Button 
                 className="font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
@@ -386,48 +434,84 @@ export default function AdminShipments() {
             </DialogTrigger>
             <DialogContent className="max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Crear Nuevo Envío</DialogTitle>
+                <DialogTitle>
+                  {invoiceData ? "Crear Envío para Factura" : "Crear Nuevo Envío"}
+                </DialogTitle>
               </DialogHeader>
               <div className="space-y-4 pt-4">
-                {/* Client Select with Search */}
+                {/* Invoice Info Banner - when coming from invoice */}
+                {invoiceData && (
+                  <div className="p-4 rounded-xl bg-purple-50 border-2 border-purple-200 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-purple-600" />
+                      <span className="font-semibold text-purple-800">Factura #{invoiceData.invoice_number}</span>
+                    </div>
+                    <p className="text-sm text-purple-700">
+                      Este envío incluirá los <strong>{invoiceData.purchases?.length || 0} productos</strong> de la factura seleccionada.
+                    </p>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <Badge className="bg-purple-100 text-purple-700">
+                        Subtotal: ${invoiceData.subtotal?.toFixed(2)}
+                      </Badge>
+                      <Badge className="bg-purple-100 text-purple-700">
+                        Total: ${invoiceData.total?.toFixed(2)}
+                      </Badge>
+                    </div>
+                    <div className="p-2 bg-purple-100 rounded-lg flex items-start gap-2 mt-2">
+                      <AlertCircle className="h-4 w-4 text-purple-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-purple-700">
+                        El costo de envío se agregará a la factura final automáticamente.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Client Select with Search - disabled when coming from invoice */}
                 <div>
                   <Label>Cliente</Label>
-                  <Select onValueChange={handleClientSelect}>
-                    <SelectTrigger className="h-12 rounded-xl mt-1 text-slate-800" data-testid="select-client">
-                      <SelectValue placeholder="Seleccionar cliente" className="text-slate-800" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-80">
-                      {/* Search Input */}
-                      <div className="p-2 border-b sticky top-0 bg-white">
-                        <Input
-                          placeholder="Buscar cliente..."
-                          value={clientSearch}
-                          onChange={(e) => setClientSearch(e.target.value)}
-                          className="h-10 rounded-lg"
-                          data-testid="client-search-input"
-                        />
-                      </div>
-                      <div className="max-h-60 overflow-y-auto">
-                        {filteredClients.length === 0 ? (
-                          <div className="p-4 text-center text-gray-500 text-sm">
-                            No se encontraron clientes
-                          </div>
-                        ) : (
-                          filteredClients.map((client) => (
-                            <SelectItem 
-                              key={client.id} 
-                              value={client.id}
-                              className="text-slate-800 cursor-pointer hover:bg-gray-100"
-                            >
-                              <span className="font-medium text-slate-800">#{client.customer_id}</span>
-                              <span className="text-slate-600 ml-2">{client.name}</span>
-                            </SelectItem>
-                          ))
-                        )}
-                      </div>
-                    </SelectContent>
-                  </Select>
-                  {selectedClient && (
+                  {invoiceData ? (
+                    <div className="mt-1 p-3 bg-blue-50 rounded-xl border border-blue-200">
+                      <span className="font-bold text-blue-800">#{invoiceData.customer_id}</span>
+                      <span className="text-blue-700 ml-2">{invoiceData.client_name}</span>
+                    </div>
+                  ) : (
+                    <Select onValueChange={handleClientSelect}>
+                      <SelectTrigger className="h-12 rounded-xl mt-1 text-slate-800" data-testid="select-client">
+                        <SelectValue placeholder="Seleccionar cliente" className="text-slate-800" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-80">
+                        {/* Search Input */}
+                        <div className="p-2 border-b sticky top-0 bg-white">
+                          <Input
+                            placeholder="Buscar cliente..."
+                            value={clientSearch}
+                            onChange={(e) => setClientSearch(e.target.value)}
+                            className="h-10 rounded-lg"
+                            data-testid="client-search-input"
+                          />
+                        </div>
+                        <div className="max-h-60 overflow-y-auto">
+                          {filteredClients.length === 0 ? (
+                            <div className="p-4 text-center text-gray-500 text-sm">
+                              No se encontraron clientes
+                            </div>
+                          ) : (
+                            filteredClients.map((client) => (
+                              <SelectItem 
+                                key={client.id} 
+                                value={client.id}
+                                className="text-slate-800 cursor-pointer hover:bg-gray-100"
+                              >
+                                <span className="font-medium text-slate-800">#{client.customer_id}</span>
+                                <span className="text-slate-600 ml-2">{client.name}</span>
+                              </SelectItem>
+                            ))
+                          )}
+                        </div>
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {selectedClient && !invoiceData && (
                     <div className="mt-2 p-2 bg-blue-50 rounded-lg text-sm text-blue-800">
                       Seleccionado: <span className="font-bold">#{selectedClient.customer_id} - {selectedClient.name}</span>
                     </div>

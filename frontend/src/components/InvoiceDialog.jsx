@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -6,7 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken } from "@/lib/api";
 import { toast } from "sonner";
-import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2 } from "lucide-react";
+import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import QRCode from "qrcode";
@@ -40,6 +41,7 @@ const loadImageWithDimensions = (url) => {
 };
 
 export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }) {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [pendingPurchases, setPendingPurchases] = useState([]);
   const [selectedPurchases, setSelectedPurchases] = useState([]);
@@ -47,12 +49,14 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
   const [invoices, setInvoices] = useState([]);
   const [viewMode, setViewMode] = useState("create"); // create, view, history
   const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [showShipmentPrompt, setShowShipmentPrompt] = useState(false);
   const invoiceRef = useRef(null);
 
   useEffect(() => {
     if (open && client) {
       loadPendingPurchases();
       loadInvoices();
+      setShowShipmentPrompt(false);
     }
   }, [open, client]);
 
@@ -96,6 +100,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
       const invoiceRes = await getInvoiceDetail(res.data.invoice_id);
       setCurrentInvoice(invoiceRes.data);
       setViewMode("view");
+      setShowShipmentPrompt(true); // Show shipment creation prompt
       loadPendingPurchases();
       loadInvoices();
     } catch (error) {
@@ -103,6 +108,23 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGoToCreateShipment = () => {
+    // Store invoice data in sessionStorage for the shipment page
+    sessionStorage.setItem('shipmentFromInvoice', JSON.stringify({
+      invoice_id: currentInvoice.id,
+      invoice_number: currentInvoice.invoice_number,
+      customer_id: client.customer_id,
+      client_name: client.name,
+      client: client,
+      purchases: currentInvoice.purchases,
+      subtotal: currentInvoice.subtotal,
+      total_tax: currentInvoice.total_tax,
+      total: currentInvoice.total
+    }));
+    onOpenChange(false);
+    navigate('/admin/shipments?from_invoice=true');
   };
 
   const handleApproveInvoice = async () => {
@@ -984,21 +1006,65 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
                     <span className="text-gray-600">Comisiones:</span>
                     <span className="font-medium">${currentInvoice.total_commission.toFixed(2)}</span>
                   </div>
+                  {/* Shipping cost if available */}
+                  {currentInvoice.shipping_cost > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Envío ({currentInvoice.weight_pounds || 0} lbs):</span>
+                      <span className="font-medium text-purple-600">${currentInvoice.shipping_cost.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="border-t pt-2 flex justify-between">
                     <span className="font-bold text-lg" style={{ color: '#1E3A5F' }}>TOTAL:</span>
-                    <span className="font-extrabold text-2xl" style={{ color: '#1E3A5F' }}>${currentInvoice.total.toFixed(2)}</span>
+                    <span className="font-extrabold text-2xl" style={{ color: '#1E3A5F' }}>
+                      ${(currentInvoice.total + (currentInvoice.shipping_cost || 0)).toFixed(2)}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {/* Pending alert */}
-              {currentInvoice.status !== "approved" && (
-                <div className="p-4 rounded-xl bg-yellow-50 border-2 border-yellow-200 flex items-center gap-3">
-                  <AlertCircle className="h-6 w-6 text-yellow-600" />
-                  <div className="flex-1">
-                    <p className="font-semibold text-yellow-800">Factura Pendiente de Pago</p>
-                    <p className="text-sm text-yellow-700">Puedes quitar artículos pasando el mouse sobre ellos. Aprueba cuando esté lista.</p>
+              {/* Shipment Creation Prompt - Show after creating invoice */}
+              {showShipmentPrompt && currentInvoice.status !== "approved" && !currentInvoice.shipment && (
+                <div className="p-4 rounded-xl bg-purple-50 border-2 border-purple-300 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <Package className="h-6 w-6 text-purple-600 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-purple-800">¿Crear envío para esta factura?</p>
+                      <p className="text-sm text-purple-700 mt-1">
+                        El envío incluirá los {currentInvoice.purchases?.length || 0} productos de esta factura.
+                        El costo del envío se agregará al total final.
+                      </p>
+                    </div>
                   </div>
+                  <Button 
+                    onClick={handleGoToCreateShipment}
+                    className="w-full h-10 rounded-xl bg-purple-600 hover:bg-purple-700"
+                  >
+                    <Package className="h-4 w-4 mr-2" />
+                    Crear Envío para esta Factura
+                    <ArrowRight className="h-4 w-4 ml-2" />
+                  </Button>
+                </div>
+              )}
+
+              {/* Pending alert with shipping note */}
+              {currentInvoice.status !== "approved" && (
+                <div className="p-4 rounded-xl bg-yellow-50 border-2 border-yellow-200">
+                  <div className="flex items-center gap-3">
+                    <AlertCircle className="h-6 w-6 text-yellow-600" />
+                    <div className="flex-1">
+                      <p className="font-semibold text-yellow-800">Factura Pendiente de Pago</p>
+                      <p className="text-sm text-yellow-700">Puedes quitar artículos pasando el mouse sobre ellos. Aprueba cuando esté lista.</p>
+                    </div>
+                  </div>
+                  {/* Note about shipping cost */}
+                  {!currentInvoice.shipment && !currentInvoice.shipping_cost && (
+                    <div className="mt-3 p-2 rounded-lg bg-yellow-100/50 flex items-start gap-2">
+                      <Info className="h-4 w-4 text-yellow-700 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-yellow-700">
+                        <strong>Nota:</strong> Aún falta agregar el valor del envío. El costo de envío se mostrará una vez que crees el envío para esta factura.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
