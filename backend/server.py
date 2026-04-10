@@ -520,13 +520,22 @@ async def login_user(login_data: UserLogin):
     identifier_lower = identifier.lower()
     
     # First, try to find user in users collection
-    user = await db.users.find_one({
+    # IMPORTANT: If multiple users exist with same identifier, prioritize admin over client
+    users_found = await db.users.find({
         "$or": [
             {"email": identifier},
             {"whatsapp": identifier},
             {"customer_id": identifier.upper()}
         ]
-    }, {"_id": 0})
+    }, {"_id": 0}).to_list(10)
+    
+    # Sort by role priority: superadmin > admin > client
+    role_priority = {"superadmin": 0, "admin": 1, "client": 2}
+    if users_found:
+        users_found.sort(key=lambda u: role_priority.get(u.get("role", "client"), 3))
+        user = users_found[0]  # Get the highest priority user
+    else:
+        user = None
     
     # If not found, try to find admin by tenant slug
     if not user:
@@ -1003,6 +1012,13 @@ async def admin_create_client(data: AdminClientCreate, current_user: dict = Depe
         existing_email = await db.users.find_one({"email": data.email, "tenant_id": tid, "role": "client"}, {"_id": 0})
         if existing_email:
             raise HTTPException(status_code=400, detail=f"Ya existe un cliente con este email: {existing_email['name']} ({existing_email['customer_id']})")
+        # Also check if email belongs to an admin or employee (prevent admin/client collision)
+        existing_admin = await db.users.find_one({"email": data.email, "tenant_id": tid, "role": {"$in": ["admin", "superadmin"]}}, {"_id": 0})
+        if existing_admin:
+            raise HTTPException(status_code=400, detail=f"Este email ya está registrado como administrador. Use un email diferente para el cliente.")
+        existing_employee = await db.employees.find_one({"email": data.email, "tenant_id": tid}, {"_id": 0})
+        if existing_employee:
+            raise HTTPException(status_code=400, detail=f"Este email ya está registrado como empleado. Use un email diferente para el cliente.")
     
     # Determine customer_id
     if data.custom_customer_id and allow_custom_id:
