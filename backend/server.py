@@ -519,8 +519,8 @@ async def login_user(login_data: UserLogin):
     identifier = login_data.identifier.strip()
     identifier_lower = identifier.lower()
     
-    # First, try to find user in users collection
-    # IMPORTANT: If multiple users exist with same identifier, prioritize admin over client
+    # Search in both collections simultaneously
+    # 1. Search in users collection (admins, clients, superadmins)
     users_found = await db.users.find({
         "$or": [
             {"email": identifier},
@@ -529,109 +529,106 @@ async def login_user(login_data: UserLogin):
         ]
     }, {"_id": 0}).to_list(10)
     
-    # Sort by role priority: superadmin > admin > client
-    role_priority = {"superadmin": 0, "admin": 1, "client": 2}
-    if users_found:
-        users_found.sort(key=lambda u: role_priority.get(u.get("role", "client"), 3))
-        user = users_found[0]  # Get the highest priority user
-    else:
-        user = None
+    # 2. Search in employees collection
+    employee = await db.employees.find_one({
+        "$or": [
+            {"email": identifier},
+            {"whatsapp": identifier}
+        ]
+    }, {"_id": 0})
     
-    # If not found, try to find admin by tenant slug
-    if not user:
+    # 3. If not found in either, try tenant slug for admin
+    user = None
+    if not users_found and not employee:
         tenant_by_slug = await db.tenants.find_one({"slug": identifier_lower}, {"_id": 0})
         if tenant_by_slug:
-            # Find the admin of this tenant
             user = await db.users.find_one({
                 "tenant_id": tenant_by_slug["id"],
                 "role": "admin"
             }, {"_id": 0})
     
-    # If not found, try employees collection
-    employee = None
-    if not user:
-        employee = await db.employees.find_one({
-            "$or": [
-                {"email": identifier},
-                {"whatsapp": identifier}
-            ]
-        }, {"_id": 0})
+    # Sort users by role priority: superadmin > admin > client
+    role_priority = {"superadmin": 0, "admin": 1, "client": 2}
+    if users_found:
+        users_found.sort(key=lambda u: role_priority.get(u.get("role", "client"), 3))
+        user = users_found[0]
     
-    # Handle employee login
+    # Try employee login first if employee exists
     if employee:
-        if not verify_password(login_data.password, employee["password_hash"]):
-            raise HTTPException(status_code=401, detail="Credenciales inválidas")
-        if employee.get("status") != "active":
-            raise HTTPException(status_code=403, detail="Tu cuenta está inactiva. Contacta al administrador.")
+        if verify_password(login_data.password, employee["password_hash"]):
+            if employee.get("status") != "active":
+                raise HTTPException(status_code=403, detail="Tu cuenta está inactiva. Contacta al administrador.")
+            
+            tenant_id = employee["tenant_id"]
+            tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+            if not tenant or tenant.get("status") != "active":
+                raise HTTPException(status_code=403, detail="El negocio está suspendido.")
+            
+            # Log employee login
+            await log_audit_action(
+                tenant_id=tenant_id,
+                user_id=employee["id"],
+                user_name=employee["name"],
+                user_role="employee",
+                action="login",
+                entity_type="session",
+                entity_name="Inicio de sesión"
+            )
+            
+            token = create_token(employee["id"], "employee", tenant_id)
+            return {
+                "message": "Login exitoso",
+                "token": token,
+                "user_id": employee["id"],
+                "customer_id": None,
+                "name": employee["name"],
+                "role": "employee",
+                "tenant_id": tenant_id,
+                "tenant_name": tenant["business_name"],
+                "tenant_logo": tenant.get("logo_url"),
+                "permissions": employee.get("permissions", {})
+            }
+    
+    # Try user login (admin/client/superadmin)
+    if user and verify_password(login_data.password, user["password_hash"]):
+        tenant_id = user.get("tenant_id")
+        tenant_name = None
+        tenant_logo = None
+        if tenant_id:
+            tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+            if tenant:
+                if tenant.get("status") != "active":
+                    raise HTTPException(status_code=403, detail="Tu negocio está suspendido. Contacta al administrador.")
+                tenant_name = tenant["business_name"]
+                tenant_logo = tenant.get("logo_url")
         
-        tenant_id = employee["tenant_id"]
-        tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
-        if not tenant or tenant.get("status") != "active":
-            raise HTTPException(status_code=403, detail="El negocio está suspendido.")
+        # Log admin login for audit
+        if user["role"] == "admin":
+            await log_audit_action(
+                tenant_id=tenant_id,
+                user_id=user["id"],
+                user_name=user["name"],
+                user_role="admin",
+                action="login",
+                entity_type="session",
+                entity_name="Inicio de sesión"
+            )
         
-        # Log employee login
-        await log_audit_action(
-            tenant_id=tenant_id,
-            user_id=employee["id"],
-            user_name=employee["name"],
-            user_role="employee",
-            action="login",
-            entity_type="session",
-            entity_name="Inicio de sesión"
-        )
-        
-        token = create_token(employee["id"], "employee", tenant_id)
+        token = create_token(user["id"], user["role"], tenant_id)
         return {
             "message": "Login exitoso",
             "token": token,
-            "user_id": employee["id"],
-            "customer_id": None,
-            "name": employee["name"],
-            "role": "employee",
+            "user_id": user["id"],
+            "customer_id": user["customer_id"],
+            "name": user["name"],
+            "role": user["role"],
             "tenant_id": tenant_id,
-            "tenant_name": tenant["business_name"],
-            "tenant_logo": tenant.get("logo_url"),
-            "permissions": employee.get("permissions", {})
+            "tenant_name": tenant_name,
+            "tenant_logo": tenant_logo
         }
     
-    # Handle regular user login
-    if not user or not verify_password(login_data.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Credenciales inválidas")
-    tenant_id = user.get("tenant_id")
-    tenant_name = None
-    tenant_logo = None
-    if tenant_id:
-        tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
-        if tenant:
-            if tenant.get("status") != "active":
-                raise HTTPException(status_code=403, detail="Tu negocio está suspendido. Contacta al administrador.")
-            tenant_name = tenant["business_name"]
-            tenant_logo = tenant.get("logo_url")
-    
-    # Log admin login for audit
-    if user["role"] == "admin":
-        await log_audit_action(
-            tenant_id=tenant_id,
-            user_id=user["id"],
-            user_name=user["name"],
-            user_role="admin",
-            action="login",
-            entity_type="session",
-            entity_name="Inicio de sesión"
-        )
-    
-    token = create_token(user["id"], user["role"], tenant_id)
-    return {
-        "message": "Login exitoso",
-        "token": token,
-        "user_id": user["id"],
-        "customer_id": user["customer_id"],
-        "name": user["name"],
-        "role": user["role"],
-        "tenant_id": tenant_id,
-        "tenant_name": tenant_name,
-        "tenant_logo": tenant_logo
-    }
+    # No valid credentials found
+    raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
 @api_router.get("/auth/user/{user_id}")
 async def get_user(user_id: str, current_user: dict = Depends(get_current_user)):
