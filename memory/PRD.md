@@ -114,6 +114,18 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
   - Footer: "Gracias por su compra" + fecha de generación
   - jspdf + jspdf-autotable v5.x + qrcode
 - [x] Tracking URL configuration per tenant (SuperAdmin)
+- [x] **NEW: Búsqueda y Gestión de Facturas (Apr 10, 2026)**
+  - Nueva página `/admin/invoices` con búsqueda global
+  - Pestañas: Activas, Anuladas, Todas
+  - Búsqueda por: número de factura, nombre de cliente, email, WhatsApp, ID
+  - Filtros de estado funcionan con búsqueda combinada
+- [x] **NEW: Anulación de Facturas (Apr 10, 2026)**
+  - Soft delete: no elimina, solo marca `is_annulled=true`
+  - Registra: `annulled_at`, `annulled_by`, `annulled_by_name`
+  - Las compras de la factura vuelven a estado pendiente
+  - Solo admins pueden anular (employees no)
+  - Registro de auditoría automático
+  - Diálogo de confirmación con advertencias
 
 ### Reports
 - [x] Admin: Reports module with export to PDF/Excel
@@ -169,6 +181,17 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - `GET /api/admin/reports/all-purchases` - All purchases report
 - `GET /api/admin/reports/live/{id}` - Live-specific report
 - `GET /api/admin/reports/clients-debts` - **NEW** Client debts report with balance analysis
+
+### Invoice Module (NEW - Apr 10, 2026)
+- `GET /api/invoices/search` - Search invoices with filters
+  - Params: `q` (search term), `status_filter` (all|active|annulled|pending|approved)
+  - Searches by: invoice_number, customer_id, client name, email, whatsapp
+  - Returns enriched data with client info
+- `PUT /api/invoices/{id}/annul` - Annul an invoice (soft delete)
+  - Admin only
+  - Records: annulled_at, annulled_by, annulled_by_name
+  - Reverts purchases to pending status
+  - Creates audit log entry
 
 ## Key Credentials
 - Superadmin: superadmin@outletsusaec.com / super123
