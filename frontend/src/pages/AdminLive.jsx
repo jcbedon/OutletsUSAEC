@@ -775,7 +775,7 @@ export default function AdminLive() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <form onSubmit={handleSubmitPurchase} className="space-y-4">
+                  <form onSubmit={handleSubmitPurchase} noValidate className="space-y-4">
                     {/* Customer ID with Autocomplete */}
                     <div>
                       <Label className="text-sm font-medium">ID Cliente</Label>
@@ -853,9 +853,11 @@ export default function AdminLive() {
                           type="number"
                           inputMode="decimal"
                           step="0.01"
+                          min="0"
                           placeholder="0.00"
                           value={purchaseForm.price}
                           onChange={(e) => setPurchaseForm({ ...purchaseForm, price: e.target.value })}
+                          onInvalid={(e) => e.preventDefault()}
                           className="pl-10 h-14 text-2xl font-bold text-center rounded-xl"
                           data-testid="purchase-price"
                         />
@@ -891,6 +893,7 @@ export default function AdminLive() {
                                 placeholder="0"
                                 value={purchaseForm.custom_tax}
                                 onChange={(e) => setPurchaseForm({ ...purchaseForm, custom_tax: e.target.value })}
+                                onInvalid={(e) => e.preventDefault()}
                                 className="w-20 h-10 text-center rounded-lg"
                                 data-testid="custom-tax-input"
                               />
@@ -918,9 +921,11 @@ export default function AdminLive() {
                               type="number"
                               inputMode="decimal"
                               step="0.01"
+                              min="0"
                               placeholder="3.00"
                               value={purchaseForm.commission_amount}
                               onChange={(e) => setPurchaseForm({ ...purchaseForm, commission_amount: e.target.value })}
+                              onInvalid={(e) => e.preventDefault()}
                               className="w-24 h-8 text-center rounded-lg text-sm font-bold"
                               data-testid="commission-amount-input"
                             />
