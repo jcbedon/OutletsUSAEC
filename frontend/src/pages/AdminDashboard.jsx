@@ -19,7 +19,9 @@ import {
   Gift,
   Upload,
   UserCog,
-  ClipboardList
+  ClipboardList,
+  FileText,
+  Search
 } from "lucide-react";
 import { uploadTenantLogo } from "@/lib/api";
 
@@ -66,6 +68,7 @@ export default function AdminDashboard() {
     const allItems = [
       { icon: Radio, label: "Live Shopping", path: "/admin/live", color: "#1E3A5F", description: "Gestionar ventas en vivo", permission: "manage_lives" },
       { icon: Users, label: "Clientes", path: "/admin/clients", color: "#2a4f7f", description: "Ver y gestionar clientes", permission: "manage_clients" },
+      { icon: FileText, label: "Facturas", path: "/admin/invoices", color: "#3498DB", description: "Buscar y gestionar facturas", permission: "manage_invoices" },
       { icon: Wallet, label: "Recargas", path: "/admin/wallet", color: "#2ECC71", description: "Aprobar depósitos", permission: "approve_recharges" },
       { icon: Truck, label: "Envíos", path: "/admin/shipments", color: "#1E3A5F", description: "Gestionar envíos", permission: "manage_shipments" },
       { icon: Gift, label: "Referidos", path: "/admin/referrals", color: "#27ae60", description: "Configurar bonos", adminOnly: true },

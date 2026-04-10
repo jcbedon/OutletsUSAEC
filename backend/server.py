@@ -162,6 +162,10 @@ class Invoice(BaseModel):
     notes: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     approved_at: Optional[str] = None
+    is_annulled: bool = False
+    annulled_at: Optional[str] = None
+    annulled_by: Optional[str] = None
+    annulled_by_name: Optional[str] = None
 
 class Shipment(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -2175,18 +2179,110 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     }
 
 @api_router.get("/invoices/client/{customer_id}")
-async def get_client_invoices(customer_id: str, current_user: dict = Depends(get_current_user)):
+async def get_client_invoices(customer_id: str, include_annulled: bool = False, current_user: dict = Depends(get_current_user)):
     """Get all invoices for a client"""
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
-    invoices = await db.invoices.find({
+    query = {
         "customer_id": customer_id.upper(),
         "tenant_id": tid
-    }, {"_id": 0}).sort("created_at", -1).to_list(100)
+    }
+    
+    # By default, exclude annulled invoices
+    if not include_annulled:
+        query["is_annulled"] = {"$ne": True}
+    
+    invoices = await db.invoices.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
     
     return invoices
+
+@api_router.get("/invoices/search")
+async def search_invoices(
+    q: str = "",
+    status_filter: str = "all",  # all, pending, approved, annulled, active
+    current_user: dict = Depends(get_current_user)
+):
+    """Search invoices by any field (invoice number, client name, email, whatsapp, customer_id)"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    # Build base query
+    base_query = {"tenant_id": tid}
+    
+    # Apply status filter
+    if status_filter == "annulled":
+        base_query["is_annulled"] = True
+    elif status_filter == "pending":
+        base_query["is_annulled"] = {"$ne": True}
+        base_query["status"] = "pending"
+    elif status_filter == "approved":
+        base_query["is_annulled"] = {"$ne": True}
+        base_query["status"] = "approved"
+    elif status_filter == "active":
+        # All non-annulled invoices
+        base_query["is_annulled"] = {"$ne": True}
+    # status_filter == "all" means no filter on status
+    
+    # Get all invoices first
+    invoices = await db.invoices.find(base_query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    # If no search query, return all filtered invoices
+    if not q or q.strip() == "":
+        # Enrich with client info
+        customer_ids = list(set(inv["customer_id"] for inv in invoices))
+        if customer_ids:
+            clients = await db.users.find({"customer_id": {"$in": customer_ids}, "tenant_id": tid}, {"_id": 0}).to_list(len(customer_ids))
+            client_map = {c["customer_id"]: c for c in clients}
+        else:
+            client_map = {}
+        
+        for inv in invoices:
+            inv["client"] = client_map.get(inv["customer_id"], {})
+        
+        return invoices
+    
+    # Search query provided - search in invoices and clients
+    q_lower = q.strip().lower()
+    q_upper = q.strip().upper()
+    
+    # Get all clients for this tenant to search
+    all_clients = await db.users.find({"tenant_id": tid, "role": "client"}, {"_id": 0}).to_list(5000)
+    
+    # Find matching client customer_ids
+    matching_customer_ids = set()
+    for client in all_clients:
+        client_name = (client.get("name") or "").lower()
+        client_email = (client.get("email") or "").lower()
+        client_whatsapp = (client.get("whatsapp") or "").lower()
+        client_customer_id = (client.get("customer_id") or "").upper()
+        if (q_lower in client_name or
+            q_lower in client_email or
+            q_lower in client_whatsapp or
+            q_upper in client_customer_id):
+            matching_customer_ids.add(client["customer_id"])
+    
+    # Filter invoices
+    filtered_invoices = []
+    client_map = {c["customer_id"]: c for c in all_clients}
+    
+    for inv in invoices:
+        # Match by invoice number
+        if q_lower in inv.get("invoice_number", "").lower():
+            inv["client"] = client_map.get(inv["customer_id"], {})
+            filtered_invoices.append(inv)
+        # Match by customer_id
+        elif q_upper in inv.get("customer_id", "").upper():
+            inv["client"] = client_map.get(inv["customer_id"], {})
+            filtered_invoices.append(inv)
+        # Match by client info
+        elif inv["customer_id"] in matching_customer_ids:
+            inv["client"] = client_map.get(inv["customer_id"], {})
+            filtered_invoices.append(inv)
+    
+    return filtered_invoices
 
 @api_router.get("/invoices/{invoice_id}")
 async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_current_user)):
@@ -2382,6 +2478,66 @@ async def get_client_purchase_history(customer_id: str, current_user: dict = Dep
     }, {"_id": 0}).sort("paid_at", -1).to_list(500)
     
     return purchases
+
+@api_router.put("/invoices/{invoice_id}/annul")
+async def annul_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
+    """Annul an invoice (soft delete) - only admins can do this"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores pueden anular facturas")
+    tid = current_user["tenant_id"]
+    user_id = current_user["user_id"]
+    
+    # Get admin user info for audit
+    admin_user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0})
+    admin_name = admin_user.get("name", admin_user.get("email", "Admin")) if admin_user else "Admin"
+    
+    invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    if invoice.get("is_annulled"):
+        raise HTTPException(status_code=400, detail="La factura ya está anulada")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # Update invoice to annulled
+    await db.invoices.update_one(
+        {"id": invoice_id, "tenant_id": tid},
+        {"$set": {
+            "is_annulled": True,
+            "annulled_at": now,
+            "annulled_by": user_id,
+            "annulled_by_name": admin_name
+        }}
+    )
+    
+    # If invoice was approved, revert purchase statuses back to pending
+    if invoice.get("status") == "approved":
+        await db.purchases.update_many(
+            {"id": {"$in": invoice["purchase_ids"]}, "tenant_id": tid},
+            {"$set": {"status": "pending", "paid_at": None, "invoice_id": None, "invoiced_at": None}}
+        )
+    else:
+        # If pending, just remove invoice reference
+        await db.purchases.update_many(
+            {"id": {"$in": invoice["purchase_ids"]}, "tenant_id": tid},
+            {"$set": {"invoice_id": None, "invoiced_at": None}}
+        )
+    
+    # Log audit
+    await db.audit_logs.insert_one({
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "action": "invoice_annulled",
+        "entity_type": "invoice",
+        "entity_id": invoice_id,
+        "user_id": user_id,
+        "user_name": admin_name,
+        "details": f"Factura {invoice['invoice_number']} anulada",
+        "created_at": now
+    })
+    
+    return {"message": "Factura anulada exitosamente", "invoice_number": invoice["invoice_number"]}
 
 # ==================== NOTIFICATIONS ====================
 

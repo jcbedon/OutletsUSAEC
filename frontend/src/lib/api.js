@@ -127,6 +127,8 @@ export const approveInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/app
 export const removeItemFromInvoice = (invoiceId, purchaseId) => api.put(`/invoices/${invoiceId}/remove-item`, { purchase_id: purchaseId });
 export const reopenInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/reopen`);
 export const getClientPurchaseHistory = (customerId) => api.get(`/invoices/client/${customerId}/history`);
+export const annulInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/annul`);
+export const searchInvoices = (query, statusFilter = "all") => api.get(`/invoices/search?q=${encodeURIComponent(query)}&status_filter=${statusFilter}`);
 
 // Temporary Access Tokens (for QR codes)
 export const generateAccessToken = (data) => api.post("/auth/generate-access-token", data);

@@ -1,0 +1,122 @@
+{
+  "summary": "Invoice Search and Annul features fully tested. All 12 backend API tests passed. Frontend UI verified: /admin/invoices page loads correctly with tabs (Activas, Anuladas, Todas), search works by invoice number, client name, and WhatsApp. Annul functionality works - annulled invoices show in Anuladas tab with admin name and date. Facturas menu icon visible in admin dashboard.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Annul Dialog",
+        "issues": ["Minor: Console warning about missing Description or aria-describedby for DialogContent - accessibility improvement recommended"]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_invoice_search_annul.py",
+    "/app/test_reports/pytest/invoice_search_annul_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [
+    "/app/backend/tests/test_invoice_search_annul.py"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 tests passed)",
+    "frontend": "100%"
+  },
+  "test_credentials": {
+    "admin": {
+      "email": "admin@outletsusaec.com",
+      "password": "admin123"
+    }
+  },
+  "seed_data_creation": "Used existing invoices: INV-000001, INV-000002 (active, Juan Perez), INV-000003 (annulled, Self Registered Client)",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Invoice search and annul features fully functional. Endpoints: GET /api/invoices/search (params: q, status_filter), PUT /api/invoices/{id}/annul. Annulled invoices have is_annulled=true, annulled_at, annulled_by_name fields.",
+  "features_tested": {
+    "admin_invoices_page": {
+      "status": "PASSED",
+      "details": "Page /admin/invoices loads with search input and tabs"
+    },
+    "tabs_activas_anuladas_todas": {
+      "status": "PASSED",
+      "details": "All three tabs present with data-testid: tab-active, tab-annulled, tab-all"
+    },
+    "search_by_invoice_number": {
+      "status": "PASSED",
+      "details": "Search 'INV-000001' returns correct invoice"
+    },
+    "search_by_client_name": {
+      "status": "PASSED",
+      "details": "Search 'Juan' returns invoices for Juan Perez"
+    },
+    "search_by_whatsapp": {
+      "status": "PASSED",
+      "details": "Search by WhatsApp number works"
+    },
+    "annul_invoice_button": {
+      "status": "PASSED",
+      "details": "Anular button visible on active invoices, NOT visible on annulled invoices"
+    },
+    "annul_confirmation_dialog": {
+      "status": "PASSED",
+      "details": "Dialog shows invoice number, warning note, Cancelar and 'Sí, Anular Factura' buttons"
+    },
+    "annulled_invoice_metadata": {
+      "status": "PASSED",
+      "details": "Annulled invoices show 'Anulada el [date] por [admin_name]' - e.g., 'Anulada el 10/4/2026 por Administrador'"
+    },
+    "facturas_menu_icon": {
+      "status": "PASSED",
+      "details": "Facturas menu item visible in admin dashboard with FileText icon and description 'Buscar y gestionar facturas'"
+    }
+  },
+  "test_flow_executed": [
+    "1. Backend API tests (12 tests) - all passed",
+    "2. Admin login successful",
+    "3. Verified Facturas menu item in dashboard",
+    "4. Navigate to /admin/invoices",
+    "5. Verified tabs: Activas, Anuladas, Todas",
+    "6. Search by invoice number (INV-000001) - found",
+    "7. Search by client name (Juan) - found",
+    "8. Search by WhatsApp (5939) - executed",
+    "9. Click Anuladas tab - shows INV-000003 with annul metadata",
+    "10. Verified no Anular button on annulled invoices",
+    "11. Click Activas tab - shows 2 invoices with Anular buttons",
+    "12. Click Anular button - confirmation dialog opens",
+    "13. Click Todas tab - shows all 3 invoices"
+  ],
+  "api_endpoints_tested": {
+    "GET /api/invoices/search": {
+      "status": "WORKING",
+      "tests": [
+        "No query + active filter returns non-annulled invoices",
+        "No query + annulled filter returns only annulled invoices",
+        "No query + all filter returns all invoices",
+        "Search by invoice number (INV-000001)",
+        "Search by client name (Juan)",
+        "Search by WhatsApp (5939)",
+        "Partial search (INV)"
+      ]
+    },
+    "PUT /api/invoices/{id}/annul": {
+      "status": "WORKING",
+      "tests": [
+        "Requires admin role",
+        "Returns 400 if already annulled",
+        "Sets is_annulled=true, annulled_at, annulled_by_name"
+      ]
+    },
+    "GET /api/invoices/{id}": {
+      "status": "WORKING",
+      "tests": [
+        "Returns invoice detail with client info",
+        "Annulled invoice detail includes annul metadata"
+      ]
+    }
+  }
+}
