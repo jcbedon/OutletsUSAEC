@@ -698,87 +698,99 @@ export default function AdminLive() {
             {/* Purchase Form - LEFT */}
             <div className="space-y-4">
               {/* Live Header */}
-              <Card className="text-white rounded-2xl border-0" style={{ background: 'linear-gradient(135deg, #1E3A5F, #2a4f7f)' }}>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        {selectedLive.status === "active" ? (
-                          <>
-                            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                            <span className="text-sm font-medium text-green-200">EN VIVO</span>
-                          </>
-                        ) : (
-                          <>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-                            <span className="text-sm font-medium text-gray-300">FINALIZADO</span>
-                          </>
-                        )}
-                      </div>
-                      <h2 className="text-xl font-bold">{selectedLive.title}</h2>
-                      <p className="text-sm text-blue-200 mt-1">
-                        <Store className="h-3 w-3 inline mr-1" />
-                        {selectedLive.store || "Sin tienda definida"}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button 
-                        onClick={() => { setSelectedLive(null); setPurchases([]); }}
-                        variant="outline"
-                        className="border-white/30 text-white hover:bg-white/10"
-                        data-testid="back-to-lives-btn"
-                      >
-                        <ArrowLeft className="h-4 w-4 mr-1" />
-                        Volver
-                      </Button>
-                      <Button 
-                        onClick={openEditLiveDialog}
-                        variant="outline"
-                        className="border-white/30 text-white hover:bg-white/10"
-                        data-testid="edit-live-btn"
-                      >
-                        <Edit className="h-4 w-4 mr-1" />
-                        Editar
-                      </Button>
-                      {selectedLive.status === "active" && (
-                        <Button 
-                          onClick={handleEndLive}
-                          variant="outline"
-                          className="border-white/30 text-white hover:bg-white/10 font-bold"
-                          data-testid="end-live-btn"
-                        >
-                          <Square className="h-4 w-4 mr-2" />
-                          Finalizar
-                        </Button>
+              <Card className="text-white rounded-2xl border-0 overflow-hidden" style={{ background: 'linear-gradient(135deg, #1E3A5F, #2a4f7f)' }}>
+                <CardContent className="p-0">
+                  {/* Top Bar - Back button and status */}
+                  <div className="px-4 py-2 flex items-center justify-between border-b border-white/10">
+                    <Button 
+                      onClick={() => { setSelectedLive(null); setPurchases([]); }}
+                      variant="ghost"
+                      size="sm"
+                      className="text-white/80 hover:text-white hover:bg-white/10 -ml-2"
+                      data-testid="back-to-lives-btn"
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-1" />
+                      Volver
+                    </Button>
+                    <div className="flex items-center gap-2">
+                      {selectedLive.status === "active" ? (
+                        <>
+                          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                          <span className="text-sm font-medium text-green-300">EN VIVO</span>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                          <span className="text-sm font-medium text-gray-300">FINALIZADO</span>
+                        </>
                       )}
                     </div>
                   </div>
-                  <div className="flex gap-6 mt-4 pt-4 border-t border-white/20">
-                    <div>
-                      <p className="text-gray-300 text-xs">Ventas</p>
-                      <p className="text-2xl font-bold">{selectedLive.purchase_count || 0}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-300 text-xs">Total</p>
-                      <p className="text-2xl font-bold">${(selectedLive.total_sales || 0).toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-300 text-xs">Comisiones</p>
-                      <p className="text-2xl font-bold">${(selectedLive.total_commissions || 0).toFixed(2)}</p>
-                    </div>
-                    {/* Store Invoice inline in header */}
-                    {selectedLive.status === "active" && (
-                      <div className="ml-auto">
-                        <StoreInvoiceSection 
-                          live={selectedLive} 
-                          onUpdate={async () => {
-                            const res = await getLive(selectedLive.id);
-                            setSelectedLive(res.data);
-                          }}
-                          compact={true}
-                        />
+
+                  {/* Main Content */}
+                  <div className="p-4">
+                    {/* Title and Actions Row */}
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <h2 className="text-2xl font-bold leading-tight">{selectedLive.title}</h2>
+                        <p className="text-blue-200 mt-1 flex items-center gap-1">
+                          <Store className="h-4 w-4" />
+                          {selectedLive.store || "Sin tienda definida"}
+                        </p>
                       </div>
-                    )}
+                      <div className="flex gap-2">
+                        <Button 
+                          onClick={openEditLiveDialog}
+                          variant="outline"
+                          size="sm"
+                          className="border-white/30 text-white hover:bg-white/10"
+                          data-testid="edit-live-btn"
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          Editar
+                        </Button>
+                        {selectedLive.status === "active" && (
+                          <Button 
+                            onClick={handleEndLive}
+                            size="sm"
+                            className="bg-red-500/80 hover:bg-red-500 text-white border-0"
+                            data-testid="end-live-btn"
+                          >
+                            <Square className="h-4 w-4 mr-1" />
+                            Finalizar
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Stats Row */}
+                    <div className="flex gap-6 mt-4 pt-4 border-t border-white/20">
+                      <div>
+                        <p className="text-gray-300 text-xs">Ventas</p>
+                        <p className="text-2xl font-bold">{selectedLive.purchase_count || 0}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-300 text-xs">Total</p>
+                        <p className="text-2xl font-bold">${(selectedLive.total_sales || 0).toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-300 text-xs">Comisiones</p>
+                        <p className="text-2xl font-bold">${(selectedLive.total_commissions || 0).toFixed(2)}</p>
+                      </div>
+                      {/* Store Invoice inline in header */}
+                      {selectedLive.status === "active" && (
+                        <div className="ml-auto">
+                          <StoreInvoiceSection 
+                            live={selectedLive} 
+                            onUpdate={async () => {
+                              const res = await getLive(selectedLive.id);
+                              setSelectedLive(res.data);
+                            }}
+                            compact={true}
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
