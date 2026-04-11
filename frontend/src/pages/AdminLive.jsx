@@ -1010,11 +1010,9 @@ export default function AdminLive() {
                   </form>
                 </CardContent>
               </Card>
-            </div>
 
-            {/* Store Invoice Section - Between form and purchases list */}
-            {selectedLive && selectedLive.status === "active" && (
-              <div className="col-span-2">
+              {/* Store Invoice Section - Compact version below form */}
+              {selectedLive && selectedLive.status === "active" && (
                 <StoreInvoiceSection 
                   live={selectedLive} 
                   onUpdate={async () => {
@@ -1022,8 +1020,8 @@ export default function AdminLive() {
                     setSelectedLive(res.data);
                   }}
                 />
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Purchases List - RIGHT */}
             <div>

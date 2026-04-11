@@ -29,6 +29,7 @@ export default function StoreInvoiceSection({ live, onUpdate }) {
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const [uploadToken, setUploadToken] = useState("");
   const [polling, setPolling] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const fileInputRef = useRef(null);
   const pollingRef = useRef(null);
 
@@ -140,161 +141,137 @@ export default function StoreInvoiceSection({ live, onUpdate }) {
   const hasImage = !!live?.store_invoice_image;
   const hasAmount = live?.store_invoice_amount !== null && live?.store_invoice_amount !== undefined;
 
+  // Compact view when not expanded
+  if (!expanded) {
+    return (
+      <Card className="border border-orange-200 bg-orange-50/30 mt-3">
+        <CardContent className="py-3 px-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Receipt className="h-4 w-4 text-orange-600" />
+              <span className="text-sm font-medium text-gray-700">Factura de Tienda</span>
+              {hasAmount && hasImage ? (
+                <Badge className="bg-green-100 text-green-700 text-xs py-0">
+                  <CheckCircle className="h-3 w-3 mr-1" /> ${storeAmount.toFixed(2)}
+                </Badge>
+              ) : hasAmount ? (
+                <Badge className="bg-blue-100 text-blue-700 text-xs py-0">
+                  ${storeAmount.toFixed(2)}
+                </Badge>
+              ) : null}
+              {hasAmount && (
+                <span className={`text-sm font-bold ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                  {profit >= 0 ? "+" : ""}{profit.toFixed(2)} ganancia
+                </span>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setExpanded(true)}
+              className="text-orange-600 hover:text-orange-700 hover:bg-orange-100 h-7 px-2"
+            >
+              {hasAmount && hasImage ? "Ver" : "Ingresar"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <>
-      <Card className="border-2 border-orange-200 bg-orange-50/50">
-        <CardHeader className="pb-3">
-          <CardTitle className="flex items-center gap-2 text-lg" style={{ color: "#1E3A5F" }}>
-            <Receipt className="h-5 w-5" />
-            Factura de la Tienda
-            {hasAmount && hasImage ? (
-              <Badge className="bg-green-100 text-green-700 ml-auto">
-                <CheckCircle className="h-3 w-3 mr-1" /> Completo
-              </Badge>
-            ) : (
-              <Badge className="bg-orange-100 text-orange-700 ml-auto">
-                Pendiente
-              </Badge>
-            )}
+      <Card className="border border-orange-200 bg-orange-50/50 mt-3">
+        <CardHeader className="py-2 px-4">
+          <CardTitle className="flex items-center justify-between text-sm">
+            <div className="flex items-center gap-2" style={{ color: "#1E3A5F" }}>
+              <Receipt className="h-4 w-4" />
+              Factura de la Tienda
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setExpanded(false)}
+              className="h-6 px-2 text-xs text-gray-500"
+            >
+              Minimizar
+            </Button>
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Amount Input */}
-          <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">
-              Monto Total de la Factura de Tienda *
-            </label>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0.00"
-                  value={invoiceAmount}
-                  onChange={(e) => setInvoiceAmount(e.target.value)}
-                  onWheel={(e) => e.target.blur()}
-                  className="pl-10 h-12 text-xl font-bold"
-                  data-testid="store-invoice-amount"
-                />
-              </div>
-              <Button
-                onClick={handleSaveAmount}
-                disabled={saving}
-                className="h-12 px-6"
-                style={{ background: "#1E3A5F" }}
-              >
-                {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : "Guardar"}
-              </Button>
+        <CardContent className="py-2 px-4 space-y-3">
+          {/* Amount Input - Compact */}
+          <div className="flex gap-2 items-center">
+            <div className="relative flex-1">
+              <DollarSign className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0.00"
+                value={invoiceAmount}
+                onChange={(e) => setInvoiceAmount(e.target.value)}
+                onWheel={(e) => e.target.blur()}
+                className="pl-7 h-9 text-base font-bold"
+                data-testid="store-invoice-amount"
+              />
             </div>
+            <Button
+              onClick={handleSaveAmount}
+              disabled={saving}
+              size="sm"
+              className="h-9 px-3"
+              style={{ background: "#1E3A5F" }}
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "OK"}
+            </Button>
           </div>
 
-          {/* Profit Calculation */}
+          {/* Profit - Compact */}
           {hasAmount && (
-            <div className={`p-4 rounded-xl ${profit >= 0 ? "bg-green-50 border border-green-200" : "bg-red-50 border border-red-200"}`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600">Ganancia Calculada</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    (Ventas ${totalSales.toFixed(2)} - Factura ${storeAmount.toFixed(2)})
-                  </p>
-                </div>
-                <div className={`flex items-center gap-2 ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>
-                  {profit >= 0 ? (
-                    <TrendingUp className="h-6 w-6" />
-                  ) : (
-                    <TrendingDown className="h-6 w-6" />
-                  )}
-                  <span className="text-3xl font-extrabold">${profit.toFixed(2)}</span>
-                </div>
-              </div>
+            <div className={`p-2 rounded-lg flex items-center justify-between ${profit >= 0 ? "bg-green-50" : "bg-red-50"}`}>
+              <span className="text-xs text-gray-600">Ganancia:</span>
+              <span className={`font-bold ${profit >= 0 ? "text-green-600" : "text-red-600"}`}>
+                {profit >= 0 ? <TrendingUp className="h-4 w-4 inline mr-1" /> : <TrendingDown className="h-4 w-4 inline mr-1" />}
+                ${profit.toFixed(2)}
+              </span>
             </div>
           )}
 
-          {/* Image Upload Section */}
+          {/* Image Upload - Compact */}
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-2 block">
-              Foto de la Factura * (obligatorio para finalizar)
-            </label>
-            
             {hasImage ? (
-              <div className="relative rounded-xl overflow-hidden border-2 border-green-300 bg-green-50">
-                <img 
-                  src={`${process.env.REACT_APP_BACKEND_URL}${live.store_invoice_image}`} 
-                  alt="Factura de tienda" 
-                  className="w-full h-40 object-cover"
-                />
-                <div className="absolute top-2 right-2">
-                  <Badge className="bg-green-500 text-white">
-                    <CheckCircle className="h-3 w-3 mr-1" /> Subida
-                  </Badge>
-                </div>
-                <div className="absolute bottom-0 left-0 right-0 bg-black/50 p-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-white hover:bg-white/20"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                  >
-                    <Camera className="h-4 w-4 mr-1" />
-                    Cambiar imagen
-                  </Button>
-                </div>
+              <div className="flex items-center gap-2 p-2 rounded-lg bg-green-50 border border-green-200">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                <span className="text-xs text-green-700 flex-1">Foto subida</span>
+                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => fileInputRef.current?.click()}>
+                  Cambiar
+                </Button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {/* Direct Upload */}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
+              <div className="flex gap-2">
+                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
                 <Button
                   variant="outline"
-                  className="h-24 flex-col gap-2 border-2 border-dashed"
+                  size="sm"
+                  className="flex-1 h-8 text-xs"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploading}
                 >
-                  {uploading ? (
-                    <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
-                  ) : (
-                    <>
-                      <Upload className="h-8 w-8 text-gray-400" />
-                      <span className="text-sm text-gray-600">Subir desde PC</span>
-                    </>
-                  )}
+                  {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3 mr-1" />}
+                  Subir foto
                 </Button>
-
-                {/* QR Code for Mobile */}
                 <Button
                   variant="outline"
-                  className="h-24 flex-col gap-2 border-2 border-dashed border-blue-300 bg-blue-50 hover:bg-blue-100"
+                  size="sm"
+                  className="h-8 px-2 border-blue-300 text-blue-600"
                   onClick={handleGenerateQR}
                 >
-                  <Smartphone className="h-8 w-8 text-blue-500" />
-                  <span className="text-sm text-blue-600">Escanear con teléfono</span>
+                  <QrCode className="h-3 w-3" />
                 </Button>
               </div>
             )}
           </div>
-
-          {/* Optional note */}
-          {(!hasAmount || !hasImage) && (
-            <p className="text-xs text-gray-400 text-center">
-              Opcional: Ingresa el monto y foto de la factura para calcular tu ganancia
-            </p>
-          )}
         </CardContent>
       </Card>
 
