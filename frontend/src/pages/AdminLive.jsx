@@ -194,7 +194,7 @@ export default function AdminLive() {
 
   const handleSelectLive = async (live) => {
     // If live is finalized, show confirmation dialog
-    if (live.status === "ended" || live.status === "finalized") {
+    if (live.status === "ended" || live.status === "finalized" || live.status === "completed") {
       setLiveToOpen(live);
       setConfirmOpenFinalizedDialog(true);
       return;
