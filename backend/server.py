@@ -3119,6 +3119,65 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         }
     }
 
+@api_router.get("/admin/reports/store-profits")
+async def get_store_profits_report(current_user: dict = Depends(get_current_user)):
+    """Get profit report by store from completed lives"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    # Get all completed lives with store invoice data
+    lives = await db.lives.find(
+        {"tenant_id": tid, "status": "completed"},
+        {"_id": 0}
+    ).sort("ended_at", -1).to_list(500)
+    
+    store_profits = []
+    total_sales = 0
+    total_store_cost = 0
+    total_profit = 0
+    
+    for live in lives:
+        store_amount = live.get("store_invoice_amount")
+        store_image = live.get("store_invoice_image")
+        live_total = live.get("total_sales", 0)
+        live_commissions = live.get("total_commissions", 0)
+        
+        # Calculate profit if store amount exists
+        profit = None
+        if store_amount is not None:
+            profit = live_total - store_amount
+            total_store_cost += store_amount
+            total_profit += profit
+        
+        total_sales += live_total
+        
+        store_profits.append({
+            "live_id": live["id"],
+            "live_title": live.get("title", "Sin título"),
+            "store": live.get("store", "Sin tienda"),
+            "date": live.get("ended_at") or live.get("started_at") or live.get("created_at"),
+            "total_sales": round(live_total, 2),
+            "total_commissions": round(live_commissions, 2),
+            "purchase_count": live.get("purchase_count", 0),
+            "store_invoice_amount": round(store_amount, 2) if store_amount else None,
+            "store_invoice_image": store_image,
+            "profit": round(profit, 2) if profit is not None else None,
+            "profit_margin": round((profit / live_total * 100), 1) if profit is not None and live_total > 0 else None
+        })
+    
+    return {
+        "stores": store_profits,
+        "summary": {
+            "total_lives": len(lives),
+            "lives_with_invoice": len([l for l in store_profits if l["store_invoice_amount"] is not None]),
+            "total_sales": round(total_sales, 2),
+            "total_store_cost": round(total_store_cost, 2),
+            "total_profit": round(total_profit, 2),
+            "avg_profit_margin": round((total_profit / total_store_cost * 100), 1) if total_store_cost > 0 else 0
+        }
+    }
+
 # ==================== SETTINGS ====================
 
 @api_router.get("/admin/settings/referral-bonus")

@@ -8,8 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, DollarSign, TrendingUp, Wallet, Store, Radio, BarChart3, PieChart as PieChartIcon, Users, AlertTriangle, Search, Filter, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, DollarSign, TrendingUp, TrendingDown, Wallet, Store, Radio, BarChart3, PieChart as PieChartIcon, Users, AlertTriangle, Search, Filter, ChevronDown, ChevronUp, Receipt, Image } from "lucide-react";
 import { SalesTrendChart, StoreBarChart, ProfitPieChart, LiveBarChart, ClientsDebtsChart, ClientsDebtsPieChart, ClientsByDateChart } from "@/components/StatsCharts";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import StoreProfitsReport from "@/components/StoreProfitsReport";
 
 function formatMoney(n) {
   return "$" + (n || 0).toFixed(2);
@@ -46,10 +48,10 @@ export default function AdminStats() {
   
   // Filtros para deudas
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all"); // all, with_debt, no_debt
+  const [statusFilter, setStatusFilter] = useState("all");
   const [chartLimit, setChartLimit] = useState(15);
   const [tableLimit, setTableLimit] = useState(20);
-  const [sortBy, setSortBy] = useState("debt"); // debt, name, date, balance
+  const [sortBy, setSortBy] = useState("debt");
   const [sortAsc, setSortAsc] = useState(false);
 
   useEffect(() => {
@@ -213,9 +215,12 @@ export default function AdminStats() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 rounded-xl h-11 bg-white border">
+          <TabsList className="grid w-full grid-cols-5 rounded-xl h-11 bg-white border">
             <TabsTrigger value="resumen" className="rounded-lg data-[state=active]:bg-slate-800 data-[state=active]:text-white text-xs sm:text-sm">
               <DollarSign className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Resumen</span>
+            </TabsTrigger>
+            <TabsTrigger value="ganancias" className="rounded-lg data-[state=active]:bg-green-600 data-[state=active]:text-white text-xs sm:text-sm">
+              <Receipt className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Tiendas</span>
             </TabsTrigger>
             <TabsTrigger value="deudas" className="rounded-lg data-[state=active]:bg-red-600 data-[state=active]:text-white text-xs sm:text-sm">
               <AlertTriangle className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Deudas</span>
@@ -266,6 +271,11 @@ export default function AdminStats() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* Ganancias Tab - Store Profits */}
+          <TabsContent value="ganancias" className="mt-6">
+            <StoreProfitsReport />
           </TabsContent>
 
           {/* Graficas Tab */}
@@ -624,6 +634,21 @@ export default function AdminStats() {
             </div>
           </TabsContent>
         </Tabs>
+
+        {/* Image Preview Dialog */}
+        <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2" style={{ color: "#1E3A5F" }}>
+                <Receipt className="h-5 w-5" />
+                Factura de Tienda
+              </DialogTitle>
+            </DialogHeader>
+            {selectedImage && (
+              <img src={selectedImage} alt="Factura" className="w-full rounded-xl" />
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

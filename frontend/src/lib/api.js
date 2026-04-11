@@ -112,6 +112,7 @@ export const getBusinessStats = () => api.get("/admin/reports/business-stats");
 export const getClientsPurchasesReport = () => api.get("/admin/reports/clients-purchases");
 export const getAllPurchasesReport = () => api.get("/admin/reports/all-purchases");
 export const getClientsDebtsReport = () => api.get("/admin/reports/clients-debts");
+export const getStoreProfitsReport = () => api.get("/admin/reports/store-profits");
 
 // Settings - Referrals
 export const getReferralBonus = () => api.get("/admin/settings/referral-bonus");

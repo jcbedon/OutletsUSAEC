@@ -15,11 +15,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ArrowLeft, DollarSign, Users, TrendingUp, Radio,
-  FileSpreadsheet, FileText, Download, ChevronDown, ChevronUp, Search
+  FileSpreadsheet, FileText, Download, ChevronDown, ChevronUp, Search, Store
 } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
+import StoreProfitsReport from "@/components/StoreProfitsReport";
 
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("es-ES", { day: "numeric", month: "short", year: "numeric" }) : "N/A";
 const fmtMoney = (n) => "$" + (n || 0).toFixed(2);
@@ -348,14 +349,21 @@ export default function AdminReports() {
         <SummaryCards summary={summary} />
 
         <Tabs value={activeTab} onValueChange={handleTab}>
-          <TabsList className="w-full grid grid-cols-3 rounded-xl h-11 mb-4">
+          <TabsList className="w-full grid grid-cols-4 rounded-xl h-11 mb-4">
             <TabsTrigger value="resumen" className="rounded-lg">Por Live</TabsTrigger>
             <TabsTrigger value="clientes" className="rounded-lg">Por Cliente</TabsTrigger>
             <TabsTrigger value="compras" className="rounded-lg">Todas</TabsTrigger>
+            <TabsTrigger value="ganancias" className="rounded-lg flex items-center gap-1">
+              <Store className="h-3 w-3" /> Ganancias
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="resumen">
             <LiveTab lives={lives} liveReport={liveReport} onSelectLive={setSelectedLiveId} onExport={exportLive} />
+          </TabsContent>
+
+          <TabsContent value="ganancias">
+            <StoreProfitsReport />
           </TabsContent>
 
           <TabsContent value="clientes">

@@ -229,7 +229,7 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
                 {hasImage ? (
                   <div className="relative rounded-xl overflow-hidden border border-green-300">
                     <img 
-                      src={`${process.env.REACT_APP_BACKEND_URL}${live.store_invoice_image}`} 
+                      src={`${process.env.REACT_APP_BACKEND_URL}${live.store_invoice_image.replace('/api', '')}`} 
                       alt="Factura" 
                       className="w-full h-32 object-cover"
                     />
