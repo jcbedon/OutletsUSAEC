@@ -1950,7 +1950,7 @@ async def get_live(live_id: str, current_user: dict = Depends(get_current_user))
 
 @api_router.put("/lives/{live_id}")
 async def update_live(live_id: str, data: dict, current_user: dict = Depends(get_current_user)):
-    """Update live title and store"""
+    """Update live title and store - propagates changes to all purchases"""
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
@@ -1960,13 +1960,32 @@ async def update_live(live_id: str, data: dict, current_user: dict = Depends(get
         raise HTTPException(status_code=404, detail="Live no encontrado")
     
     update_fields = {}
+    purchase_updates = {}
+    
+    # Track what fields changed
     if "title" in data and data["title"]:
-        update_fields["title"] = data["title"].strip()
+        new_title = data["title"].strip()
+        if new_title != live.get("title"):
+            update_fields["title"] = new_title
+            purchase_updates["live_title"] = new_title
+    
     if "store" in data and data["store"]:
-        update_fields["store"] = data["store"].strip()
+        new_store = data["store"].strip()
+        if new_store != live.get("store"):
+            update_fields["store"] = new_store
+            purchase_updates["store"] = new_store
     
     if update_fields:
+        # Update the live
         await db.lives.update_one({"id": live_id, "tenant_id": tid}, {"$set": update_fields})
+        
+        # Propagate changes to all purchases of this live
+        if purchase_updates:
+            result = await db.purchases.update_many(
+                {"live_id": live_id, "tenant_id": tid},
+                {"$set": purchase_updates}
+            )
+            print(f"Updated {result.modified_count} purchases with new live/store info")
     
     updated_live = await db.lives.find_one({"id": live_id, "tenant_id": tid}, {"_id": 0})
     return updated_live

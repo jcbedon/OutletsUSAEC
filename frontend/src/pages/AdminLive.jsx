@@ -83,6 +83,10 @@ export default function AdminLive() {
   const [editLiveDialogOpen, setEditLiveDialogOpen] = useState(false);
   const [editLiveForm, setEditLiveForm] = useState({ title: "", store: "" });
   
+  // Confirm open finalized live
+  const [confirmOpenFinalizedDialog, setConfirmOpenFinalizedDialog] = useState(false);
+  const [liveToOpen, setLiveToOpen] = useState(null);
+  
   // Redirect if no permission
   useEffect(() => {
     if (!hasPermission) {
@@ -189,6 +193,18 @@ export default function AdminLive() {
   };
 
   const handleSelectLive = async (live) => {
+    // If live is finalized, show confirmation dialog
+    if (live.status === "ended" || live.status === "finalized") {
+      setLiveToOpen(live);
+      setConfirmOpenFinalizedDialog(true);
+      return;
+    }
+    
+    // Otherwise, open directly
+    await openLive(live);
+  };
+  
+  const openLive = async (live) => {
     setSelectedLive(live);
     try {
       const purchasesRes = await getLivePurchases(live.id);
@@ -196,6 +212,14 @@ export default function AdminLive() {
     } catch (error) {
       toast.error("Error al cargar compras del live");
     }
+  };
+  
+  const confirmOpenFinalizedLive = async () => {
+    if (liveToOpen) {
+      await openLive(liveToOpen);
+    }
+    setConfirmOpenFinalizedDialog(false);
+    setLiveToOpen(null);
   };
 
   const handleCreateLive = async () => {
@@ -1267,6 +1291,44 @@ export default function AdminLive() {
                   data-testid="save-edit-live-btn"
                 >
                   Guardar Cambios
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Confirm Open Finalized Live Dialog */}
+        <Dialog open={confirmOpenFinalizedDialog} onOpenChange={setConfirmOpenFinalizedDialog}>
+          <DialogContent className="rounded-2xl max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-amber-600">
+                <AlertTriangle className="h-5 w-5" />
+                Live Finalizado
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <p className="text-gray-600">
+                Este live ya fue <strong>finalizado</strong>. Al abrirlo podrás ver los productos registrados pero no podrás agregar nuevos.
+              </p>
+              <p className="text-sm text-gray-500">
+                ¿Estás seguro de que quieres abrir este live?
+              </p>
+              <div className="flex gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setConfirmOpenFinalizedDialog(false);
+                    setLiveToOpen(null);
+                  }}
+                  className="flex-1 h-11 rounded-xl"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={confirmOpenFinalizedLive}
+                  className="flex-1 h-11 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 text-white"
+                >
+                  Sí, Abrir Live
                 </Button>
               </div>
             </div>
