@@ -126,6 +126,10 @@ class Live(BaseModel):
     total_sales: float = 0.0
     total_commissions: float = 0.0
     purchase_count: int = 0
+    # Store invoice fields (for profit calculation)
+    store_invoice_amount: Optional[float] = None  # What was actually paid to the store
+    store_invoice_image: Optional[str] = None     # URL of the store invoice/receipt image
+    store_profit: Optional[float] = None          # Calculated profit: total_sales - store_invoice_amount
 
 class Purchase(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -1648,11 +1652,187 @@ async def start_live(live_id: str, current_user: dict = Depends(get_current_user
 async def end_live(live_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
-    result = await db.lives.update_one({"id": live_id, "tenant_id": current_user["tenant_id"]},
+    
+    tid = current_user["tenant_id"]
+    live = await db.lives.find_one({"id": live_id, "tenant_id": tid}, {"_id": 0})
+    if not live:
+        raise HTTPException(status_code=404, detail="Live no encontrado")
+    
+    # Check if store invoice is required (must have amount and image)
+    if not live.get("store_invoice_amount") or not live.get("store_invoice_image"):
+        raise HTTPException(
+            status_code=400, 
+            detail="Debes ingresar el monto de la factura de la tienda y subir una foto antes de finalizar"
+        )
+    
+    result = await db.lives.update_one({"id": live_id, "tenant_id": tid},
         {"$set": {"status": "completed", "ended_at": datetime.now(timezone.utc).isoformat()}})
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Live no encontrado")
     return {"message": "Live finalizado"}
+
+@api_router.put("/lives/{live_id}/store-invoice")
+async def update_store_invoice(live_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update store invoice amount and calculate profit"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    tid = current_user["tenant_id"]
+    live = await db.lives.find_one({"id": live_id, "tenant_id": tid}, {"_id": 0})
+    if not live:
+        raise HTTPException(status_code=404, detail="Live no encontrado")
+    
+    store_amount = float(data.get("store_invoice_amount", 0))
+    if store_amount < 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor o igual a 0")
+    
+    # Calculate profit: total_sales (includes taxes and commissions) - store_invoice_amount
+    total_sales = live.get("total_sales", 0)
+    profit = total_sales - store_amount
+    
+    await db.lives.update_one(
+        {"id": live_id, "tenant_id": tid},
+        {"$set": {
+            "store_invoice_amount": store_amount,
+            "store_profit": profit
+        }}
+    )
+    
+    return {
+        "message": "Monto actualizado",
+        "store_invoice_amount": store_amount,
+        "total_sales": total_sales,
+        "store_profit": profit
+    }
+
+@api_router.post("/lives/{live_id}/store-invoice/upload")
+async def upload_store_invoice_image(
+    live_id: str, 
+    file: UploadFile = File(...), 
+    current_user: dict = Depends(get_current_user)
+):
+    """Upload store invoice/receipt image"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    tid = current_user["tenant_id"]
+    live = await db.lives.find_one({"id": live_id, "tenant_id": tid}, {"_id": 0})
+    if not live:
+        raise HTTPException(status_code=404, detail="Live no encontrado")
+    
+    # Save file
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
+    filename = f"store_invoice_{live_id}_{uuid.uuid4().hex[:8]}.{ext}"
+    filepath = f"/app/uploads/{filename}"
+    
+    os.makedirs("/app/uploads", exist_ok=True)
+    with open(filepath, "wb") as f:
+        content = await file.read()
+        f.write(content)
+    
+    image_url = f"/api/uploads/{filename}"
+    
+    # Update live with image URL and recalculate profit if amount exists
+    update_data = {"store_invoice_image": image_url}
+    if live.get("store_invoice_amount") is not None:
+        profit = live.get("total_sales", 0) - live.get("store_invoice_amount", 0)
+        update_data["store_profit"] = profit
+    
+    await db.lives.update_one({"id": live_id, "tenant_id": tid}, {"$set": update_data})
+    
+    return {"message": "Imagen subida", "image_url": image_url}
+
+@api_router.post("/lives/{live_id}/generate-upload-qr")
+async def generate_upload_qr(live_id: str, current_user: dict = Depends(get_current_user)):
+    """Generate a temporary token for mobile upload via QR code"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    tid = current_user["tenant_id"]
+    live = await db.lives.find_one({"id": live_id, "tenant_id": tid}, {"_id": 0})
+    if not live:
+        raise HTTPException(status_code=404, detail="Live no encontrado")
+    
+    # Create a temporary upload token (expires in 10 minutes)
+    upload_token = str(uuid.uuid4())
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    
+    # Store token in database
+    await db.upload_tokens.insert_one({
+        "token": upload_token,
+        "live_id": live_id,
+        "tenant_id": tid,
+        "expires_at": expires_at,
+        "used": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    
+    return {
+        "upload_token": upload_token,
+        "expires_in_minutes": 10
+    }
+
+@api_router.post("/lives/mobile-upload/{upload_token}")
+async def mobile_upload_store_invoice(upload_token: str, file: UploadFile = File(...)):
+    """Upload store invoice from mobile device using temporary token (no auth required)"""
+    # Find and validate token
+    token_doc = await db.upload_tokens.find_one({"token": upload_token}, {"_id": 0})
+    if not token_doc:
+        raise HTTPException(status_code=404, detail="Token inválido o expirado")
+    
+    if token_doc.get("used"):
+        raise HTTPException(status_code=400, detail="Este token ya fue utilizado")
+    
+    # Check expiration
+    expires_at = datetime.fromisoformat(token_doc["expires_at"].replace("Z", "+00:00"))
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Token expirado")
+    
+    live_id = token_doc["live_id"]
+    tid = token_doc["tenant_id"]
+    
+    live = await db.lives.find_one({"id": live_id, "tenant_id": tid}, {"_id": 0})
+    if not live:
+        raise HTTPException(status_code=404, detail="Live no encontrado")
+    
+    # Save file
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
+    filename = f"store_invoice_{live_id}_{uuid.uuid4().hex[:8]}.{ext}"
+    filepath = f"/app/uploads/{filename}"
+    
+    os.makedirs("/app/uploads", exist_ok=True)
+    with open(filepath, "wb") as f:
+        content = await file.read()
+        f.write(content)
+    
+    image_url = f"/api/uploads/{filename}"
+    
+    # Update live with image URL
+    update_data = {"store_invoice_image": image_url}
+    if live.get("store_invoice_amount") is not None:
+        profit = live.get("total_sales", 0) - live.get("store_invoice_amount", 0)
+        update_data["store_profit"] = profit
+    
+    await db.lives.update_one({"id": live_id, "tenant_id": tid}, {"$set": update_data})
+    
+    # Mark token as used
+    await db.upload_tokens.update_one({"token": upload_token}, {"$set": {"used": True}})
+    
+    return {"message": "Imagen subida exitosamente", "image_url": image_url}
+
+@api_router.get("/lives/check-upload/{upload_token}")
+async def check_upload_status(upload_token: str):
+    """Check if an image was uploaded using the token (for polling from desktop)"""
+    token_doc = await db.upload_tokens.find_one({"token": upload_token}, {"_id": 0})
+    if not token_doc:
+        raise HTTPException(status_code=404, detail="Token no encontrado")
+    
+    live = await db.lives.find_one({"id": token_doc["live_id"]}, {"_id": 0})
+    
+    return {
+        "used": token_doc.get("used", False),
+        "image_url": live.get("store_invoice_image") if live else None
+    }
 
 @api_router.get("/lives")
 async def get_lives(status: Optional[str] = None, current_user: dict = Depends(get_current_user)):

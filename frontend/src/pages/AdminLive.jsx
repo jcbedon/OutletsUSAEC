@@ -15,7 +15,8 @@ import {
   getClientInfo,
   updatePurchase,
   deletePurchase,
-  getTenantSettings
+  getTenantSettings,
+  getLive
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import StoreInvoiceSection from "@/components/StoreInvoiceSection";
 import { 
   Radio, 
   Play, 
@@ -291,7 +293,8 @@ export default function AdminLive() {
       const updatedLive = livesRes.data.find(l => l.id === selectedLive.id);
       if (updatedLive) setSelectedLive(updatedLive);
     } catch (error) {
-      toast.error("Error al finalizar Live");
+      const errorMessage = error.response?.data?.detail || "Error al finalizar Live";
+      toast.error(errorMessage);
     }
   };
 
@@ -1005,6 +1008,19 @@ export default function AdminLive() {
                 </CardContent>
               </Card>
             </div>
+
+            {/* Store Invoice Section - Between form and purchases list */}
+            {selectedLive && selectedLive.status === "active" && (
+              <div className="col-span-2">
+                <StoreInvoiceSection 
+                  live={selectedLive} 
+                  onUpdate={async () => {
+                    const res = await getLive(selectedLive.id);
+                    setSelectedLive(res.data);
+                  }}
+                />
+              </div>
+            )}
 
             {/* Purchases List - RIGHT */}
             <div>
