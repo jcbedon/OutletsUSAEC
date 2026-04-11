@@ -1658,13 +1658,6 @@ async def end_live(live_id: str, current_user: dict = Depends(get_current_user))
     if not live:
         raise HTTPException(status_code=404, detail="Live no encontrado")
     
-    # Check if store invoice is required (must have amount and image)
-    if not live.get("store_invoice_amount") or not live.get("store_invoice_image"):
-        raise HTTPException(
-            status_code=400, 
-            detail="Debes ingresar el monto de la factura de la tienda y subir una foto antes de finalizar"
-        )
-    
     result = await db.lives.update_one({"id": live_id, "tenant_id": tid},
         {"$set": {"status": "completed", "ended_at": datetime.now(timezone.utc).isoformat()}})
     if result.modified_count == 0:

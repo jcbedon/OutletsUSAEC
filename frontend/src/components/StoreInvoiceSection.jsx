@@ -288,13 +288,11 @@ export default function StoreInvoiceSection({ live, onUpdate }) {
             )}
           </div>
 
-          {/* Warning if not complete */}
+          {/* Optional note */}
           {(!hasAmount || !hasImage) && (
-            <div className="p-3 rounded-lg bg-yellow-50 border border-yellow-200">
-              <p className="text-sm text-yellow-800">
-                <strong>Importante:</strong> Debes ingresar el monto y subir la foto de la factura de la tienda antes de poder finalizar este Live.
-              </p>
-            </div>
+            <p className="text-xs text-gray-400 text-center">
+              Opcional: Ingresa el monto y foto de la factura para calcular tu ganancia
+            </p>
           )}
         </CardContent>
       </Card>
