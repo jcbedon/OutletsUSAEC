@@ -537,6 +537,50 @@ async def login_user(login_data: UserLogin):
     identifier = login_data.identifier.strip()
     identifier_lower = identifier.lower()
     
+    # FIRST: Always check if identifier is a tenant slug - HIGHEST PRIORITY
+    admin_from_slug = None
+    tenant_by_slug = await db.tenants.find_one({"slug": identifier_lower}, {"_id": 0})
+    if tenant_by_slug:
+        admin_from_slug = await db.users.find_one({
+            "tenant_id": tenant_by_slug["id"],
+            "role": "admin"
+        }, {"_id": 0})
+        
+        # If found admin from tenant slug and password matches, login immediately
+        if admin_from_slug and verify_password(login_data.password, admin_from_slug["password_hash"]):
+            tenant_id = admin_from_slug.get("tenant_id")
+            tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+            tenant_name = tenant["business_name"] if tenant else None
+            tenant_logo = tenant.get("logo_url") if tenant else None
+            
+            if tenant and tenant.get("status") != "active":
+                raise HTTPException(status_code=403, detail="Tu negocio está suspendido. Contacta al administrador.")
+            
+            # Log admin login for audit
+            await log_audit_action(
+                tenant_id=tenant_id,
+                user_id=admin_from_slug["id"],
+                user_name=admin_from_slug["name"],
+                user_role="admin",
+                action="login",
+                entity_type="session",
+                entity_name="Inicio de sesión"
+            )
+            
+            token = create_token(admin_from_slug["id"], admin_from_slug["role"], tenant_id)
+            return {
+                "message": "Login exitoso",
+                "token": token,
+                "user_id": admin_from_slug["id"],
+                "customer_id": admin_from_slug.get("customer_id"),
+                "name": admin_from_slug["name"],
+                "role": admin_from_slug["role"],
+                "tenant_id": tenant_id,
+                "tenant_name": tenant_name,
+                "tenant_logo": tenant_logo,
+                "email": admin_from_slug.get("email")
+            }
+    
     # Search in both collections simultaneously
     # 1. Search in users collection (admins, clients, superadmins)
     users_found = await db.users.find({
@@ -555,27 +599,12 @@ async def login_user(login_data: UserLogin):
         ]
     }, {"_id": 0})
     
-    # 3. If not found in either, try tenant slug for admin
-    user = None
-    admin_from_slug = None
-    if not users_found and not employee:
-        tenant_by_slug = await db.tenants.find_one({"slug": identifier_lower}, {"_id": 0})
-        if tenant_by_slug:
-            admin_from_slug = await db.users.find_one({
-                "tenant_id": tenant_by_slug["id"],
-                "role": "admin"
-            }, {"_id": 0})
-            user = admin_from_slug
-    
     # Sort users by role priority: superadmin > admin > client
+    user = None
     role_priority = {"superadmin": 0, "admin": 1, "client": 2}
     if users_found:
         users_found.sort(key=lambda u: role_priority.get(u.get("role", "client"), 3))
         user = users_found[0]
-    
-    # If we found admin from slug, always prioritize it
-    if admin_from_slug:
-        user = admin_from_slug
     
     # PRIORITY: superadmin/admin FIRST, then employee, then client
     # Check if we have an admin-level user - they take priority over employee
