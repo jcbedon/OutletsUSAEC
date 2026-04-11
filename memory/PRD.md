@@ -246,6 +246,24 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] Integrado en `/admin/reports` (pestaña "Ganancias")
 - [x] Endpoint: `GET /api/admin/reports/store-profits`
 
+### Crear Facturas desde Módulo de Facturas (Apr 11, 2026)
+- [x] **NEW: Botón "Nueva Factura"** en `/admin/invoices`
+- [x] **NEW: CreateInvoiceDialog component** con flujo de 2 pasos:
+  - Paso 1: Seleccionar cliente con búsqueda
+  - Paso 2: Seleccionar compras pendientes para facturar
+  - Auto-selección de todas las compras
+  - Mostrar total de factura
+- [x] Recarga automática de lista después de crear factura
+
+### Flujo Mejorado de Envíos - Desde Factura (Apr 11, 2026)
+- [x] **NEW: Origen de productos** - Toggle entre "Compras Pendientes" y "Desde Factura"
+- [x] **NEW: Selección de factura** - Muestra facturas sin envío del cliente
+- [x] **NEW: Endpoint** `GET /api/invoices/client/{customer_id}/for-shipment`
+  - Filtra facturas que NO tienen envío asociado
+  - Incluye purchases detallados
+- [x] Al seleccionar factura, auto-selecciona sus productos
+- [x] Vincula invoice_id al crear el envío
+
 ### Bug Fixes (Apr 11, 2026)
 - [x] **FIX: Dialog de imagen no usado en AdminStats.jsx** - Eliminado código muerto que causaba error de `selectedImage` indefinido
 - [x] **FIX: Logo desapareciendo** - Implementado logo por defecto consistente en todas las páginas admin:

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import CreateInvoiceDialog from "@/components/CreateInvoiceDialog";
 import { 
   Search, 
   FileText, 
@@ -18,7 +19,8 @@ import {
   User,
   Phone,
   Mail,
-  Calendar
+  Calendar,
+  Plus
 } from "lucide-react";
 
 export default function AdminInvoices() {
@@ -31,6 +33,7 @@ export default function AdminInvoices() {
   const [showAnnulDialog, setShowAnnulDialog] = useState(false);
   const [invoiceToAnnul, setInvoiceToAnnul] = useState(null);
   const [annulling, setAnnulling] = useState(false);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   useEffect(() => {
     loadInvoices();
@@ -123,9 +126,18 @@ export default function AdminInvoices() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: '#1E3A5F' }}>Búsqueda de Facturas</h1>
-          <p className="text-gray-500 text-sm">Busca por número de factura, nombre de cliente, email, WhatsApp o ID</p>
+          <h1 className="text-2xl font-bold" style={{ color: '#1E3A5F' }}>Gestión de Facturas</h1>
+          <p className="text-gray-500 text-sm">Crea, busca y gestiona facturas</p>
         </div>
+        <Button
+          onClick={() => setShowCreateDialog(true)}
+          style={{ background: '#2ECC71' }}
+          className="hover:opacity-90"
+          data-testid="new-invoice-btn"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Nueva Factura
+        </Button>
       </div>
 
       {/* Search Bar */}
@@ -425,6 +437,13 @@ export default function AdminInvoices() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Create Invoice Dialog */}
+      <CreateInvoiceDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        onSuccess={() => loadInvoices()}
+      />
     </div>
   );
 }

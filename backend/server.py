@@ -2384,6 +2384,42 @@ async def get_client_invoices(customer_id: str, include_annulled: bool = False, 
     
     return invoices
 
+@api_router.get("/invoices/client/{customer_id}/for-shipment")
+async def get_client_invoices_for_shipment(customer_id: str, current_user: dict = Depends(get_current_user)):
+    """Get invoices for a client that don't have an associated shipment yet"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    # Get all non-annulled invoices for this client
+    invoices = await db.invoices.find({
+        "customer_id": customer_id.upper(),
+        "tenant_id": tid,
+        "is_annulled": {"$ne": True}
+    }, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    # Get all shipment invoice_ids to filter out invoices that already have shipments
+    shipments = await db.shipments.find(
+        {"tenant_id": tid, "invoice_id": {"$ne": None}},
+        {"invoice_id": 1, "_id": 0}
+    ).to_list(1000)
+    shipped_invoice_ids = {s["invoice_id"] for s in shipments if s.get("invoice_id")}
+    
+    # Filter out invoices that already have shipments
+    result = []
+    for inv in invoices:
+        if inv["id"] not in shipped_invoice_ids:
+            # Get purchase details for this invoice
+            purchases = await db.purchases.find(
+                {"id": {"$in": inv.get("purchase_ids", [])}},
+                {"_id": 0}
+            ).to_list(100)
+            inv["purchases"] = purchases
+            inv["purchase_count"] = len(purchases)
+            result.append(inv)
+    
+    return result
+
 @api_router.get("/invoices/search")
 async def search_invoices(
     q: str = "",

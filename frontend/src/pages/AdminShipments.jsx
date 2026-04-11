@@ -11,7 +11,8 @@ import {
   uploadShipmentAttachment,
   updateShipment,
   deleteShipment,
-  getMyTenant
+  getMyTenant,
+  getClientInvoicesForShipment
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -119,6 +120,12 @@ export default function AdminShipments() {
     additional_info: ""
   });
   
+  // New: Invoice selection mode
+  const [shipmentSource, setShipmentSource] = useState("purchases"); // "purchases" or "invoice"
+  const [clientInvoices, setClientInvoices] = useState([]);
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [loadingInvoices, setLoadingInvoices] = useState(false);
+  
   // Tenant settings
   const [tenantSettings, setTenantSettings] = useState({
     shipment_show_product_list: true
@@ -176,21 +183,40 @@ export default function AdminShipments() {
     const client = clients.find(c => c.id === clientId);
     setSelectedClient(client);
     setSelectedPurchases([]);
+    setSelectedInvoice(null);
+    setClientInvoices([]);
+    setShipmentSource("purchases"); // Reset to default
     
     if (client) {
       try {
-        const response = await getPendingShipmentPurchases(clientId);
-        setPendingPurchases(response.data);
+        // Load both pending purchases and invoices in parallel
+        const [purchasesRes, invoicesRes] = await Promise.all([
+          getPendingShipmentPurchases(clientId),
+          getClientInvoicesForShipment(client.customer_id)
+        ]);
+        
+        setPendingPurchases(purchasesRes.data);
+        setClientInvoices(invoicesRes.data);
+        
         // Auto-select all purchases
-        setSelectedPurchases(response.data.map(p => p.id));
+        setSelectedPurchases(purchasesRes.data.map(p => p.id));
         setShipmentForm({
           ...shipmentForm,
           country: client.country,
           phone: client.whatsapp
         });
       } catch (error) {
-        toast.error("Error al cargar compras");
+        toast.error("Error al cargar datos del cliente");
       }
+    }
+  };
+  
+  const handleSelectInvoice = (invoice) => {
+    setSelectedInvoice(invoice);
+    // Use the purchases from the invoice
+    if (invoice.purchases) {
+      setPendingPurchases(invoice.purchases);
+      setSelectedPurchases(invoice.purchases.map(p => p.id));
     }
   };
 
@@ -241,7 +267,7 @@ export default function AdminShipments() {
         country: shipmentForm.country,
         phone: shipmentForm.phone,
         additional_info: shipmentForm.additional_info,
-        invoice_id: invoiceData?.invoice_id || null
+        invoice_id: selectedInvoice?.id || invoiceData?.invoice_id || null
       });
       
       const shipmentId = response.data.shipment_id;
@@ -266,6 +292,9 @@ export default function AdminShipments() {
       setSelectedPurchases([]);
       setClientSearch("");
       setAttachmentFiles([]);
+      setSelectedInvoice(null);
+      setClientInvoices([]);
+      setShipmentSource("purchases");
       setShipmentForm({
         shipping_type: "",
         shipping_cost: "",
@@ -416,11 +445,15 @@ export default function AdminShipments() {
           <Dialog open={createDialogOpen} onOpenChange={(open) => {
             setCreateDialogOpen(open);
             if (!open) {
-              // Clear invoice data when closing dialog
+              // Clear all state when closing dialog
               setInvoiceData(null);
               setSelectedClient(null);
               setPendingPurchases([]);
               setSelectedPurchases([]);
+              setSelectedInvoice(null);
+              setClientInvoices([]);
+              setShipmentSource("purchases");
+              setClientSearch("");
             }
           }}>
             <DialogTrigger asChild>
@@ -518,8 +551,122 @@ export default function AdminShipments() {
                   )}
                 </div>
 
-                {/* Pending Purchases */}
-                {selectedClient && (
+                {/* Source Selection: Purchases or Invoice */}
+                {selectedClient && !invoiceData && (
+                  <div className="space-y-3">
+                    <Label>Origen de los productos</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShipmentSource("purchases");
+                          setSelectedInvoice(null);
+                          // Reload pending purchases
+                          getPendingShipmentPurchases(selectedClient.id).then(res => {
+                            setPendingPurchases(res.data);
+                            setSelectedPurchases(res.data.map(p => p.id));
+                          });
+                        }}
+                        className={`p-3 rounded-xl border-2 text-left transition-all ${
+                          shipmentSource === "purchases" 
+                            ? "border-blue-500 bg-blue-50" 
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Package className={`h-5 w-5 ${shipmentSource === "purchases" ? "text-blue-600" : "text-gray-400"}`} />
+                          <span className={`font-medium ${shipmentSource === "purchases" ? "text-blue-800" : "text-gray-700"}`}>
+                            Compras Pendientes
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Enviar productos sin factura</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShipmentSource("invoice");
+                          setSelectedInvoice(null);
+                          setPendingPurchases([]);
+                          setSelectedPurchases([]);
+                        }}
+                        className={`p-3 rounded-xl border-2 text-left transition-all ${
+                          shipmentSource === "invoice" 
+                            ? "border-purple-500 bg-purple-50" 
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <FileText className={`h-5 w-5 ${shipmentSource === "invoice" ? "text-purple-600" : "text-gray-400"}`} />
+                          <span className={`font-medium ${shipmentSource === "invoice" ? "text-purple-800" : "text-gray-700"}`}>
+                            Desde Factura
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">Seleccionar factura existente</p>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Invoice Selection */}
+                {selectedClient && shipmentSource === "invoice" && !invoiceData && (
+                  <div className="space-y-3">
+                    <Label>Seleccionar Factura ({clientInvoices.length} disponibles)</Label>
+                    {clientInvoices.length === 0 ? (
+                      <div className="p-4 rounded-xl bg-gray-50 border border-dashed border-gray-300 text-center">
+                        <FileText className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                        <p className="text-sm text-gray-500">No hay facturas pendientes de envío</p>
+                        <p className="text-xs text-gray-400 mt-1">Las facturas ya enviadas no aparecen aquí</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {clientInvoices.map((invoice) => (
+                          <div
+                            key={invoice.id}
+                            onClick={() => handleSelectInvoice(invoice)}
+                            className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${
+                              selectedInvoice?.id === invoice.id
+                                ? "border-purple-500 bg-purple-50"
+                                : "border-gray-200 hover:border-purple-300 bg-white"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-purple-700">{invoice.invoice_number}</span>
+                                  <Badge className={invoice.status === "approved" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}>
+                                    {invoice.status === "approved" ? "Pagada" : "Pendiente"}
+                                  </Badge>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {invoice.purchase_count || invoice.purchase_ids?.length || 0} productos • {new Date(invoice.created_at).toLocaleDateString("es-ES")}
+                                </p>
+                              </div>
+                              <span className="font-bold text-lg" style={{ color: '#1E3A5F' }}>
+                                ${invoice.total?.toFixed(2)}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Selected Invoice Info */}
+                    {selectedInvoice && (
+                      <div className="p-3 rounded-xl bg-purple-50 border border-purple-200">
+                        <div className="flex items-center gap-2 mb-2">
+                          <FileText className="h-4 w-4 text-purple-600" />
+                          <span className="font-semibold text-purple-800">Factura {selectedInvoice.invoice_number}</span>
+                        </div>
+                        <p className="text-sm text-purple-700">
+                          <strong>{selectedInvoice.purchases?.length || 0}</strong> productos incluidos • Total: <strong>${selectedInvoice.total?.toFixed(2)}</strong>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Pending Purchases - only show when source is "purchases" or when coming from invoice */}
+                {selectedClient && (shipmentSource === "purchases" || invoiceData) && (
                   <>
                     {tenantSettings.shipment_show_product_list ? (
                       <div>

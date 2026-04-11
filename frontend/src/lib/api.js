@@ -127,6 +127,7 @@ export const updateTenantTaxOptions = (taxOptions) => api.put("/admin/settings/t
 export const getPendingPurchases = (customerId) => api.get(`/invoices/client/${customerId}/pending-purchases`);
 export const createInvoice = (data) => api.post("/invoices", data);
 export const getClientInvoices = (customerId) => api.get(`/invoices/client/${customerId}`);
+export const getClientInvoicesForShipment = (customerId) => api.get(`/invoices/client/${customerId}/for-shipment`);
 export const getInvoiceDetail = (invoiceId) => api.get(`/invoices/${invoiceId}`);
 export const approveInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/approve`);
 export const removeItemFromInvoice = (invoiceId, purchaseId) => api.put(`/invoices/${invoiceId}/remove-item`, { purchase_id: purchaseId });
