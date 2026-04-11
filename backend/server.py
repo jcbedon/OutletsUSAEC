@@ -974,6 +974,20 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
     ]).to_list(len(user_ids))
     shipments_dict = {s["_id"]: s["total_shipping"] for s in shipments_agg}
     
+    # Aggregate PENDING purchases (no invoice_id) per user - for "compras pendientes de facturar"
+    pending_purchases_agg = await db.purchases.aggregate([
+        {"$match": {
+            "user_id": {"$in": user_ids}, 
+            "tenant_id": tid,
+            "$or": [
+                {"invoice_id": None},
+                {"invoice_id": {"$exists": False}}
+            ]
+        }},
+        {"$group": {"_id": "$user_id", "count": {"$sum": 1}}}
+    ]).to_list(len(user_ids))
+    pending_purchases_dict = {p["_id"]: p["count"] for p in pending_purchases_agg}
+    
     result = []
     for user in users:
         uid = user["id"]
@@ -982,6 +996,7 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         purch = purchases_dict.get(uid, {"total": 0, "count": 0})
         total_shipping = shipments_dict.get(uid, 0)
         pending_balance = wallet_balance - total_shipping
+        pending_to_invoice = pending_purchases_dict.get(uid, 0)
         result.append({
             **user, 
             "wallet_balance": round(wallet_balance, 2),
@@ -989,7 +1004,8 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "total_shipping": round(total_shipping, 2),
             "pending_balance": round(pending_balance, 2),
             "purchase_count": purch["count"],
-            "is_active": user.get("is_active", True)
+            "is_active": user.get("is_active", True),
+            "pending_to_invoice": pending_to_invoice  # Compras pendientes de facturar
         })
     return result
 

@@ -569,20 +569,38 @@ export default function AdminInvoices() {
                       c.customer_id?.toLowerCase().includes(clientSearch.toLowerCase()) ||
                       (c.whatsapp && c.whatsapp.includes(clientSearch))
                     )
-                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .sort((a, b) => {
+                      // First sort by pending_to_invoice (descending - clients with pending first)
+                      if ((b.pending_to_invoice || 0) !== (a.pending_to_invoice || 0)) {
+                        return (b.pending_to_invoice || 0) - (a.pending_to_invoice || 0);
+                      }
+                      // Then sort alphabetically
+                      return a.name.localeCompare(b.name);
+                    })
                     .map((client) => (
                       <div
                         key={client.id}
-                        className="p-3 rounded-xl border bg-white hover:border-blue-300 hover:shadow-md cursor-pointer transition-all flex items-center justify-between"
+                        className={`p-3 rounded-xl border bg-white hover:border-blue-300 hover:shadow-md cursor-pointer transition-all flex items-center justify-between ${
+                          client.pending_to_invoice > 0 ? 'border-l-4 border-l-amber-400' : ''
+                        }`}
                         onClick={() => handleSelectClientForInvoice(client)}
                         data-testid={`select-client-${client.customer_id}`}
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
-                            <User className="h-5 w-5 text-blue-600" />
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                            client.pending_to_invoice > 0 ? 'bg-amber-50' : 'bg-blue-50'
+                          }`}>
+                            <User className={`h-5 w-5 ${client.pending_to_invoice > 0 ? 'text-amber-600' : 'text-blue-600'}`} />
                           </div>
                           <div>
-                            <p className="font-medium" style={{ color: '#1E3A5F' }}>{client.name}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium" style={{ color: '#1E3A5F' }}>{client.name}</p>
+                              {client.pending_to_invoice > 0 && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+                                  {client.pending_to_invoice} pendiente{client.pending_to_invoice > 1 ? 's' : ''}
+                                </span>
+                              )}
+                            </div>
                             <div className="flex gap-3 text-sm text-gray-500">
                               <span>#{client.customer_id}</span>
                               {client.whatsapp && <span>{client.whatsapp}</span>}
