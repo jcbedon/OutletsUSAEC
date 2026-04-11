@@ -235,9 +235,16 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
                     {/* Current Image */}
                     <div className="relative rounded-xl overflow-hidden border border-green-300">
                       <img 
-                        src={`${process.env.REACT_APP_BACKEND_URL}${live.store_invoice_image.replace('/api', '')}`} 
+                        src={live.store_invoice_image.startsWith('http') 
+                          ? live.store_invoice_image 
+                          : `${process.env.REACT_APP_BACKEND_URL}${live.store_invoice_image.startsWith('/api') ? live.store_invoice_image.replace('/api', '') : live.store_invoice_image}`
+                        } 
                         alt="Factura" 
                         className="w-full h-32 object-cover"
+                        onError={(e) => {
+                          console.error('Image load error:', live.store_invoice_image);
+                          e.target.style.display = 'none';
+                        }}
                       />
                     </div>
                     {/* Change Image Options */}

@@ -213,12 +213,23 @@ export default function AdminLive() {
     }
 
     try {
-      await createLive({ title: newLiveTitle, store: newLiveStore });
+      const res = await createLive({ title: newLiveTitle, store: newLiveStore });
+      const newLiveId = res.data.live_id;
       toast.success("Live creado");
       setNewLiveTitle("");
       setNewLiveStore("");
       setCreateLiveDialogOpen(false);
-      loadData();
+      
+      // Reload lives and select the NEW live
+      const livesRes = await getLives();
+      setLives(livesRes.data);
+      
+      // Find and select the newly created live
+      const createdLive = livesRes.data.find(l => l.id === newLiveId);
+      if (createdLive) {
+        setSelectedLive(createdLive);
+        setPurchases([]);
+      }
     } catch (error) {
       toast.error("Error al crear Live");
     }
