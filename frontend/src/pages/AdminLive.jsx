@@ -330,6 +330,25 @@ export default function AdminLive() {
     }
   };
 
+  const handleReactivateLive = async () => {
+    if (!selectedLive) return;
+    try {
+      await startLive(selectedLive.id);
+      toast.success("¡Live reactivado! Ahora puedes agregar productos");
+      // Reload to update status
+      const livesRes = await getLives();
+      setLives(livesRes.data);
+      const reactivatedLive = livesRes.data.find(l => l.id === selectedLive.id);
+      if (reactivatedLive) {
+        setSelectedLive(reactivatedLive);
+        setActiveLive(reactivatedLive);
+      }
+    } catch (error) {
+      const errorMessage = error.response?.data?.detail || "Error al reactivar Live";
+      toast.error(errorMessage);
+    }
+  };
+
   const handleCustomerIdChange = async (value) => {
     setClientSearchValue(value);
     setPurchaseForm({ ...purchaseForm, customer_id: value.toUpperCase() });
@@ -1081,11 +1100,16 @@ export default function AdminLive() {
                   <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
                   <h3 className="text-lg font-bold text-amber-800 mb-2">Live Finalizado</h3>
                   <p className="text-amber-700 mb-4">
-                    Este live está finalizado. Solo puedes ver las compras registradas, pero no agregar nuevas.
+                    Este live está finalizado. Solo puedes ver las compras registradas.
                   </p>
-                  <p className="text-sm text-amber-600">
-                    Para agregar nuevas compras, crea un nuevo live o reactiva uno existente.
-                  </p>
+                  <Button 
+                    onClick={handleReactivateLive}
+                    className="bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl h-12 px-6"
+                    data-testid="reactivate-live-btn"
+                  >
+                    <Play className="h-5 w-5 mr-2" />
+                    Reactivar Live para Agregar Productos
+                  </Button>
                 </CardContent>
               </Card>
               )}

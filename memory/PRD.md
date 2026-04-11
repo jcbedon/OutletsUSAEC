@@ -240,6 +240,10 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
   - Cuando se cambia el título del Live → actualiza `live_title` en compras
   - Cuando se cambia la tienda → actualiza `store` en compras
   - Usa `update_many` para eficiencia en lotes
+- [x] **NEW: Lives finalizados no muestran formulario de compra**
+  - Tarjeta amber de advertencia en lugar del formulario
+  - Botón "Reactivar Live para Agregar Productos"
+  - Al reactivar, el live vuelve a status `active` y muestra el formulario
 
 ### Store Profits Report (Ganancias por Tienda)
 - [x] **NEW: StoreProfitsReport component** - Componente reutilizable para mostrar ganancias por tienda
