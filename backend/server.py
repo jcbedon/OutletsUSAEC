@@ -2451,18 +2451,44 @@ async def search_invoices(
     # Get all invoices first
     invoices = await db.invoices.find(base_query, {"_id": 0}).sort("created_at", -1).to_list(1000)
     
+    # Get all customer_ids from invoices
+    customer_ids = list(set(inv["customer_id"] for inv in invoices))
+    
+    # Get pending purchases count per customer (purchases without invoice_id)
+    pending_purchases_by_customer = {}
+    if customer_ids:
+        # Get all users for these customer_ids to get their user ids
+        clients = await db.users.find({"customer_id": {"$in": customer_ids}, "tenant_id": tid}, {"_id": 0}).to_list(len(customer_ids))
+        client_map = {c["customer_id"]: c for c in clients}
+        
+        # Get pending purchases (no invoice_id) grouped by user
+        user_ids = [c["id"] for c in clients]
+        pending_purchases = await db.purchases.find({
+            "user_id": {"$in": user_ids},
+            "tenant_id": tid,
+            "$or": [
+                {"invoice_id": None},
+                {"invoice_id": {"$exists": False}}
+            ]
+        }, {"user_id": 1, "_id": 0}).to_list(10000)
+        
+        # Count by user_id, then map to customer_id
+        user_pending_count = {}
+        for p in pending_purchases:
+            uid = p["user_id"]
+            user_pending_count[uid] = user_pending_count.get(uid, 0) + 1
+        
+        # Map user_id counts to customer_id
+        for c in clients:
+            pending_purchases_by_customer[c["customer_id"]] = user_pending_count.get(c["id"], 0)
+    else:
+        client_map = {}
+    
     # If no search query, return all filtered invoices
     if not q or q.strip() == "":
-        # Enrich with client info
-        customer_ids = list(set(inv["customer_id"] for inv in invoices))
-        if customer_ids:
-            clients = await db.users.find({"customer_id": {"$in": customer_ids}, "tenant_id": tid}, {"_id": 0}).to_list(len(customer_ids))
-            client_map = {c["customer_id"]: c for c in clients}
-        else:
-            client_map = {}
-        
         for inv in invoices:
             inv["client"] = client_map.get(inv["customer_id"], {})
+            inv["client_pending_purchases"] = pending_purchases_by_customer.get(inv["customer_id"], 0)
         
         return invoices
     
@@ -2488,20 +2514,22 @@ async def search_invoices(
     
     # Filter invoices
     filtered_invoices = []
-    client_map = {c["customer_id"]: c for c in all_clients}
     
     for inv in invoices:
         # Match by invoice number
         if q_lower in inv.get("invoice_number", "").lower():
             inv["client"] = client_map.get(inv["customer_id"], {})
+            inv["client_pending_purchases"] = pending_purchases_by_customer.get(inv["customer_id"], 0)
             filtered_invoices.append(inv)
         # Match by customer_id
         elif q_upper in inv.get("customer_id", "").upper():
             inv["client"] = client_map.get(inv["customer_id"], {})
+            inv["client_pending_purchases"] = pending_purchases_by_customer.get(inv["customer_id"], 0)
             filtered_invoices.append(inv)
         # Match by client info
         elif inv["customer_id"] in matching_customer_ids:
             inv["client"] = client_map.get(inv["customer_id"], {})
+            inv["client_pending_purchases"] = pending_purchases_by_customer.get(inv["customer_id"], 0)
             filtered_invoices.append(inv)
     
     return filtered_invoices

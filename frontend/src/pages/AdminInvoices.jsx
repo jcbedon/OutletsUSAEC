@@ -331,10 +331,9 @@ export default function AdminInvoices() {
                         <User className="h-3 w-3" />
                         {invoice.client?.name || invoice.customer_id}
                       </span>
-                      {invoice.client?.email && (
-                        <span className="flex items-center gap-1">
-                          <Mail className="h-3 w-3" />
-                          {invoice.client.email}
+                      {invoice.client_pending_purchases > 0 && (
+                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                          +{invoice.client_pending_purchases} pendiente{invoice.client_pending_purchases > 1 ? 's' : ''}
                         </span>
                       )}
                       {invoice.client?.whatsapp && (
