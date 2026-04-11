@@ -765,6 +765,19 @@ export default function AdminLive() {
                       <p className="text-gray-300 text-xs">Comisiones</p>
                       <p className="text-2xl font-bold">${(selectedLive.total_commissions || 0).toFixed(2)}</p>
                     </div>
+                    {/* Store Invoice inline in header */}
+                    {selectedLive.status === "active" && (
+                      <div className="ml-auto">
+                        <StoreInvoiceSection 
+                          live={selectedLive} 
+                          onUpdate={async () => {
+                            const res = await getLive(selectedLive.id);
+                            setSelectedLive(res.data);
+                          }}
+                          compact={true}
+                        />
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -1010,17 +1023,6 @@ export default function AdminLive() {
                   </form>
                 </CardContent>
               </Card>
-
-              {/* Store Invoice Section - Compact version below form */}
-              {selectedLive && selectedLive.status === "active" && (
-                <StoreInvoiceSection 
-                  live={selectedLive} 
-                  onUpdate={async () => {
-                    const res = await getLive(selectedLive.id);
-                    setSelectedLive(res.data);
-                  }}
-                />
-              )}
             </div>
 
             {/* Purchases List - RIGHT */}
