@@ -860,6 +860,7 @@ export default function AdminLive() {
                           placeholder="0.00"
                           value={purchaseForm.price}
                           onChange={(e) => setPurchaseForm({ ...purchaseForm, price: e.target.value })}
+                          onWheel={(e) => e.target.blur()}
                           onInvalid={(e) => e.preventDefault()}
                           className="pl-10 h-14 text-2xl font-bold text-center rounded-xl"
                           data-testid="purchase-price"
@@ -896,6 +897,7 @@ export default function AdminLive() {
                                 placeholder="0"
                                 value={purchaseForm.custom_tax}
                                 onChange={(e) => setPurchaseForm({ ...purchaseForm, custom_tax: e.target.value })}
+                                onWheel={(e) => e.target.blur()}
                                 onInvalid={(e) => e.preventDefault()}
                                 className="w-20 h-10 text-center rounded-lg"
                                 data-testid="custom-tax-input"
@@ -928,6 +930,7 @@ export default function AdminLive() {
                               placeholder="3.00"
                               value={purchaseForm.commission_amount}
                               onChange={(e) => setPurchaseForm({ ...purchaseForm, commission_amount: e.target.value })}
+                              onWheel={(e) => e.target.blur()}
                               onInvalid={(e) => e.preventDefault()}
                               className="w-24 h-8 text-center rounded-lg text-sm font-bold"
                               data-testid="commission-amount-input"

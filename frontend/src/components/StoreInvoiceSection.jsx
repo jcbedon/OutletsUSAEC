@@ -174,6 +174,7 @@ export default function StoreInvoiceSection({ live, onUpdate }) {
                   placeholder="0.00"
                   value={invoiceAmount}
                   onChange={(e) => setInvoiceAmount(e.target.value)}
+                  onWheel={(e) => e.target.blur()}
                   className="pl-10 h-12 text-xl font-bold"
                   data-testid="store-invoice-amount"
                 />
