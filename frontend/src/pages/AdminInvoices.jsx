@@ -23,7 +23,8 @@ import {
   Calendar,
   Plus,
   ArrowLeft,
-  ChevronRight
+  ChevronRight,
+  Upload
 } from "lucide-react";
 
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
@@ -186,25 +187,51 @@ export default function AdminInvoices() {
 
   return (
     <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #F8FAFC 0%, #EEF2FF 100%)' }}>
-      {/* Header with Logo */}
-      <div className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3" style={{ background: '#1E3A5F' }}>
-        <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} className="text-white hover:bg-white/10">
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="bg-white rounded-lg p-1">
-          <img src={logoUrl} alt="Logo" className="h-10 object-contain" />
+      {/* Header - White Style */}
+      <div className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
+        <div className="px-6 py-4 flex items-center justify-between">
+          {/* Left: Logo + Business Name */}
+          <div className="flex items-center gap-4">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} className="text-gray-600 hover:bg-gray-100 -ml-2">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <img src={logoUrl} alt="Logo" className="h-12 object-contain" />
+            <div>
+              <h1 className="text-xl font-bold" style={{ color: '#1E3A5F' }}>{user?.tenant_name || "Outlets USA EC"}</h1>
+              <p className="text-sm text-gray-500">{user?.name}</p>
+            </div>
+          </div>
+          
+          {/* Right: Actions */}
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" className="text-gray-500">
+              <Upload className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
-        <span className="font-bold text-white flex-1">Gestión de Facturas</span>
         
-        {/* Nueva Factura Button - More Visible */}
-        <Button
-          onClick={handleNewInvoiceClick}
-          className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-2 shadow-lg"
-          data-testid="new-invoice-btn"
-        >
-          <Plus className="h-5 w-5 mr-2" />
-          Nueva Factura
-        </Button>
+        {/* Blue Banner - Module Info */}
+        <div className="px-6 pb-4">
+          <div className="rounded-2xl p-4 flex items-center justify-between" style={{ background: '#1E3A5F' }}>
+            <div className="flex items-center gap-3">
+              <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse"></div>
+              <div>
+                <h2 className="text-white font-bold text-lg">Gestión de Facturas</h2>
+                <p className="text-white/70 text-sm">
+                  {invoices.filter(i => !i.is_annulled).length} facturas activas | ${invoices.filter(i => !i.is_annulled).reduce((sum, i) => sum + (i.total || 0), 0).toFixed(2)} total
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={handleNewInvoiceClick}
+              className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg"
+              data-testid="new-invoice-btn"
+            >
+              <Plus className="h-5 w-5 mr-2" />
+              Nueva Factura
+            </Button>
+          </div>
+        </div>
       </div>
 
       <div className="p-6 space-y-6">
