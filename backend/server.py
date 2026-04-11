@@ -2534,12 +2534,14 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     # Get tenant info for Personal Shopper details
     tenant = await db.tenants.find_one({"id": tid}, {"_id": 0})
     
-    # Get latest shipment for this client (if any)
+    # Get shipment linked to this specific invoice first, otherwise get latest for client
     shipment = await db.shipments.find_one(
-        {"customer_id": invoice["customer_id"], "tenant_id": tid},
-        {"_id": 0},
-        sort=[("created_at", -1)]
+        {"invoice_id": invoice["id"], "tenant_id": tid},
+        {"_id": 0}
     )
+    
+    # If no shipment linked to this invoice, don't show any shipment
+    # (the old behavior was showing any shipment from the client, which was wrong)
     
     return {
         **invoice,

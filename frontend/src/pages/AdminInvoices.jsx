@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
 import { searchInvoices, annulInvoice, getInvoiceDetail } from "@/lib/api";
 import { toast } from "sonner";
@@ -20,11 +21,16 @@ import {
   Phone,
   Mail,
   Calendar,
-  Plus
+  Plus,
+  ArrowLeft
 } from "lucide-react";
 
+const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+
 export default function AdminInvoices() {
+  const navigate = useNavigate();
   const { user } = useAuth();
+  const logoUrl = user?.tenant_logo || DEFAULT_LOGO;
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState("active"); // active, annulled, all
@@ -122,26 +128,31 @@ export default function AdminInvoices() {
   const annulledCount = invoices.filter(i => i.is_annulled).length;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" style={{ color: '#1E3A5F' }}>Gestión de Facturas</h1>
-          <p className="text-gray-500 text-sm">Crea, busca y gestiona facturas</p>
+    <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #F8FAFC 0%, #EEF2FF 100%)' }}>
+      {/* Header with Logo */}
+      <div className="sticky top-0 z-10 px-4 py-3 flex items-center gap-3" style={{ background: '#1E3A5F' }}>
+        <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} className="text-white hover:bg-white/10">
+          <ArrowLeft className="h-5 w-5" />
+        </Button>
+        <div className="bg-white rounded-lg p-1">
+          <img src={logoUrl} alt="Logo" className="h-10 object-contain" />
         </div>
+        <span className="font-bold text-white flex-1">Gestión de Facturas</span>
+        
+        {/* Nueva Factura Button - More Visible */}
         <Button
           onClick={() => setShowCreateDialog(true)}
-          style={{ background: '#2ECC71' }}
-          className="hover:opacity-90"
+          className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-2 shadow-lg"
           data-testid="new-invoice-btn"
         >
-          <Plus className="h-4 w-4 mr-2" />
+          <Plus className="h-5 w-5 mr-2" />
           Nueva Factura
         </Button>
       </div>
 
-      {/* Search Bar */}
-      <form onSubmit={handleSearch} className="flex gap-3">
+      <div className="p-6 space-y-6">
+        {/* Search Bar */}
+        <form onSubmit={handleSearch} className="flex gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
           <Input
@@ -444,6 +455,7 @@ export default function AdminInvoices() {
         onOpenChange={setShowCreateDialog}
         onSuccess={() => loadInvoices()}
       />
+      </div>
     </div>
   );
 }

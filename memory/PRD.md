@@ -272,6 +272,20 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
   - `AdminClients.jsx` - Añadido DEFAULT_LOGO fallback
   - Eliminadas condiciones `{logoUrl && ...}` que ocultaban el logo cuando era vacío
 
+### UI Improvements - AdminInvoices (Apr 11, 2026)
+- [x] **Header con logo** en página de Gestión de Facturas (`/admin/invoices`)
+- [x] **Botón "Nueva Factura" más visible** - Movido al header en verde brillante
+- [x] Navegación con botón de volver al dashboard
+
+### Bug Fix - Envío vinculado incorrectamente a factura (Apr 11, 2026)
+- [x] **CRITICAL FIX:** Las facturas ya NO muestran el envío del último envío del cliente
+- [x] Ahora solo se muestra el envío específicamente vinculado a esa factura (`invoice_id`)
+- [x] Modificado endpoint `GET /api/invoices/{invoice_id}` para buscar por `invoice_id` en lugar de `customer_id`
+
+### UI Improvements - AdminShipments (Apr 11, 2026)
+- [x] **Scroll wheel deshabilitado** en campos numéricos (costo, peso) en diálogos de crear/editar envío
+- [x] Agregado `onWheel={(e) => e.target.blur()}` a todos los inputs `type="number"`
+
 ## Recently Completed (Apr 2026)
 
 ### Employee Management Module

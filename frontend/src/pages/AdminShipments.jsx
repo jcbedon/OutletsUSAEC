@@ -742,6 +742,7 @@ export default function AdminShipments() {
                         placeholder="Ej: 32, 52, o personalizado"
                         value={shipmentForm.shipping_cost}
                         onChange={(e) => setShipmentForm({ ...shipmentForm, shipping_cost: e.target.value })}
+                        onWheel={(e) => e.target.blur()}
                         className="h-12 rounded-xl mt-1 text-xl font-bold"
                         data-testid="shipping-cost-input"
                       />
@@ -760,6 +761,7 @@ export default function AdminShipments() {
                         placeholder="Ej: 5.5"
                         value={shipmentForm.weight_pounds}
                         onChange={(e) => setShipmentForm({ ...shipmentForm, weight_pounds: e.target.value })}
+                        onWheel={(e) => e.target.blur()}
                         className="h-12 rounded-xl mt-1"
                         data-testid="shipping-weight-input"
                       />
@@ -1105,6 +1107,7 @@ export default function AdminShipments() {
                                       step="0.01"
                                       value={editForm.shipping_cost}
                                       onChange={(e) => setEditForm({...editForm, shipping_cost: e.target.value})}
+                                      onWheel={(e) => e.target.blur()}
                                       className="h-12 rounded-xl mt-1"
                                     />
                                   </div>
@@ -1116,6 +1119,7 @@ export default function AdminShipments() {
                                       placeholder="Ej: 5.5"
                                       value={editForm.weight_pounds}
                                       onChange={(e) => setEditForm({...editForm, weight_pounds: e.target.value})}
+                                      onWheel={(e) => e.target.blur()}
                                       className="h-12 rounded-xl mt-1"
                                     />
                                   </div>
