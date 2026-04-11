@@ -22,7 +22,8 @@ import { updateStoreInvoice, uploadStoreInvoiceImage, generateUploadQR, checkUpl
 import QRCode from "qrcode";
 
 export default function StoreInvoiceSection({ live, onUpdate, compact = false }) {
-  const [invoiceAmount, setInvoiceAmount] = useState(live?.store_invoice_amount || "");
+  // Initialize with empty string - only use live value if explicitly set
+  const [invoiceAmount, setInvoiceAmount] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showQRDialog, setShowQRDialog] = useState(false);
@@ -35,11 +36,14 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
 
   const APP_URL = process.env.REACT_APP_BACKEND_URL?.replace('/api', '') || window.location.origin;
 
+  // Update invoice amount when live changes - only if it has a value
   useEffect(() => {
-    if (live?.store_invoice_amount !== undefined && live?.store_invoice_amount !== null) {
+    if (live?.store_invoice_amount !== undefined && live?.store_invoice_amount !== null && live?.store_invoice_amount !== 0) {
       setInvoiceAmount(live.store_invoice_amount);
+    } else {
+      setInvoiceAmount(""); // Reset to empty for new stores without invoice
     }
-  }, [live?.store_invoice_amount]);
+  }, [live?.id, live?.store_invoice_amount]);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -227,21 +231,36 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
                   Foto de la Factura
                 </label>
                 {hasImage ? (
-                  <div className="relative rounded-xl overflow-hidden border border-green-300">
-                    <img 
-                      src={`${process.env.REACT_APP_BACKEND_URL}${live.store_invoice_image.replace('/api', '')}`} 
-                      alt="Factura" 
-                      className="w-full h-32 object-cover"
-                    />
-                    <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="absolute bottom-2 right-2 bg-black/50 text-white hover:bg-black/70"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <Camera className="h-4 w-4 mr-1" /> Cambiar
-                    </Button>
+                  <div className="space-y-3">
+                    {/* Current Image */}
+                    <div className="relative rounded-xl overflow-hidden border border-green-300">
+                      <img 
+                        src={`${process.env.REACT_APP_BACKEND_URL}${live.store_invoice_image.replace('/api', '')}`} 
+                        alt="Factura" 
+                        className="w-full h-32 object-cover"
+                      />
+                    </div>
+                    {/* Change Image Options */}
+                    <div className="flex gap-2">
+                      <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+                      <Button
+                        variant="outline"
+                        className="flex-1 h-10"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploading}
+                      >
+                        {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Camera className="h-4 w-4 mr-2" /> Cambiar Foto</>}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="h-10 px-4 border-blue-300 text-blue-600"
+                        onClick={handleGenerateQR}
+                        title="Escanear QR desde teléfono"
+                      >
+                        <Smartphone className="h-4 w-4 mr-1" />
+                        <QrCode className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex gap-2">
@@ -258,7 +277,9 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
                       variant="outline"
                       className="h-12 px-4 border-blue-300 text-blue-600"
                       onClick={handleGenerateQR}
+                      title="Escanear QR desde teléfono"
                     >
+                      <Smartphone className="h-4 w-4 mr-1" />
                       <QrCode className="h-5 w-5" />
                     </Button>
                   </div>
