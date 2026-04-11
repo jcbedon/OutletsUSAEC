@@ -292,7 +292,7 @@ export default function AdminLive() {
     }
     try {
       await updateLive(selectedLive.id, editLiveForm);
-      toast.success("Live actualizado");
+      toast.success("Live actualizado y compras sincronizadas");
       setEditLiveDialogOpen(false);
       // Reload lives
       const livesRes = await getLives();
@@ -304,6 +304,9 @@ export default function AdminLive() {
         if (activeLive?.id === updatedLive.id) {
           setActiveLive(updatedLive);
         }
+        // Also reload purchases to show updated store name
+        const purchasesRes = await getLivePurchases(updatedLive.id);
+        setPurchases(purchasesRes.data);
       }
     } catch (error) {
       toast.error("Error al actualizar Live");
@@ -824,7 +827,8 @@ export default function AdminLive() {
                 </CardContent>
               </Card>
 
-              {/* Quick Purchase Form */}
+              {/* Quick Purchase Form - Only show if live is active */}
+              {selectedLive.status === "active" ? (
               <Card className="rounded-2xl">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg flex items-center gap-2">
@@ -1070,6 +1074,21 @@ export default function AdminLive() {
                   </form>
                 </CardContent>
               </Card>
+              ) : (
+              /* Message for finalized lives - no purchase form */
+              <Card className="rounded-2xl border-amber-200 bg-amber-50">
+                <CardContent className="p-6 text-center">
+                  <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+                  <h3 className="text-lg font-bold text-amber-800 mb-2">Live Finalizado</h3>
+                  <p className="text-amber-700 mb-4">
+                    Este live está finalizado. Solo puedes ver las compras registradas, pero no agregar nuevas.
+                  </p>
+                  <p className="text-sm text-amber-600">
+                    Para agregar nuevas compras, crea un nuevo live o reactiva uno existente.
+                  </p>
+                </CardContent>
+              </Card>
+              )}
             </div>
 
             {/* Purchases List - RIGHT */}
