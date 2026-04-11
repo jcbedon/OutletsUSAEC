@@ -482,6 +482,19 @@ async def register_user(data: UserRegister):
     if not tenant:
         raise HTTPException(status_code=404, detail="Código de negocio no encontrado")
     tenant_id = tenant["id"]
+    
+    # Check if email belongs to an admin, superadmin or employee (PREVENT COLLISION)
+    if data.email:
+        existing_admin = await db.users.find_one({
+            "email": data.email, 
+            "role": {"$in": ["admin", "superadmin"]}
+        }, {"_id": 0})
+        if existing_admin:
+            raise HTTPException(status_code=400, detail="Este email ya está registrado. Por favor use otro email.")
+        existing_employee = await db.employees.find_one({"email": data.email}, {"_id": 0})
+        if existing_employee:
+            raise HTTPException(status_code=400, detail="Este email ya está registrado. Por favor use otro email.")
+    
     existing = await db.users.find_one({
         "tenant_id": tenant_id,
         "$or": [{"whatsapp": data.whatsapp}, {"email": data.email} if data.email else {"_id": None}]
@@ -558,7 +571,52 @@ async def login_user(login_data: UserLogin):
         users_found.sort(key=lambda u: role_priority.get(u.get("role", "client"), 3))
         user = users_found[0]
     
-    # Try employee login first if employee exists
+    # PRIORITY: superadmin/admin FIRST, then employee, then client
+    # Check if we have an admin-level user - they take priority over employee
+    admin_user = None
+    if user and user.get("role") in ["superadmin", "admin"]:
+        admin_user = user
+    
+    # If admin exists and password matches, use admin login (skip employee)
+    if admin_user and verify_password(login_data.password, admin_user["password_hash"]):
+        tenant_id = admin_user.get("tenant_id")
+        tenant_name = None
+        tenant_logo = None
+        if tenant_id:
+            tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
+            if tenant:
+                if tenant.get("status") != "active":
+                    raise HTTPException(status_code=403, detail="Tu negocio está suspendido. Contacta al administrador.")
+                tenant_name = tenant["business_name"]
+                tenant_logo = tenant.get("logo_url")
+        
+        # Log admin login for audit
+        if admin_user["role"] == "admin":
+            await log_audit_action(
+                tenant_id=tenant_id,
+                user_id=admin_user["id"],
+                user_name=admin_user["name"],
+                user_role="admin",
+                action="login",
+                entity_type="session",
+                entity_name="Inicio de sesión"
+            )
+        
+        token = create_token(admin_user["id"], admin_user["role"], tenant_id)
+        return {
+            "message": "Login exitoso",
+            "token": token,
+            "user_id": admin_user["id"],
+            "customer_id": admin_user.get("customer_id"),
+            "name": admin_user["name"],
+            "role": admin_user["role"],
+            "tenant_id": tenant_id,
+            "tenant_name": tenant_name,
+            "tenant_logo": tenant_logo,
+            "email": admin_user.get("email")
+        }
+    
+    # Try employee login second (after admin check)
     if employee:
         if verify_password(login_data.password, employee["password_hash"]):
             if employee.get("status") != "active":
@@ -594,8 +652,8 @@ async def login_user(login_data: UserLogin):
                 "permissions": employee.get("permissions", {})
             }
     
-    # Try user login (admin/client/superadmin)
-    if user and verify_password(login_data.password, user["password_hash"]):
+    # Try user login for CLIENT only (admin/superadmin already handled above)
+    if user and user.get("role") == "client" and verify_password(login_data.password, user["password_hash"]):
         tenant_id = user.get("tenant_id")
         tenant_name = None
         tenant_logo = None
@@ -606,18 +664,6 @@ async def login_user(login_data: UserLogin):
                     raise HTTPException(status_code=403, detail="Tu negocio está suspendido. Contacta al administrador.")
                 tenant_name = tenant["business_name"]
                 tenant_logo = tenant.get("logo_url")
-        
-        # Log admin login for audit
-        if user["role"] == "admin":
-            await log_audit_action(
-                tenant_id=tenant_id,
-                user_id=user["id"],
-                user_name=user["name"],
-                user_role="admin",
-                action="login",
-                entity_type="session",
-                entity_name="Inicio de sesión"
-            )
         
         token = create_token(user["id"], user["role"], tenant_id)
         return {

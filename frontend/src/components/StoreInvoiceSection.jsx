@@ -28,6 +28,7 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
   const [uploading, setUploading] = useState(false);
   const [showQRDialog, setShowQRDialog] = useState(false);
   const [showExpandedDialog, setShowExpandedDialog] = useState(false);
+  const [showImagePreview, setShowImagePreview] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const [uploadToken, setUploadToken] = useState("");
   const [polling, setPolling] = useState(false);
@@ -232,8 +233,11 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
                 </label>
                 {hasImage ? (
                   <div className="space-y-3">
-                    {/* Current Image */}
-                    <div className="relative rounded-xl overflow-hidden border border-green-300 bg-gray-100">
+                    {/* Current Image - Clickable to view full size */}
+                    <div 
+                      className="relative rounded-xl overflow-hidden border border-green-300 bg-gray-100 cursor-pointer hover:opacity-90 transition-opacity"
+                      onClick={() => setShowImagePreview(true)}
+                    >
                       <img 
                         src={`${process.env.REACT_APP_BACKEND_URL}${live.store_invoice_image}`}
                         alt="Factura de Tienda" 
@@ -247,6 +251,11 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
                           e.target.src = altUrl;
                         }}
                       />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/0 hover:bg-black/20 transition-colors">
+                        <span className="text-white opacity-0 hover:opacity-100 text-sm font-medium bg-black/50 px-3 py-1 rounded-full">
+                          Click para ampliar
+                        </span>
+                      </div>
                     </div>
                     {/* Change Image Options */}
                     <div className="flex gap-2">
