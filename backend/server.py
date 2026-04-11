@@ -27,7 +27,8 @@ db = client[os.environ['DB_NAME']]
 JWT_SECRET = os.environ.get("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 
-UPLOAD_DIR = ROOT_DIR / "uploads"
+# Use backend/uploads for all uploaded files (logos, proofs, etc.)
+UPLOAD_DIR = BACKEND_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(title="OUTLETS USA EC - SaaS Live Shopping API")
@@ -1811,12 +1812,11 @@ async def upload_store_invoice_image(
     if not live:
         raise HTTPException(status_code=404, detail="Live no encontrado")
     
-    # Save file
+    # Save file - use UPLOAD_DIR to ensure correct path
     ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
     filename = f"store_invoice_{live_id}_{uuid.uuid4().hex[:8]}.{ext}"
-    filepath = f"/app/uploads/{filename}"
+    filepath = UPLOAD_DIR / filename
     
-    os.makedirs("/app/uploads", exist_ok=True)
     with open(filepath, "wb") as f:
         content = await file.read()
         f.write(content)
@@ -1886,12 +1886,11 @@ async def mobile_upload_store_invoice(upload_token: str, file: UploadFile = File
     if not live:
         raise HTTPException(status_code=404, detail="Live no encontrado")
     
-    # Save file
+    # Save file - use UPLOAD_DIR to ensure correct path
     ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
     filename = f"store_invoice_{live_id}_{uuid.uuid4().hex[:8]}.{ext}"
-    filepath = f"/app/uploads/{filename}"
+    filepath = UPLOAD_DIR / filename
     
-    os.makedirs("/app/uploads", exist_ok=True)
     with open(filepath, "wb") as f:
         content = await file.read()
         f.write(content)
