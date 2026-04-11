@@ -233,17 +233,18 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
                 {hasImage ? (
                   <div className="space-y-3">
                     {/* Current Image */}
-                    <div className="relative rounded-xl overflow-hidden border border-green-300">
+                    <div className="relative rounded-xl overflow-hidden border border-green-300 bg-gray-100">
                       <img 
-                        src={live.store_invoice_image.startsWith('http') 
-                          ? live.store_invoice_image 
-                          : `${process.env.REACT_APP_BACKEND_URL}${live.store_invoice_image.startsWith('/api') ? live.store_invoice_image.replace('/api', '') : live.store_invoice_image}`
-                        } 
-                        alt="Factura" 
+                        src={`${process.env.REACT_APP_BACKEND_URL}${live.store_invoice_image}`}
+                        alt="Factura de Tienda" 
                         className="w-full h-32 object-cover"
+                        onLoad={() => console.log('Image loaded:', live.store_invoice_image)}
                         onError={(e) => {
                           console.error('Image load error:', live.store_invoice_image);
-                          e.target.style.display = 'none';
+                          // Try alternative URL
+                          const altUrl = `${process.env.REACT_APP_BACKEND_URL}/api/uploads/${live.store_invoice_image.split('/').pop()}`;
+                          console.log('Trying alternative:', altUrl);
+                          e.target.src = altUrl;
                         }}
                       />
                     </div>
