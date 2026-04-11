@@ -557,19 +557,25 @@ async def login_user(login_data: UserLogin):
     
     # 3. If not found in either, try tenant slug for admin
     user = None
+    admin_from_slug = None
     if not users_found and not employee:
         tenant_by_slug = await db.tenants.find_one({"slug": identifier_lower}, {"_id": 0})
         if tenant_by_slug:
-            user = await db.users.find_one({
+            admin_from_slug = await db.users.find_one({
                 "tenant_id": tenant_by_slug["id"],
                 "role": "admin"
             }, {"_id": 0})
+            user = admin_from_slug
     
     # Sort users by role priority: superadmin > admin > client
     role_priority = {"superadmin": 0, "admin": 1, "client": 2}
     if users_found:
         users_found.sort(key=lambda u: role_priority.get(u.get("role", "client"), 3))
         user = users_found[0]
+    
+    # If we found admin from slug, always prioritize it
+    if admin_from_slug:
+        user = admin_from_slug
     
     # PRIORITY: superadmin/admin FIRST, then employee, then client
     # Check if we have an admin-level user - they take priority over employee
