@@ -1,14 +1,14 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { searchInvoices, annulInvoice, getInvoiceDetail } from "@/lib/api";
+import { searchInvoices, annulInvoice, getInvoiceDetail, getAllClients, getMyTenant } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import CreateInvoiceDialog from "@/components/CreateInvoiceDialog";
+import InvoiceDialog from "@/components/InvoiceDialog";
 import { 
   Search, 
   FileText, 
@@ -22,7 +22,8 @@ import {
   Mail,
   Calendar,
   Plus,
-  ArrowLeft
+  ArrowLeft,
+  ChevronRight
 } from "lucide-react";
 
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
@@ -39,7 +40,24 @@ export default function AdminInvoices() {
   const [showAnnulDialog, setShowAnnulDialog] = useState(false);
   const [invoiceToAnnul, setInvoiceToAnnul] = useState(null);
   const [annulling, setAnnulling] = useState(false);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  
+  // For creating new invoice - client selection
+  const [showClientSelector, setShowClientSelector] = useState(false);
+  const [clients, setClients] = useState([]);
+  const [clientSearch, setClientSearch] = useState("");
+  const [loadingClients, setLoadingClients] = useState(false);
+  
+  // For InvoiceDialog
+  const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
+  const [selectedClientForInvoice, setSelectedClientForInvoice] = useState(null);
+  const [tenantInfo, setTenantInfo] = useState(null);
+  
+  const defaultTenantInfo = {
+    business_name: user?.tenant_name || "Personal Shopper",
+    owner_name: user?.name || "",
+    email: user?.email || "",
+    logo_url: logoUrl
+  };
 
   useEffect(() => {
     loadInvoices();
@@ -56,6 +74,45 @@ export default function AdminInvoices() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadClients = async () => {
+    try {
+      setLoadingClients(true);
+      const res = await getAllClients();
+      setClients(res.data);
+    } catch (error) {
+      toast.error("Error al cargar clientes");
+    } finally {
+      setLoadingClients(false);
+    }
+  };
+
+  const handleNewInvoiceClick = () => {
+    loadClients();
+    setClientSearch("");
+    setShowClientSelector(true);
+  };
+
+  const handleSelectClientForInvoice = async (client) => {
+    setSelectedClientForInvoice(client);
+    setShowClientSelector(false);
+    
+    // Load tenant info
+    try {
+      const res = await getMyTenant();
+      setTenantInfo({
+        business_name: res.data.business_name || user?.tenant_name || "Personal Shopper",
+        owner_name: res.data.owner_name || user?.name || "",
+        email: res.data.admin_email || user?.email || "",
+        logo_url: res.data.logo_url || logoUrl
+      });
+    } catch (error) {
+      console.error("Error fetching tenant info:", error);
+      setTenantInfo(defaultTenantInfo);
+    }
+    
+    setInvoiceDialogOpen(true);
   };
 
   const handleSearch = (e) => {
@@ -141,7 +198,7 @@ export default function AdminInvoices() {
         
         {/* Nueva Factura Button - More Visible */}
         <Button
-          onClick={() => setShowCreateDialog(true)}
+          onClick={handleNewInvoiceClick}
           className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-2 shadow-lg"
           data-testid="new-invoice-btn"
         >
@@ -449,11 +506,90 @@ export default function AdminInvoices() {
         </DialogContent>
       </Dialog>
 
-      {/* Create Invoice Dialog */}
-      <CreateInvoiceDialog
-        open={showCreateDialog}
-        onOpenChange={setShowCreateDialog}
-        onSuccess={() => loadInvoices()}
+      {/* Client Selector Dialog */}
+      <Dialog open={showClientSelector} onOpenChange={setShowClientSelector}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2" style={{ color: '#1E3A5F' }}>
+              <User className="h-5 w-5" />
+              Seleccionar Cliente para Nueva Factura
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Client Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Buscar cliente por nombre, ID o WhatsApp..."
+                value={clientSearch}
+                onChange={(e) => setClientSearch(e.target.value)}
+                className="pl-10 h-11"
+                data-testid="client-search-input"
+              />
+            </div>
+            
+            {/* Client List */}
+            {loadingClients ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+              </div>
+            ) : (
+              <ScrollArea className="h-[400px]">
+                <div className="space-y-2">
+                  {clients
+                    .filter(c => 
+                      c.name?.toLowerCase().includes(clientSearch.toLowerCase()) ||
+                      c.customer_id?.toLowerCase().includes(clientSearch.toLowerCase()) ||
+                      (c.whatsapp && c.whatsapp.includes(clientSearch))
+                    )
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((client) => (
+                      <div
+                        key={client.id}
+                        className="p-3 rounded-xl border bg-white hover:border-blue-300 hover:shadow-md cursor-pointer transition-all flex items-center justify-between"
+                        onClick={() => handleSelectClientForInvoice(client)}
+                        data-testid={`select-client-${client.customer_id}`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                            <User className="h-5 w-5 text-blue-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium" style={{ color: '#1E3A5F' }}>{client.name}</p>
+                            <div className="flex gap-3 text-sm text-gray-500">
+                              <span>#{client.customer_id}</span>
+                              {client.whatsapp && <span>{client.whatsapp}</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-5 w-5 text-gray-400" />
+                      </div>
+                    ))}
+                  {clients.length === 0 && !loadingClients && (
+                    <div className="text-center py-8 text-gray-500">
+                      <User className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+                      <p>No se encontraron clientes</p>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invoice Dialog - Full Process */}
+      <InvoiceDialog
+        open={invoiceDialogOpen}
+        onOpenChange={(open) => {
+          setInvoiceDialogOpen(open);
+          if (!open) {
+            loadInvoices(); // Reload invoices when dialog closes
+          }
+        }}
+        client={selectedClientForInvoice}
+        tenantInfo={tenantInfo || defaultTenantInfo}
       />
       </div>
     </div>

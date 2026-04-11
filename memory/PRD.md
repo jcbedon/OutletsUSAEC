@@ -247,13 +247,12 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [x] Endpoint: `GET /api/admin/reports/store-profits`
 
 ### Crear Facturas desde Módulo de Facturas (Apr 11, 2026)
-- [x] **NEW: Botón "Nueva Factura"** en `/admin/invoices`
-- [x] **NEW: CreateInvoiceDialog component** con flujo de 2 pasos:
-  - Paso 1: Seleccionar cliente con búsqueda
-  - Paso 2: Seleccionar compras pendientes para facturar
-  - Auto-selección de todas las compras
-  - Mostrar total de factura
-- [x] Recarga automática de lista después de crear factura
+- [x] **UPDATED: Flujo completo de facturación** desde `/admin/invoices`
+  - Paso 1: Click "Nueva Factura" → Selector de clientes
+  - Paso 2: Seleccionar cliente → Abre `InvoiceDialog` (mismo que desde Usuarios)
+  - Incluye: selección de compras, cálculo de totales, creación de factura, generación PDF
+- [x] Eliminado `CreateInvoiceDialog.jsx` (reemplazado por `InvoiceDialog`)
+- [x] Recarga automática de lista después de cerrar diálogo
 
 ### Flujo Mejorado de Envíos - Desde Factura (Apr 11, 2026)
 - [x] **NEW: Origen de productos** - Toggle entre "Compras Pendientes" y "Desde Factura"
