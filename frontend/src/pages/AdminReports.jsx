@@ -194,10 +194,12 @@ function ClientRow({ cr, isExpanded, onToggle, onExport }) {
   );
 }
 
+const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+
 export default function AdminReports() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const logoUrl = user?.tenant_logo || "";
+  const logoUrl = user?.tenant_logo || DEFAULT_LOGO;
   const tenantName = user?.tenant_name || "Outlets USA EC";
   const [summary, setSummary] = useState(null);
   const [lives, setLives] = useState([]);
@@ -336,11 +338,9 @@ export default function AdminReports() {
           <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} data-testid="back-btn">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          {logoUrl && (
-            <div className="bg-white rounded-lg p-1">
-              <img src={logoUrl} alt="Logo" className="h-10 object-contain logo-transparent" />
-            </div>
-          )}
+          <div className="bg-white rounded-lg p-1">
+            <img src={logoUrl} alt="Logo" className="h-10 object-contain logo-transparent" />
+          </div>
           <span className="font-bold text-slate-800 flex-1">Reportes</span>
         </div>
       </div>

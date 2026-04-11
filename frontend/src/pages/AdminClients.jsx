@@ -45,7 +45,8 @@ export default function AdminClients() {
   const [selectedClientForInvoice, setSelectedClientForInvoice] = useState(null);
   const [tenantInfo, setTenantInfo] = useState(null);
 
-  const logoUrl = user?.tenant_logo || "";
+  const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+  const logoUrl = user?.tenant_logo || DEFAULT_LOGO;
   const isAdmin = user?.role === "admin";
   
   // Default tenant info from user context (fallback)

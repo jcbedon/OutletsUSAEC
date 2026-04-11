@@ -224,8 +224,35 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 
 ## P2 - Future
 - [ ] Multi-language support
-- [ ] Backend refactoring (split server.py into routers - currently ~2600 lines)
+- [ ] Backend refactoring (split server.py into routers - currently ~3600+ lines)
 - [ ] InvoiceDialog.jsx refactoring (currently ~920 lines)
+
+## Recently Completed (Apr 11, 2026)
+
+### Store Profits Report (Ganancias por Tienda)
+- [x] **NEW: StoreProfitsReport component** - Componente reutilizable para mostrar ganancias por tienda
+  - Tarjetas: Lives con Factura, Total Ventas, Costo Tiendas, Ganancia Total
+  - Margen de ganancia promedio
+  - Lista detallada por Live/Tienda con:
+    - Nombre del live
+    - Tienda asociada
+    - Fecha
+    - Cantidad de productos
+    - Ventas vs Costo = Ganancia
+    - Margen de ganancia (%)
+    - Botón "Ver factura" para visualizar imagen de factura de tienda
+  - Dialog para previsualizar imágenes de facturas
+- [x] Integrado en `/admin/stats` (pestaña "Tiendas")
+- [x] Integrado en `/admin/reports` (pestaña "Ganancias")
+- [x] Endpoint: `GET /api/admin/reports/store-profits`
+
+### Bug Fixes (Apr 11, 2026)
+- [x] **FIX: Dialog de imagen no usado en AdminStats.jsx** - Eliminado código muerto que causaba error de `selectedImage` indefinido
+- [x] **FIX: Logo desapareciendo** - Implementado logo por defecto consistente en todas las páginas admin:
+  - `AdminStats.jsx` - Añadido DEFAULT_LOGO fallback
+  - `AdminReports.jsx` - Añadido DEFAULT_LOGO fallback  
+  - `AdminClients.jsx` - Añadido DEFAULT_LOGO fallback
+  - Eliminadas condiciones `{logoUrl && ...}` que ocultaban el logo cuando era vacío
 
 ## Recently Completed (Apr 2026)
 

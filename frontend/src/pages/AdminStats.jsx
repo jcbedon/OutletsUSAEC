@@ -37,10 +37,12 @@ function ListItem({ rank, name, count, sales, commission, color }) {
   );
 }
 
+const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+
 export default function AdminStats() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const logoUrl = user?.tenant_logo || "";
+  const logoUrl = user?.tenant_logo || DEFAULT_LOGO;
   const [stats, setStats] = useState(null);
   const [debtsData, setDebtsData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -175,7 +177,7 @@ export default function AdminStats() {
           <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} data-testid="back-btn">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          {logoUrl && <img src={logoUrl} alt="Logo" className="h-10 object-contain" />}
+          <img src={logoUrl} alt="Logo" className="h-10 object-contain" />
           <span className="font-bold text-slate-800">Estadisticas del Negocio</span>
         </div>
       </div>
@@ -635,20 +637,6 @@ export default function AdminStats() {
           </TabsContent>
         </Tabs>
 
-        {/* Image Preview Dialog */}
-        <Dialog open={!!selectedImage} onOpenChange={() => setSelectedImage(null)}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2" style={{ color: "#1E3A5F" }}>
-                <Receipt className="h-5 w-5" />
-                Factura de Tienda
-              </DialogTitle>
-            </DialogHeader>
-            {selectedImage && (
-              <img src={selectedImage} alt="Factura" className="w-full rounded-xl" />
-            )}
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
   );
