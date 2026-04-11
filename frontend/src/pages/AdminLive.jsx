@@ -11,6 +11,7 @@ import {
   createPurchase,
   getLivePurchases,
   getActiveClients,
+  getAllClients,
   getWalletByCustomerId,
   getClientInfo,
   updatePurchase,
@@ -123,19 +124,16 @@ export default function AdminLive() {
 
   const customerIdRef = useRef(null);
 
-  // Filter clients for autocomplete
+  // Filter clients for autocomplete - now more permissive
   const filteredClients = useMemo(() => {
     if (!clientSearchValue || clientSearchValue.length < 1) return [];
     const search = clientSearchValue.toLowerCase().trim();
-    const searchTerms = search.split(/\s+/);
+    
+    // Simple search: match if name or customer_id contains the search string
     return activeClients.filter(c => {
       const name = c.name?.toLowerCase() || "";
       const customerId = c.customer_id?.toLowerCase() || "";
-      return searchTerms.every(term =>
-        name.includes(term) ||
-        customerId.includes(term) ||
-        name.split(/\s+/).some(word => word.startsWith(term))
-      );
+      return name.includes(search) || customerId.includes(search);
     }).slice(0, 8); // Limit to 8 suggestions
   }, [activeClients, clientSearchValue]);
 
@@ -163,7 +161,7 @@ export default function AdminLive() {
       const [activeLiveRes, livesRes, clientsRes] = await Promise.all([
         getActiveLive(),
         getLives(),
-        getActiveClients()
+        getAllClients()  // Use all clients for autocomplete
       ]);
       
       setActiveLive(activeLiveRes.data);
@@ -305,9 +303,12 @@ export default function AdminLive() {
     setCustomerWallet(null);
     setCustomerCommission(3.0);
 
-    // Show dropdown if searching by name (contains letters beyond just the ID pattern)
-    const hasLettersForName = /[a-zA-Z]{2,}/.test(value) && !/^[A-Z]\d+$/.test(value.toUpperCase());
-    setClientSearchOpen(hasLettersForName && value.length >= 2);
+    // Always show dropdown when typing (will be filtered by filteredClients)
+    if (value.length >= 1) {
+      setClientSearchOpen(true);
+    } else {
+      setClientSearchOpen(false);
+    }
 
     // Try to find customer by exact ID
     if (value.length >= 2) {
@@ -317,7 +318,7 @@ export default function AdminLive() {
         setCustomerWallet({ available: clientData.wallet_balance });
         setSelectedCustomer(clientData);
         setCustomerCommission(clientData.commission_fee || 3.0);
-        setClientSearchOpen(false);
+        // Don't close dropdown immediately - let user see suggestions
       } catch (error) {
         // Customer not found by ID - keep dropdown open for name search
       }
@@ -801,8 +802,13 @@ export default function AdminLive() {
                           ref={customerIdRef}
                           placeholder="ID o nombre del cliente..."
                           value={clientSearchValue}
-                          onChange={(e) => handleCustomerIdChange(e.target.value)}
-                          onFocus={() => clientSearchValue.length >= 2 && setClientSearchOpen(true)}
+                          onChange={(e) => {
+                            handleCustomerIdChange(e.target.value);
+                            if (e.target.value.length >= 1) {
+                              setClientSearchOpen(true);
+                            }
+                          }}
+                          onFocus={() => clientSearchValue.length >= 1 && setClientSearchOpen(true)}
                           onBlur={() => setTimeout(() => setClientSearchOpen(false), 200)}
                           className="pl-10 h-14 text-xl font-bold rounded-xl"
                           data-testid="purchase-customer-id"
