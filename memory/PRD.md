@@ -229,6 +229,18 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 
 ## Recently Completed (Apr 11, 2026)
 
+### Live Data Propagation & Confirmation Dialog (Apr 11, 2026)
+- [x] **NEW: Diálogo de confirmación** al abrir un Live finalizado
+  - Icono AlertTriangle con título "Live Finalizado"
+  - Mensaje advirtiendo que no se pueden agregar nuevos productos
+  - Botones "Cancelar" y "Sí, Abrir Live"
+  - Aplica a status: `ended`, `finalized`, `completed`
+- [x] **NEW: Propagación de datos del Live a compras**
+  - Endpoint `PUT /api/lives/{live_id}` actualiza todas las compras asociadas
+  - Cuando se cambia el título del Live → actualiza `live_title` en compras
+  - Cuando se cambia la tienda → actualiza `store` en compras
+  - Usa `update_many` para eficiencia en lotes
+
 ### Store Profits Report (Ganancias por Tienda)
 - [x] **NEW: StoreProfitsReport component** - Componente reutilizable para mostrar ganancias por tienda
   - Tarjetas: Lives con Factura, Total Ventas, Costo Tiendas, Ganancia Total
