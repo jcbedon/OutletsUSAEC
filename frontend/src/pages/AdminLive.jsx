@@ -178,13 +178,9 @@ export default function AdminLive() {
           return;
         }
       }
-
-      // Otherwise, if there's an active live, select it by default
-      if (activeLiveRes.data) {
-        setSelectedLive(activeLiveRes.data);
-        const purchasesRes = await getLivePurchases(activeLiveRes.data.id);
-        setPurchases(purchasesRes.data);
-      }
+      
+      // Don't auto-select any live - always show the list first
+      // User must explicitly choose which live to work with
     } catch (error) {
       toast.error("Error al cargar datos");
     } finally {
