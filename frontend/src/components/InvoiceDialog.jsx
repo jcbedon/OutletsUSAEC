@@ -1059,27 +1059,42 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
 
               {/* Totals */}
               <div className="flex justify-end">
-                <div className="w-72 p-4 rounded-xl bg-gray-50 space-y-2">
+                <div className="w-80 p-4 rounded-xl bg-gray-50 space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Subtotal:</span>
                     <span className="font-medium">${currentInvoice.subtotal.toFixed(2)}</span>
                   </div>
+                  {/* Impuestos - siempre mostrar si hay */}
+                  {currentInvoice.total_tax > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Impuestos:</span>
+                      <span className="font-medium">${currentInvoice.total_tax.toFixed(2)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Comisiones:</span>
                     <span className="font-medium">${currentInvoice.total_commission.toFixed(2)}</span>
                   </div>
-                  {/* Shipping cost if available */}
-                  {currentInvoice.shipping_cost > 0 && (
+                  {/* Shipping cost - from shipment or invoice */}
+                  {(currentInvoice.shipment?.shipping_cost > 0 || currentInvoice.shipping_cost > 0) && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Envío ({currentInvoice.weight_pounds || 0} lbs):</span>
-                      <span className="font-medium text-purple-600">${currentInvoice.shipping_cost.toFixed(2)}</span>
+                      <span className="text-gray-600 flex items-center gap-1">
+                        <Package className="h-3 w-3" />
+                        Envío ({currentInvoice.shipment?.weight_pounds || currentInvoice.weight_pounds || 0} lbs):
+                      </span>
+                      <span className="font-medium text-purple-600">
+                        ${(currentInvoice.shipment?.shipping_cost || currentInvoice.shipping_cost || 0).toFixed(2)}
+                      </span>
                     </div>
                   )}
-                  <div className="border-t pt-2 flex justify-between">
-                    <span className="font-bold text-lg" style={{ color: '#1E3A5F' }}>TOTAL:</span>
-                    <span className="font-extrabold text-2xl" style={{ color: '#1E3A5F' }}>
-                      ${(currentInvoice.total + (currentInvoice.shipping_cost || 0)).toFixed(2)}
-                    </span>
+                  {/* Divider */}
+                  <div className="border-t border-gray-300 pt-2 mt-2">
+                    <div className="flex justify-between">
+                      <span className="font-bold text-gray-800">TOTAL:</span>
+                      <span className="font-bold text-xl" style={{ color: '#1E3A5F' }}>
+                        ${(currentInvoice.total + (currentInvoice.shipment?.shipping_cost || currentInvoice.shipping_cost || 0)).toFixed(2)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -2766,6 +2766,27 @@ async def search_invoices(
                 if shipment:
                     shipments_by_invoice[inv["id"]] = shipment
     
+    # Get all client deposits
+    client_deposits_map = {}
+    if customer_ids:
+        user_ids = [c["id"] for c in client_map.values()]
+        deposits = await db.wallet_transactions.find(
+            {
+                "user_id": {"$in": user_ids},
+                "tenant_id": tid,
+                "type": "deposit",
+                "status": "approved"
+            },
+            {"_id": 0, "user_id": 1, "amount": 1, "created_at": 1}
+        ).sort("created_at", -1).to_list(500)
+        
+        for dep in deposits:
+            user_id = dep["user_id"]
+            if user_id not in client_deposits_map:
+                client_deposits_map[user_id] = []
+            if len(client_deposits_map[user_id]) < 10:  # Max 10 deposits per client
+                client_deposits_map[user_id].append(dep)
+    
     # Helper function to enrich invoice with shipment
     def enrich_invoice(inv):
         inv["client"] = client_map.get(inv["customer_id"], {})
@@ -2773,6 +2794,10 @@ async def search_invoices(
         inv["shipment"] = shipments_by_invoice.get(inv["id"])
         if inv["shipment"]:
             inv["shipping_cost"] = inv["shipment"].get("shipping_cost", 0)
+        # Add client deposits
+        client = client_map.get(inv["customer_id"])
+        if client:
+            inv["client_deposits"] = client_deposits_map.get(client["id"], [])
         return inv
     
     # If no search query, return all filtered invoices
