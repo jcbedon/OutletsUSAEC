@@ -2600,11 +2600,48 @@ async def search_invoices(
     else:
         client_map = {}
     
+    # Get all shipments for these invoices
+    invoice_ids = [inv["id"] for inv in invoices]
+    shipments_by_invoice = {}
+    
+    if invoice_ids:
+        # First try to get shipments linked directly by invoice_id
+        linked_shipments = await db.shipments.find(
+            {"invoice_id": {"$in": invoice_ids}, "tenant_id": tid},
+            {"_id": 0}
+        ).to_list(1000)
+        
+        for s in linked_shipments:
+            shipments_by_invoice[s["invoice_id"]] = s
+        
+        # For invoices without direct link, try to find by purchase_ids
+        for inv in invoices:
+            if inv["id"] not in shipments_by_invoice and inv.get("purchase_ids"):
+                shipment = await db.shipments.find_one(
+                    {
+                        "tenant_id": tid,
+                        "customer_id": inv.get("customer_id"),
+                        "purchase_ids": {"$in": inv["purchase_ids"]}
+                    },
+                    {"_id": 0},
+                    sort=[("created_at", -1)]
+                )
+                if shipment:
+                    shipments_by_invoice[inv["id"]] = shipment
+    
+    # Helper function to enrich invoice with shipment
+    def enrich_invoice(inv):
+        inv["client"] = client_map.get(inv["customer_id"], {})
+        inv["client_pending_purchases"] = pending_purchases_by_customer.get(inv["customer_id"], 0)
+        inv["shipment"] = shipments_by_invoice.get(inv["id"])
+        if inv["shipment"]:
+            inv["shipping_cost"] = inv["shipment"].get("shipping_cost", 0)
+        return inv
+    
     # If no search query, return all filtered invoices
     if not q or q.strip() == "":
         for inv in invoices:
-            inv["client"] = client_map.get(inv["customer_id"], {})
-            inv["client_pending_purchases"] = pending_purchases_by_customer.get(inv["customer_id"], 0)
+            enrich_invoice(inv)
         
         return invoices
     
@@ -2634,18 +2671,15 @@ async def search_invoices(
     for inv in invoices:
         # Match by invoice number
         if q_lower in inv.get("invoice_number", "").lower():
-            inv["client"] = client_map.get(inv["customer_id"], {})
-            inv["client_pending_purchases"] = pending_purchases_by_customer.get(inv["customer_id"], 0)
+            enrich_invoice(inv)
             filtered_invoices.append(inv)
         # Match by customer_id
         elif q_upper in inv.get("customer_id", "").upper():
-            inv["client"] = client_map.get(inv["customer_id"], {})
-            inv["client_pending_purchases"] = pending_purchases_by_customer.get(inv["customer_id"], 0)
+            enrich_invoice(inv)
             filtered_invoices.append(inv)
         # Match by client info
         elif inv["customer_id"] in matching_customer_ids:
-            inv["client"] = client_map.get(inv["customer_id"], {})
-            inv["client_pending_purchases"] = pending_purchases_by_customer.get(inv["customer_id"], 0)
+            enrich_invoice(inv)
             filtered_invoices.append(inv)
     
     return filtered_invoices
@@ -2678,14 +2712,24 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     # Get tenant info for Personal Shopper details
     tenant = await db.tenants.find_one({"id": tid}, {"_id": 0})
     
-    # Get shipment linked to this specific invoice first, otherwise get latest for client
+    # Get shipment linked to this specific invoice first
     shipment = await db.shipments.find_one(
         {"invoice_id": invoice["id"], "tenant_id": tid},
         {"_id": 0}
     )
     
-    # If no shipment linked to this invoice, don't show any shipment
-    # (the old behavior was showing any shipment from the client, which was wrong)
+    # If no shipment by invoice_id, try to find one that contains the same purchases
+    if not shipment and invoice.get("purchase_ids"):
+        # Find shipment that contains any of the invoice's purchases
+        shipment = await db.shipments.find_one(
+            {
+                "tenant_id": tid,
+                "customer_id": invoice.get("customer_id"),
+                "purchase_ids": {"$in": invoice["purchase_ids"]}
+            },
+            {"_id": 0},
+            sort=[("created_at", -1)]  # Get the most recent one
+        )
     
     return {
         **invoice,
