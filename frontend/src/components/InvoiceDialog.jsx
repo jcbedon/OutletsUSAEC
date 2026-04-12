@@ -812,11 +812,11 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                           <div className="flex-1">
                             <div className="flex items-center justify-between">
                               <p className="font-medium text-gray-800">{purchase.item_name}</p>
-                              <p className="font-bold text-lg" style={{ color: '#1E3A5F' }}>${purchase.total.toFixed(2)}</p>
+                              <p className="font-bold text-lg" style={{ color: '#1E3A5F' }}>${(purchase.price + (purchase.commission || 0)).toFixed(2)}</p>
                             </div>
                             <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
                               <span>{purchase.store}</span>
-                              <span>Precio: ${purchase.price.toFixed(2)}</span>
+                              <span>Costo: ${purchase.price.toFixed(2)}</span>
                               {purchase.commission > 0 && <span>Com: ${purchase.commission.toFixed(2)}</span>}
                             </div>
                             <p className="text-xs text-gray-400 mt-1">
@@ -843,7 +843,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                           </div>
                           <div className="text-center">
                             <p className="text-xs text-gray-500">Total</p>
-                            <p className="font-extrabold text-2xl" style={{ color: '#1E3A5F' }}>${selectedTotals.total.toFixed(2)}</p>
+                            <p className="font-extrabold text-2xl" style={{ color: '#1E3A5F' }}>${(selectedTotals.subtotal + selectedTotals.commission).toFixed(2)}</p>
                           </div>
                         </div>
                         <Button

@@ -244,9 +244,10 @@ export default function AdminWallet() {
             setShowQRDialog(false);
             
             // Set the uploaded image as proof
-            setRechargeProofPreview(statusRes.data.image_url);
+            const fullImageUrl = `${BACKEND_URL}${statusRes.data.image_url}`;
+            setRechargeProofPreview(fullImageUrl);
             // We need to fetch the file for the form
-            const response = await fetch(statusRes.data.image_url);
+            const response = await fetch(fullImageUrl);
             const blob = await response.blob();
             const file = new File([blob], "proof_qr.jpg", { type: blob.type });
             setRechargeProof(file);
