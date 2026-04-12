@@ -805,8 +805,9 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                         <div className="flex items-center gap-3">
                           <Checkbox
                             checked={selectedPurchases.includes(purchase.id)}
-                            onCheckedChange={() => togglePurchase(purchase.id)}
-                            className="data-[state=checked]:bg-blue-600"
+                            onCheckedChange={() => {}}
+                            onClick={(e) => e.stopPropagation()}
+                            className="data-[state=checked]:bg-blue-600 pointer-events-none"
                           />
                           <div className="flex-1">
                             <div className="flex items-center justify-between">
