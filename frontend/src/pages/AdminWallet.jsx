@@ -543,7 +543,9 @@ export default function AdminWallet() {
                           <span className="flex items-center gap-2">
                             <span className="font-bold text-green-600">#{rechargeClient.customer_id}</span>
                             <span>{rechargeClient.name}</span>
-                            <span className="text-gray-500">(${rechargeClient.wallet_balance?.toFixed(2) || '0.00'})</span>
+                            <span className="text-gray-500 text-xs">
+                              Compras: ${Math.abs(rechargeClient.wallet_balance || 0).toFixed(2)} + Envio: ${(rechargeClient.total_shipping || 0).toFixed(2)}
+                            </span>
                           </span>
                         ) : (
                           <span className="text-gray-500">Buscar cliente...</span>
@@ -583,7 +585,12 @@ export default function AdminWallet() {
                                   <div className="flex items-center gap-3 w-full">
                                     <span className="font-bold text-green-600">#{client.customer_id}</span>
                                     <span className="flex-1 text-gray-900">{client.name}</span>
-                                    <span className="text-sm text-gray-500">${client.wallet_balance?.toFixed(2) || '0.00'}</span>
+                                    <span className="text-xs text-right text-gray-500">
+                                      <span className="text-red-600">${Math.abs(client.wallet_balance || 0).toFixed(2)}</span>
+                                      {(client.total_shipping || 0) > 0 && (
+                                        <span> + <span className="text-purple-600">${(client.total_shipping).toFixed(2)}</span></span>
+                                      )}
+                                    </span>
                                   </div>
                                 </CommandItem>
                               ))
