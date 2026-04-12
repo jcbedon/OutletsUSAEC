@@ -40,7 +40,7 @@ const loadImageWithDimensions = (url) => {
   });
 };
 
-export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }) {
+export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, existingInvoice = null }) {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [pendingPurchases, setPendingPurchases] = useState([]);
@@ -53,12 +53,36 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
   const invoiceRef = useRef(null);
 
   useEffect(() => {
-    if (open && client) {
-      loadPendingPurchases();
-      loadInvoices();
-      setShowShipmentPrompt(false);
+    if (open) {
+      // If opening with an existing invoice, load it directly in view mode
+      if (existingInvoice) {
+        loadExistingInvoice(existingInvoice);
+      } else if (client) {
+        loadPendingPurchases();
+        loadInvoices();
+        setShowShipmentPrompt(false);
+        setViewMode("create");
+      }
     }
-  }, [open, client]);
+  }, [open, client, existingInvoice]);
+
+  const loadExistingInvoice = async (invoice) => {
+    try {
+      setLoading(true);
+      // Load full invoice details if we only have basic info
+      if (invoice.id) {
+        const res = await getInvoiceDetail(invoice.id);
+        setCurrentInvoice(res.data);
+      } else {
+        setCurrentInvoice(invoice);
+      }
+      setViewMode("view");
+    } catch (error) {
+      toast.error("Error al cargar la factura");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadPendingPurchases = async () => {
     try {
@@ -929,19 +953,35 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo }
                       <p className="font-bold text-lg text-purple-800">{currentInvoice.shipment.weight_pounds || 0} lbs</p>
                     </div>
                     <div>
-                      <p className="text-xs text-purple-600">Tracking</p>
-                      <p className="font-bold text-lg text-purple-800">{currentInvoice.shipment.tracking_number || "N/A"}</p>
+                      <p className="text-xs text-purple-600">Tracking ({currentInvoice.shipment.tracking_numbers?.length || (currentInvoice.shipment.tracking_number ? 1 : 0)} paquete(s))</p>
+                      {currentInvoice.shipment.tracking_numbers?.length > 0 ? (
+                        <div className="space-y-1">
+                          {currentInvoice.shipment.tracking_numbers.map((t, i) => (
+                            <p key={i} className="font-bold text-sm text-purple-800 font-mono">#{i+1}: {t}</p>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="font-bold text-lg text-purple-800">{currentInvoice.shipment.tracking_number || "N/A"}</p>
+                      )}
                     </div>
                   </div>
-                  {currentInvoice.shipment.tracking_number && currentInvoice.tenant?.tracking_url_template && (
-                    <a
-                      href={currentInvoice.tenant.tracking_url_template.replace('{tracking}', currentInvoice.shipment.tracking_number)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm font-medium"
-                    >
-                      🔗 Verificar Tracking
-                    </a>
+                  {(currentInvoice.shipment.tracking_numbers?.length > 0 || currentInvoice.shipment.tracking_number) && currentInvoice.tenant?.tracking_url_template && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {(currentInvoice.shipment.tracking_numbers?.length > 0 
+                        ? currentInvoice.shipment.tracking_numbers 
+                        : [currentInvoice.shipment.tracking_number]
+                      ).filter(Boolean).map((tracking, idx) => (
+                        <a
+                          key={idx}
+                          href={currentInvoice.tenant.tracking_url_template.replace('{tracking}', tracking)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs font-medium"
+                        >
+                          📦 Paquete {idx + 1}
+                        </a>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}

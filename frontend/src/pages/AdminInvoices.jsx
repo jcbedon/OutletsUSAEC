@@ -51,6 +51,7 @@ export default function AdminInvoices() {
   // For InvoiceDialog
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
   const [selectedClientForInvoice, setSelectedClientForInvoice] = useState(null);
+  const [existingInvoiceToView, setExistingInvoiceToView] = useState(null);
   const [tenantInfo, setTenantInfo] = useState(null);
   
   const defaultTenantInfo = {
@@ -97,6 +98,7 @@ export default function AdminInvoices() {
 
   const handleSelectClientForInvoice = async (client) => {
     setSelectedClientForInvoice(client);
+    setExistingInvoiceToView(null); // Clear existing invoice since we're creating new
     setShowClientSelector(false);
     
     // Load tenant info
@@ -123,8 +125,10 @@ export default function AdminInvoices() {
 
   const handleViewInvoice = async (invoice) => {
     try {
-      const res = await getInvoiceDetail(invoice.id);
-      setSelectedInvoice(res.data);
+      // Open the InvoiceDialog with this existing invoice
+      setExistingInvoiceToView(invoice);
+      setSelectedClientForInvoice(null); // Clear client since we're viewing existing
+      setInvoiceDialogOpen(true);
     } catch (error) {
       toast.error("Error al cargar detalles de la factura");
     }
@@ -629,10 +633,12 @@ export default function AdminInvoices() {
         onOpenChange={(open) => {
           setInvoiceDialogOpen(open);
           if (!open) {
+            setExistingInvoiceToView(null); // Clear when closing
             loadInvoices(); // Reload invoices when dialog closes
           }
         }}
         client={selectedClientForInvoice}
+        existingInvoice={existingInvoiceToView}
         tenantInfo={tenantInfo || defaultTenantInfo}
       />
       </div>

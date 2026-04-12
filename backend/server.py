@@ -2463,17 +2463,11 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     total_commission = sum(p.get("commission", 0) for p in purchases)
     total = sum(p["total"] for p in purchases)
     
-    # Generate invoice number
-    last_invoice = await db.invoices.find_one({"tenant_id": tid}, sort=[("created_at", -1)])
-    if last_invoice and "invoice_number" in last_invoice:
-        try:
-            last_num = int(last_invoice["invoice_number"].split("-")[-1])
-            new_num = last_num + 1
-        except:
-            new_num = 1
-    else:
-        new_num = 1
-    invoice_number = f"INV-{new_num:06d}"
+    # Generate invoice number using customer_id + sequential number
+    # Count existing invoices for this customer to get the next number
+    customer_invoice_count = await db.invoices.count_documents({"customer_id": customer_id, "tenant_id": tid})
+    customer_seq = customer_invoice_count + 1
+    invoice_number = f"{customer_id}-{customer_seq:03d}"
     
     invoice = Invoice(
         tenant_id=tid,
