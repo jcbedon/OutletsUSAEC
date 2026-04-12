@@ -520,6 +520,9 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       const taxes = inv.total_tax || 0;
       const shippingCost = shipment?.shipping_cost || 0;
       const grandTotal = displaySubtotal + taxes + shippingCost;
+      const appliedDeposits = currentInvoice.applied_deposits || [];
+      const depositsApplied = currentInvoice.deposits_applied || 0;
+      const totalAPagar = Math.max(0, grandTotal - depositsApplied);
       
       doc.setTextColor(...colors.textSecondary);
       doc.setFontSize(9);
@@ -550,18 +553,48 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       
       // Divider line before Total
       finalY += 4;
-      doc.setDrawColor(...colors.textPrimary);
-      doc.setLineWidth(0.5);
+      doc.setDrawColor(...colors.divider);
+      doc.setLineWidth(0.3);
       doc.line(totalsX, finalY, pageWidth - margin, finalY);
       
       // TOTAL
       finalY += 8;
       doc.setTextColor(...colors.textPrimary);
-      doc.setFontSize(12);
+      doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
       doc.text("Total:", totalsX, finalY);
-      doc.setFontSize(14);
+      doc.setFontSize(13);
       doc.text(`$${grandTotal.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+      
+      // ========== ABONOS assigned to THIS invoice ==========
+      if (appliedDeposits.length > 0) {
+        finalY += 8;
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "normal");
+        
+        appliedDeposits.forEach((dep, idx) => {
+          doc.setTextColor(...colors.textSecondary);
+          doc.text(`Abono ${idx + 1}:`, totalsX, finalY);
+          doc.setTextColor(22, 101, 52);
+          doc.text(`-$${dep.amount_applied.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+          finalY += 5;
+        });
+      }
+      
+      // Divider before Total a pagar
+      finalY += 2;
+      doc.setDrawColor(...colors.textPrimary);
+      doc.setLineWidth(0.5);
+      doc.line(totalsX, finalY, pageWidth - margin, finalY);
+      
+      // TOTAL A PAGAR
+      finalY += 8;
+      doc.setTextColor(totalAPagar > 0 ? 185 : 22, totalAPagar > 0 ? 28 : 101, totalAPagar > 0 ? 28 : 52);
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("Total a pagar:", totalsX, finalY);
+      doc.setFontSize(14);
+      doc.text(`$${totalAPagar.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       
       // ========== FOOTER SECTION ==========
       const footerY = containerY + 273 - 25;
@@ -975,6 +1008,9 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                 const displaySubtotal = (currentInvoice.subtotal || 0) + (currentInvoice.total_commission || 0);
                 const taxes = currentInvoice.total_tax || 0;
                 const grandTotal = displaySubtotal + taxes + shippingCost;
+                const appliedDeposits = currentInvoice.applied_deposits || [];
+                const depositsApplied = currentInvoice.deposits_applied || 0;
+                const totalAPagar = Math.max(0, grandTotal - depositsApplied);
 
                 return (
                   <>
@@ -1017,11 +1053,31 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                           </div>
                         )}
                         {/* Divider before Total */}
+                        <div className="border-t border-gray-300 pt-2 mt-2">
+                          <div className="flex justify-between">
+                            <span className="font-bold text-gray-800">Total:</span>
+                            <span className="font-bold text-xl" style={{ color: '#1E3A5F' }}>
+                              ${grandTotal.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                        {/* Abonos assigned to THIS invoice */}
+                        {appliedDeposits.length > 0 && (
+                          <div className="space-y-1 pt-1">
+                            {appliedDeposits.map((dep, idx) => (
+                              <div key={idx} className="flex justify-between text-sm">
+                                <span className="text-green-700">Abono {idx + 1}:</span>
+                                <span className="font-medium text-green-700">-${dep.amount_applied.toFixed(2)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Total a pagar */}
                         <div className="border-t-2 border-gray-400 pt-2 mt-2">
                           <div className="flex justify-between">
-                            <span className="font-extrabold text-gray-900">Total:</span>
-                            <span className="font-extrabold text-2xl" style={{ color: '#1E3A5F' }}>
-                              ${grandTotal.toFixed(2)}
+                            <span className="font-extrabold text-gray-900">Total a pagar:</span>
+                            <span className="font-extrabold text-2xl" style={{ color: totalAPagar > 0 ? '#DC2626' : '#16A34A' }}>
+                              ${totalAPagar.toFixed(2)}
                             </span>
                           </div>
                         </div>

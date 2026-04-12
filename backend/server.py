@@ -2601,7 +2601,65 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
         notes=notes
     )
     
-    await db.invoices.insert_one(invoice.model_dump())
+    invoice_dict = invoice.model_dump()
+    
+    # ===== Assign available deposits to this invoice =====
+    # Calculate invoice grand total (subtotal + commission + tax + shipping will be added later)
+    invoice_grand_total = round(subtotal + total_commission + total_tax, 2)
+    
+    # Get all approved deposits for this client
+    all_deposits = await db.wallet_transactions.find(
+        {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved"},
+        {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
+    ).sort("created_at", 1).to_list(1000)
+    
+    # Get deposits already consumed by other invoices
+    other_invoices = await db.invoices.find(
+        {"customer_id": customer_id, "tenant_id": tid, "is_annulled": {"$ne": True}},
+        {"_id": 0, "applied_deposits": 1}
+    ).to_list(1000)
+    
+    consumed_deposit_ids = set()
+    partially_consumed = {}  # deposit_id -> amount already consumed
+    for inv_doc in other_invoices:
+        for ad in inv_doc.get("applied_deposits", []):
+            dep_id = ad.get("deposit_id")
+            dep_amount = ad.get("amount_applied", 0)
+            if dep_id:
+                if dep_id in partially_consumed:
+                    partially_consumed[dep_id] += dep_amount
+                else:
+                    partially_consumed[dep_id] = dep_amount
+    
+    # Assign deposits chronologically until invoice is covered
+    applied_deposits = []
+    remaining_to_cover = invoice_grand_total
+    
+    for dep in all_deposits:
+        if remaining_to_cover <= 0:
+            break
+        dep_id = dep.get("id", "")
+        dep_total = dep["amount"]
+        already_used = partially_consumed.get(dep_id, 0)
+        available = dep_total - already_used
+        
+        if available <= 0:
+            continue
+        
+        amount_to_apply = min(available, remaining_to_cover)
+        applied_deposits.append({
+            "deposit_id": dep_id,
+            "amount_original": dep_total,
+            "amount_applied": round(amount_to_apply, 2),
+            "created_at": dep.get("created_at", "")
+        })
+        remaining_to_cover -= amount_to_apply
+    
+    total_deposits_applied = round(sum(ad["amount_applied"] for ad in applied_deposits), 2)
+    invoice_dict["applied_deposits"] = applied_deposits
+    invoice_dict["deposits_applied"] = total_deposits_applied
+    
+    await db.invoices.insert_one(invoice_dict)
     
     # Mark purchases as invoiced
     now = datetime.now(timezone.utc).isoformat()
@@ -2893,37 +2951,19 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
             sort=[("created_at", -1)]  # Get the most recent one
         )
     
-    # Get client's approved deposits (abonos) - only approved ones
-    client_deposits = []
-    total_deposits = 0
-    if client:
-        deposits = await db.wallet_transactions.find(
-            {
-                "user_id": client["id"],
-                "tenant_id": tid,
-                "type": "deposit",
-                "status": "approved"
-            },
-            {"_id": 0, "amount": 1, "created_at": 1, "description": 1}
-        ).sort("created_at", -1).limit(20).to_list(20)
-        client_deposits = deposits
-        # Sum ALL approved deposits for this client
-        pipeline = [
-            {"$match": {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved"}},
-            {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
-        ]
-        agg_result = await db.wallet_transactions.aggregate(pipeline).to_list(1)
-        total_deposits = agg_result[0]["total"] if agg_result else 0
+    # Get applied deposits for THIS invoice (not global client deposits)
+    applied_deposits = invoice.get("applied_deposits", [])
+    deposits_applied = invoice.get("deposits_applied", 0)
     
     return {
         **invoice,
         "client": client,
         "client_balance": client_wallet.get("available", 0) if client_wallet else 0,
-        "total_deposits": round(total_deposits, 2),
+        "applied_deposits": applied_deposits,
+        "deposits_applied": deposits_applied,
         "purchases": purchases,
         "tenant": tenant,
-        "shipment": shipment,
-        "client_deposits": client_deposits
+        "shipment": shipment
     }
 
 @api_router.put("/invoices/{invoice_id}/remove-item")
