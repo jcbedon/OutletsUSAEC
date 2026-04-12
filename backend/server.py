@@ -1660,7 +1660,7 @@ async def admin_create_recharge(
         raise HTTPException(status_code=400, detail="Formato de archivo no soportado. Use: jpg, jpeg, png, gif, webp, pdf")
     
     filename = f"proof_{uuid.uuid4().hex[:8]}.{ext}"
-    file_path = f"uploads/{filename}"
+    file_path = UPLOAD_DIR / filename
     with open(file_path, "wb") as f:
         f.write(await proof.read())
     proof_url = f"/api/uploads/{filename}"
