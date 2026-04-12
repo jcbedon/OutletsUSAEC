@@ -2728,12 +2728,12 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     invoice_dict = invoice.model_dump()
     
     # ===== Assign available deposits to this invoice =====
-    # Calculate invoice grand total (subtotal + commission + tax + shipping will be added later)
-    invoice_grand_total = round(subtotal + total_commission + total_tax, 2)
+    # Calculate invoice grand total including saldo_pendiente
+    invoice_grand_total = round(subtotal + total_commission + total_tax + saldo_pendiente, 2)
     
-    # Get all approved deposits for this client
+    # Get all approved, non-deleted deposits for this client
     all_deposits = await db.wallet_transactions.find(
-        {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved"},
+        {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
         {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
     ).sort("created_at", 1).to_list(1000)
     
@@ -3082,9 +3082,9 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     
     # Auto-migrate: if invoice has no applied_deposits, calculate them now
     if not applied_deposits and client and not invoice.get("is_annulled"):
-        # Get all approved deposits for this client (chronological)
+        # Get all approved, non-deleted deposits for this client (chronological)
         all_deposits = await db.wallet_transactions.find(
-            {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved"},
+            {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
             {"_id": 0, "id": 1, "amount": 1, "created_at": 1}
         ).sort("created_at", 1).to_list(1000)
         
@@ -3101,10 +3101,11 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
                 if dep_id:
                     partially_consumed[dep_id] = partially_consumed.get(dep_id, 0) + ad.get("amount_applied", 0)
         
-        # Calculate invoice grand total
+        # Calculate invoice grand total including saldo_pendiente
         inv_subtotal = invoice.get("subtotal", 0) + invoice.get("total_commission", 0) + invoice.get("total_tax", 0)
         ship_cost = shipment.get("shipping_cost", 0) if shipment else 0
-        inv_grand_total = inv_subtotal + ship_cost
+        saldo_pend = invoice.get("saldo_pendiente", 0)
+        inv_grand_total = inv_subtotal + ship_cost + saldo_pend
         
         remaining = inv_grand_total
         applied_deposits = []
