@@ -1428,7 +1428,7 @@ async def get_recharge_report(current_user: dict = Depends(get_current_user)):
 @api_router.get("/wallet/transactions/{user_id}")
 async def get_wallet_transactions(user_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
-    transactions = await db.wallet_transactions.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
+    transactions = await db.wallet_transactions.find({"user_id": user_id, "tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
     return transactions
 
 @api_router.get("/wallet/{user_id}")
