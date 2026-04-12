@@ -2727,57 +2727,37 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     
     invoice_dict = invoice.model_dump()
     
-    # ===== Assign available deposits to this invoice =====
-    # Calculate invoice grand total including saldo_pendiente
-    invoice_grand_total = round(subtotal + total_commission + total_tax + saldo_pendiente, 2)
-    
+    # ===== Assign available deposits (full amounts) to this invoice =====
     # Get all approved, non-deleted deposits for this client
     all_deposits = await db.wallet_transactions.find(
         {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
         {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
     ).sort("created_at", 1).to_list(1000)
     
-    # Get deposits already consumed by other invoices
+    # Get deposit IDs already used by other invoices
     other_invoices = await db.invoices.find(
         {"customer_id": customer_id, "tenant_id": tid, "is_annulled": {"$ne": True}},
         {"_id": 0, "applied_deposits": 1}
     ).to_list(1000)
     
-    consumed_deposit_ids = set()
-    partially_consumed = {}  # deposit_id -> amount already consumed
+    used_deposit_ids = set()
     for inv_doc in other_invoices:
         for ad in inv_doc.get("applied_deposits", []):
-            dep_id = ad.get("deposit_id")
-            dep_amount = ad.get("amount_applied", 0)
-            if dep_id:
-                if dep_id in partially_consumed:
-                    partially_consumed[dep_id] += dep_amount
-                else:
-                    partially_consumed[dep_id] = dep_amount
+            if ad.get("deposit_id"):
+                used_deposit_ids.add(ad["deposit_id"])
     
-    # Assign deposits chronologically until invoice is covered
+    # Assign unused deposits with their FULL amount (abono = recarga completa)
     applied_deposits = []
-    remaining_to_cover = invoice_grand_total
-    
     for dep in all_deposits:
-        if remaining_to_cover <= 0:
-            break
         dep_id = dep.get("id", "")
-        dep_total = dep["amount"]
-        already_used = partially_consumed.get(dep_id, 0)
-        available = dep_total - already_used
-        
-        if available <= 0:
+        if dep_id in used_deposit_ids:
             continue
-        
-        amount_to_apply = min(available, remaining_to_cover)
         applied_deposits.append({
             "deposit_id": dep_id,
-            "amount_original": dep_total,
-            "amount_applied": round(amount_to_apply, 2),
-            "created_at": dep.get("created_at", "")
+            "amount_applied": dep["amount"],
+            "created_at": dep.get("created_at", ""),
+            "description": dep.get("description", "")
         })
-        remaining_to_cover -= amount_to_apply
     
     total_deposits_applied = round(sum(ad["amount_applied"] for ad in applied_deposits), 2)
     invoice_dict["applied_deposits"] = applied_deposits
@@ -3080,62 +3060,37 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     applied_deposits = invoice.get("applied_deposits", [])
     deposits_applied = invoice.get("deposits_applied", 0)
     
-    # Always recalculate deposits if the current grand total (with shipping) is higher than what was assigned
-    # This handles: 1) invoices with no deposits, 2) invoices where shipping was added after creation
-    should_recalculate = False
-    if not applied_deposits and client and not invoice.get("is_annulled"):
-        should_recalculate = True
-    elif applied_deposits and client and not invoice.get("is_annulled"):
-        inv_subtotal = invoice.get("subtotal", 0) + invoice.get("total_commission", 0) + invoice.get("total_tax", 0)
-        ship_cost = shipment.get("shipping_cost", 0) if shipment else 0
-        saldo_pend = invoice.get("saldo_pendiente", 0)
-        current_grand_total = inv_subtotal + ship_cost + saldo_pend
-        if deposits_applied < current_grand_total:
-            should_recalculate = True
-    
-    if should_recalculate:
-        # Get all approved, non-deleted deposits for this client (chronological)
+    # Always recalculate deposits with full amounts (abono = recarga completa)
+    if client and not invoice.get("is_annulled"):
         all_deposits = await db.wallet_transactions.find(
             {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
-            {"_id": 0, "id": 1, "amount": 1, "created_at": 1}
+            {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
         ).sort("created_at", 1).to_list(1000)
         
-        # Get deposits already consumed by OTHER invoices
+        # Get deposit IDs used by OTHER invoices
         other_invoices = await db.invoices.find(
             {"customer_id": invoice["customer_id"], "tenant_id": tid, "id": {"$ne": invoice_id}, "is_annulled": {"$ne": True}},
             {"_id": 0, "applied_deposits": 1}
         ).to_list(1000)
         
-        partially_consumed = {}
+        used_deposit_ids = set()
         for inv_doc in other_invoices:
             for ad in inv_doc.get("applied_deposits", []):
-                dep_id = ad.get("deposit_id")
-                if dep_id:
-                    partially_consumed[dep_id] = partially_consumed.get(dep_id, 0) + ad.get("amount_applied", 0)
+                if ad.get("deposit_id"):
+                    used_deposit_ids.add(ad["deposit_id"])
         
-        # Calculate invoice grand total including shipping and saldo_pendiente
-        inv_subtotal = invoice.get("subtotal", 0) + invoice.get("total_commission", 0) + invoice.get("total_tax", 0)
-        ship_cost = shipment.get("shipping_cost", 0) if shipment else 0
-        saldo_pend = invoice.get("saldo_pendiente", 0)
-        inv_grand_total = inv_subtotal + ship_cost + saldo_pend
-        
-        remaining = inv_grand_total
+        # Assign unused deposits with FULL amounts
         applied_deposits = []
         for dep in all_deposits:
-            if remaining <= 0:
-                break
             dep_id = dep.get("id", "")
-            available = dep["amount"] - partially_consumed.get(dep_id, 0)
-            if available <= 0:
+            if dep_id in used_deposit_ids:
                 continue
-            amount_to_apply = min(available, remaining)
             applied_deposits.append({
                 "deposit_id": dep_id,
-                "amount_original": dep["amount"],
-                "amount_applied": round(amount_to_apply, 2),
-                "created_at": dep.get("created_at", "")
+                "amount_applied": dep["amount"],
+                "created_at": dep.get("created_at", ""),
+                "description": dep.get("description", "")
             })
-            remaining -= amount_to_apply
         
         deposits_applied = round(sum(ad["amount_applied"] for ad in applied_deposits), 2)
         
