@@ -28,9 +28,8 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import StoreInvoiceSection from "@/components/StoreInvoiceSection";
+import PurchaseItem from "@/components/live/PurchaseItem";
 import { 
   Radio, 
   Play, 
@@ -46,9 +45,7 @@ import {
   Zap,
   Edit,
   Trash2,
-  Save,
-  X,
-  Search
+  X
 } from "lucide-react";
 
 // Default tax options
@@ -112,17 +109,9 @@ export default function AdminLive() {
   const [customerCommission, setCustomerCommission] = useState(3.0);
   const [editingPurchase, setEditingPurchase] = useState(null);
   const [editForm, setEditForm] = useState({ 
-    item_name: "", 
-    store: "", 
-    price: "",
-    tax_option: "8.25",
-    custom_tax: "",
-    apply_commission: true,
-    commission: "3",
-    customer_id: "" // Added for changing client
+    item_name: "", store: "", price: "", tax_option: "8.25",
+    custom_tax: "", apply_commission: true, commission: "3", customer_id: ""
   });
-  const [editClientSearchOpen, setEditClientSearchOpen] = useState(false);
-  const [editClientSearchValue, setEditClientSearchValue] = useState("");
   
   // Client autocomplete state
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
@@ -494,10 +483,8 @@ export default function AdminLive() {
       custom_tax: custom_tax,
       apply_commission: purchase.apply_commission !== false,
       commission: (purchase.commission || 0).toString(),
-      customer_id: purchase.customer_id // Include customer_id for editing
+      customer_id: purchase.customer_id
     });
-    setEditClientSearchValue("");
-    setEditClientSearchOpen(false);
   };
 
   const handleSaveEdit = async (purchaseId) => {
@@ -536,7 +523,6 @@ export default function AdminLive() {
       await updatePurchase(purchaseId, data);
       toast.success("Compra actualizada");
       setEditingPurchase(null);
-      setEditClientSearchOpen(false);
       loadData(true); // Preserve selection to stay on current Live
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al editar");
@@ -1143,206 +1129,20 @@ export default function AdminLive() {
                     ) : (
                       <div className="space-y-3">
                         {purchases.map((purchase) => (
-                          <Card key={purchase.id} className="rounded-xl border-gray-100" data-testid="live-purchase-item">
-                            <CardContent className="p-3">
-                              {editingPurchase === purchase.id ? (
-                                <div className="space-y-2">
-                                  {/* Client selector */}
-                                  <div className="p-2 bg-purple-50 rounded-lg">
-                                    <p className="text-xs font-medium text-gray-600 mb-1">Cliente</p>
-                                    <Popover open={editClientSearchOpen} onOpenChange={setEditClientSearchOpen}>
-                                      <PopoverTrigger asChild>
-                                        <Button variant="outline" role="combobox" className="w-full h-8 justify-between text-xs rounded">
-                                          <span className="truncate">
-                                            {editForm.customer_id ? `#${editForm.customer_id} - ${activeClients.find(c => c.customer_id === editForm.customer_id)?.name || ''}` : "Seleccionar cliente..."}
-                                          </span>
-                                          <Search className="ml-1 h-3 w-3 shrink-0 opacity-50" />
-                                        </Button>
-                                      </PopoverTrigger>
-                                      <PopoverContent className="w-72 p-0 rounded-xl" align="start">
-                                        <Command>
-                                          <CommandInput 
-                                            placeholder="Buscar cliente..." 
-                                            value={editClientSearchValue}
-                                            onValueChange={setEditClientSearchValue}
-                                            className="h-9"
-                                          />
-                                          <CommandList>
-                                            <CommandEmpty>No encontrado</CommandEmpty>
-                                            <CommandGroup>
-                                              {activeClients
-                                                .filter(c => 
-                                                  editClientSearchValue.length === 0 ||
-                                                  c.name.toLowerCase().includes(editClientSearchValue.toLowerCase()) ||
-                                                  c.customer_id.toLowerCase().includes(editClientSearchValue.toLowerCase())
-                                                )
-                                                .slice(0, 10)
-                                                .map((c) => (
-                                                  <CommandItem
-                                                    key={c.customer_id}
-                                                    value={c.customer_id}
-                                                    onSelect={() => {
-                                                      setEditForm({...editForm, customer_id: c.customer_id});
-                                                      setEditClientSearchOpen(false);
-                                                    }}
-                                                    className="cursor-pointer"
-                                                  >
-                                                    <span className="font-bold text-red-600">#{c.customer_id}</span>
-                                                    <span className="ml-2">{c.name}</span>
-                                                  </CommandItem>
-                                                ))
-                                              }
-                                            </CommandGroup>
-                                          </CommandList>
-                                        </Command>
-                                      </PopoverContent>
-                                    </Popover>
-                                  </div>
-                                  
-                                  <Input value={editForm.item_name} onChange={(e) => setEditForm({...editForm, item_name: e.target.value})}
-                                    placeholder="Producto" className="h-9 rounded-lg text-sm" data-testid="edit-item-name" />
-                                  <div className="flex gap-2">
-                                    <Input value={editForm.store} onChange={(e) => setEditForm({...editForm, store: e.target.value})}
-                                      placeholder="Tienda" className="h-9 rounded-lg text-sm flex-1" />
-                                    <Input type="number" step="0.01" value={editForm.price}
-                                      onChange={(e) => setEditForm({...editForm, price: e.target.value})}
-                                      placeholder="Precio" className="h-9 rounded-lg text-sm w-24" data-testid="edit-price" />
-                                  </div>
-                                  
-                                  {/* Tax Options */}
-                                  <div className="p-2 bg-blue-50 rounded-lg">
-                                    <p className="text-xs font-medium text-gray-600 mb-1">Impuesto</p>
-                                    <div className="flex gap-2 items-center">
-                                      <Select 
-                                        value={editForm.tax_option} 
-                                        onValueChange={(val) => setEditForm({...editForm, tax_option: val})}
-                                      >
-                                        <SelectTrigger className="h-8 rounded text-xs bg-white flex-1">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {taxOptions.map((opt) => (
-                                            <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                                              {opt.label}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                      {editForm.tax_option === "other" && (
-                                        <div className="flex items-center gap-1">
-                                          <Input
-                                            type="number"
-                                            step="0.01"
-                                            min="0"
-                                            value={editForm.custom_tax}
-                                            onChange={(e) => setEditForm({...editForm, custom_tax: e.target.value})}
-                                            className="w-16 h-8 text-xs text-center rounded"
-                                          />
-                                          <span className="text-xs">%</span>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                  
-                                  {/* Commission */}
-                                  <div className="p-2 bg-yellow-50 rounded-lg flex items-center justify-between">
-                                    <label className="flex items-center gap-1 text-xs cursor-pointer">
-                                      <input type="checkbox" checked={editForm.apply_commission}
-                                        onChange={(e) => setEditForm({...editForm, apply_commission: e.target.checked})}
-                                        className="w-3 h-3" />
-                                      <span className="font-medium text-gray-700">Comision $</span>
-                                    </label>
-                                    {editForm.apply_commission && (
-                                      <Input type="number" step="0.01" value={editForm.commission}
-                                        onChange={(e) => setEditForm({...editForm, commission: e.target.value})}
-                                        className="h-7 w-20 text-xs text-center rounded" data-testid="edit-commission" />
-                                    )}
-                                  </div>
-                                  
-                                  {/* Preview */}
-                                  {editForm.price && (
-                                    <div className="p-2 bg-gray-50 rounded-lg text-xs space-y-1">
-                                      {(() => {
-                                        const price = parseFloat(editForm.price || 0);
-                                        const taxRate = getEffectiveTaxRate(editForm.tax_option, editForm.custom_tax);
-                                        const taxAmount = price * taxRate;
-                                        const commission = editForm.apply_commission ? parseFloat(editForm.commission || 0) : 0;
-                                        const total = price + taxAmount + commission;
-                                        const taxLabel = editForm.tax_option === "other" 
-                                          ? `${editForm.custom_tax || 0}%`
-                                          : editForm.tax_option === "0" ? "Sin Tax" : `${editForm.tax_option}%`;
-                                        
-                                        return (
-                                          <>
-                                            <div className="flex justify-between">
-                                              <span className="text-gray-500">Precio:</span>
-                                              <span className="font-medium">${price.toFixed(2)}</span>
-                                            </div>
-                                            {taxRate > 0 && (
-                                              <div className="flex justify-between">
-                                                <span className="text-gray-500">Tax ({taxLabel}):</span>
-                                                <span className="font-medium">${taxAmount.toFixed(2)}</span>
-                                              </div>
-                                            )}
-                                            {editForm.apply_commission && (
-                                              <div className="flex justify-between">
-                                                <span className="text-gray-500">Comisión:</span>
-                                                <span className="font-medium">${commission.toFixed(2)}</span>
-                                              </div>
-                                            )}
-                                            <div className="flex justify-between pt-1 border-t font-bold text-blue-600">
-                                              <span>Total:</span>
-                                              <span>${total.toFixed(2)}</span>
-                                            </div>
-                                          </>
-                                        );
-                                      })()}
-                                    </div>
-                                  )}
-                                  
-                                  <div className="flex gap-2">
-                                    <Button size="sm" onClick={() => handleSaveEdit(purchase.id)}
-                                      className="flex-1 h-8 rounded-lg" style={{ background: '#2ECC71', color: 'white' }} data-testid="save-edit-btn">
-                                      <Save className="h-3 w-3 mr-1" /> Guardar
-                                    </Button>
-                                    <Button size="sm" variant="outline" onClick={() => setEditingPurchase(null)} className="h-8 rounded-lg">
-                                      <X className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div>
-                                  <div className="flex justify-between items-start">
-                                    <div>
-                                      <div className="flex items-center gap-2 mb-1">
-                                        <Badge variant="outline" className="font-bold">#{purchase.customer_id}</Badge>
-                                        <span className="text-xs text-gray-400">
-                                          {new Date(purchase.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                                        </span>
-                                      </div>
-                                      <p className="font-medium text-slate-800">{purchase.item_name}</p>
-                                      <p className="text-sm text-gray-500">{purchase.store}</p>
-                                    </div>
-                                    <div className="text-right">
-                                      <p className="font-bold" style={{ color: '#1E3A5F' }}>${purchase.total.toFixed(2)}</p>
-                                      <p className="text-xs text-gray-400">${purchase.price.toFixed(2)} + ${purchase.commission.toFixed(2)}</p>
-                                    </div>
-                                  </div>
-                                  <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100">
-                                    <Button size="sm" variant="outline" onClick={() => handleEditPurchase(purchase)}
-                                      className="h-7 text-xs rounded-lg flex-1" data-testid={`edit-purchase-${purchase.id}`}>
-                                      <Edit className="h-3 w-3 mr-1" /> Editar
-                                    </Button>
-                                    <Button size="sm" variant="outline" onClick={() => handleDeletePurchase(purchase.id)}
-                                      className="h-7 text-xs rounded-lg flex-1 text-red-600 border-red-200 hover:bg-red-50"
-                                      data-testid={`delete-purchase-${purchase.id}`}>
-                                      <Trash2 className="h-3 w-3 mr-1" /> Eliminar
-                                    </Button>
-                                  </div>
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
+                          <PurchaseItem
+                            key={purchase.id}
+                            purchase={purchase}
+                            isEditing={editingPurchase === purchase.id}
+                            editForm={editForm}
+                            setEditForm={setEditForm}
+                            taxOptions={taxOptions}
+                            activeClients={activeClients}
+                            getEffectiveTaxRate={getEffectiveTaxRate}
+                            onEdit={handleEditPurchase}
+                            onSaveEdit={handleSaveEdit}
+                            onCancelEdit={() => setEditingPurchase(null)}
+                            onDelete={handleDeletePurchase}
+                          />
                         ))}
                       </div>
                     )}
