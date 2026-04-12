@@ -983,13 +983,21 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                                 </div>
                               )}
 
-                              {/* Total a pagar */}
+                              {/* Total a pagar o Saldo a favor */}
                               <div className="flex justify-between items-center mb-4 p-2 rounded-lg" style={{ background: totalAPagar > 0 ? 'rgba(220,38,38,0.05)' : 'rgba(22,163,74,0.05)' }}>
-                                <span className="font-extrabold text-lg">Total a pagar:</span>
+                                <span className="font-extrabold text-lg">{totalAPagar > 0 ? 'Total a pagar:' : 'Total a pagar:'}</span>
                                 <span className="font-extrabold text-2xl" style={{ color: totalAPagar > 0 ? '#DC2626' : '#16A34A' }}>
                                   ${totalAPagar.toFixed(2)}
                                 </span>
                               </div>
+                              {totalAbonos > grandTotal && (
+                                <div className="p-3 rounded-lg bg-green-100 border border-green-300 mb-4 text-center" data-testid="saldo-favor-msg">
+                                  <p className="text-sm font-bold text-green-800">
+                                    Saldo disponible a favor: ${(totalAbonos - grandTotal).toFixed(2)}
+                                  </p>
+                                  <p className="text-xs text-green-600">Este saldo queda disponible para futuras facturas</p>
+                                </div>
+                              )}
                             </>
                           );
                         })()}
@@ -1251,6 +1259,13 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                             </span>
                           </div>
                         </div>
+                        {depositsApplied > grandTotal && (
+                          <div className="mt-2 p-2 rounded-lg bg-green-100 border border-green-300 text-center">
+                            <p className="text-sm font-bold text-green-800">
+                              Saldo disponible a favor: ${(depositsApplied - grandTotal).toFixed(2)}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </>
