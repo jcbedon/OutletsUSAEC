@@ -968,7 +968,7 @@ export default function AdminWallet() {
                               })}
                             </p>
                           </div>
-                          <div className="text-right flex items-center gap-3">
+                          <div className="text-right flex items-center gap-2">
                             {proofUrl && (
                               <Dialog>
                                 <DialogTrigger asChild>
@@ -989,17 +989,19 @@ export default function AdminWallet() {
                                 ${deposit.amount.toFixed(2)}
                               </p>
                             </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-gray-400 hover:text-red-600 hover:bg-red-50"
-                              onClick={() => openDeleteDialog(deposit.id)}
-                              data-testid={`delete-deposit-${deposit.id}`}
-                              title="Eliminar recarga"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
                           </div>
+                        </div>
+                        <div className="flex justify-end mt-2 pt-2 border-t border-gray-100">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50 rounded-lg"
+                            onClick={() => openDeleteDialog(deposit.id)}
+                            data-testid={`delete-deposit-${deposit.id}`}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            Eliminar
+                          </Button>
                         </div>
                       </CardContent>
                     </Card>
