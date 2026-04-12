@@ -68,7 +68,7 @@ export default function AdminShipments() {
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [trackingDialogOpen, setTrackingDialogOpen] = useState(null);
-  const [newTracking, setNewTracking] = useState("");
+  const [trackingNumbers, setTrackingNumbers] = useState([""]);  // Array of tracking numbers
   const [editDialogOpen, setEditDialogOpen] = useState(null);
   const [editForm, setEditForm] = useState({
     shipping_type: "",
@@ -78,7 +78,7 @@ export default function AdminShipments() {
     country: "",
     phone: "",
     additional_info: "",
-    tracking_number: ""
+    tracking_numbers: []
   });
   
   // Redirect if no permission
@@ -330,20 +330,48 @@ export default function AdminShipments() {
   };
 
   const handleUpdateTracking = async (shipmentId) => {
-    if (!newTracking.trim()) {
-      toast.error("Ingresa un número de tracking");
+    // Filter out empty tracking numbers
+    const validTrackings = trackingNumbers.filter(t => t.trim());
+    
+    if (validTrackings.length === 0) {
+      toast.error("Ingresa al menos un número de tracking");
       return;
     }
     
     try {
-      await updateTracking(shipmentId, newTracking);
-      toast.success("Tracking actualizado");
+      await updateTracking(shipmentId, { tracking_numbers: validTrackings });
+      toast.success(`${validTrackings.length} tracking(s) guardado(s)`);
       setTrackingDialogOpen(null);
-      setNewTracking("");
+      setTrackingNumbers([""]);
       loadData();
     } catch (error) {
       toast.error("Error al actualizar tracking");
     }
+  };
+
+  const handleOpenTrackingDialog = (shipment) => {
+    // Load existing tracking numbers or start with one empty field
+    const existingTrackings = shipment.tracking_numbers?.length > 0 
+      ? shipment.tracking_numbers 
+      : (shipment.tracking_number ? [shipment.tracking_number] : [""]);
+    setTrackingNumbers(existingTrackings.length > 0 ? existingTrackings : [""]);
+    setTrackingDialogOpen(shipment.id);
+  };
+
+  const addTrackingField = () => {
+    setTrackingNumbers([...trackingNumbers, ""]);
+  };
+
+  const removeTrackingField = (index) => {
+    if (trackingNumbers.length > 1) {
+      setTrackingNumbers(trackingNumbers.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateTrackingField = (index, value) => {
+    const updated = [...trackingNumbers];
+    updated[index] = value;
+    setTrackingNumbers(updated);
   };
 
   const handleOpenEditDialog = (shipment) => {
@@ -355,7 +383,9 @@ export default function AdminShipments() {
       country: shipment.country || "",
       phone: shipment.phone || "",
       additional_info: shipment.additional_info || "",
-      tracking_number: shipment.tracking_number || ""
+      tracking_numbers: shipment.tracking_numbers?.length > 0 
+        ? shipment.tracking_numbers 
+        : (shipment.tracking_number ? [shipment.tracking_number] : [])
     });
     setEditDialogOpen(shipment.id);
   };
@@ -365,7 +395,9 @@ export default function AdminShipments() {
       const data = {
         ...editForm,
         shipping_cost: parseFloat(editForm.shipping_cost) || 0,
-        weight_pounds: parseFloat(editForm.weight_pounds) || 0
+        weight_pounds: parseFloat(editForm.weight_pounds) || 0,
+        tracking_numbers: editForm.tracking_numbers?.filter(t => t.trim()) || [],
+        tracking_number: editForm.tracking_numbers?.[0] || null  // Keep first one for backwards compatibility
       };
       await updateShipment(shipmentId, data);
       toast.success("Envío actualizado");
@@ -987,10 +1019,28 @@ export default function AdminShipments() {
                               <Phone className="h-4 w-4 text-gray-400" />
                               <p className="text-sm text-gray-600">{shipment.phone}</p>
                             </div>
-                            {shipment.tracking_number && (
-                              <div className="flex items-center gap-2">
-                                <Navigation className="h-4 w-4 text-gray-400" />
-                                <p className="text-sm font-mono font-bold">{shipment.tracking_number}</p>
+                            {/* Show multiple tracking numbers */}
+                            {(shipment.tracking_numbers?.length > 0 || shipment.tracking_number) && (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <Navigation className="h-4 w-4 text-gray-400" />
+                                  <span className="text-xs text-gray-500 font-medium">
+                                    {(shipment.tracking_numbers?.length || 1)} paquete(s):
+                                  </span>
+                                </div>
+                                {shipment.tracking_numbers?.length > 0 ? (
+                                  shipment.tracking_numbers.map((tracking, idx) => (
+                                    <div key={idx} className="ml-6 flex items-center gap-2">
+                                      <Package className="h-3 w-3 text-blue-500" />
+                                      <p className="text-sm font-mono font-bold text-blue-700">{tracking}</p>
+                                    </div>
+                                  ))
+                                ) : shipment.tracking_number && (
+                                  <div className="ml-6 flex items-center gap-2">
+                                    <Package className="h-3 w-3 text-blue-500" />
+                                    <p className="text-sm font-mono font-bold text-blue-700">{shipment.tracking_number}</p>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1030,32 +1080,85 @@ export default function AdminShipments() {
                             <Dialog 
                               open={trackingDialogOpen === shipment.id} 
                               onOpenChange={(open) => {
-                                setTrackingDialogOpen(open ? shipment.id : null);
-                                if (!open) setNewTracking("");
+                                if (!open) {
+                                  setTrackingDialogOpen(null);
+                                  setTrackingNumbers([""]);
+                                }
                               }}
                             >
                               <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" className="rounded-lg" data-testid={`tracking-btn-${shipment.id}`}>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm" 
+                                  className="rounded-lg" 
+                                  data-testid={`tracking-btn-${shipment.id}`}
+                                  onClick={() => handleOpenTrackingDialog(shipment)}
+                                >
                                   <Edit className="h-4 w-4 mr-1" />
-                                  Tracking
+                                  Tracking ({shipment.tracking_numbers?.length || (shipment.tracking_number ? 1 : 0)})
                                 </Button>
                               </DialogTrigger>
-                              <DialogContent className="rounded-2xl">
+                              <DialogContent className="rounded-2xl max-w-md">
                                 <DialogHeader>
-                                  <DialogTitle>Actualizar Tracking</DialogTitle>
+                                  <DialogTitle className="flex items-center gap-2">
+                                    <Package className="h-5 w-5" />
+                                    Tracking de Paquetes
+                                  </DialogTitle>
                                 </DialogHeader>
                                 <div className="space-y-4 pt-4">
-                                  <Input
-                                    placeholder="Número de tracking"
-                                    value={newTracking}
-                                    onChange={(e) => setNewTracking(e.target.value)}
-                                    className="h-12 rounded-xl"
-                                  />
+                                  <p className="text-sm text-gray-600">
+                                    ¿Cuántos paquetes envías? Agrega un tracking por cada paquete.
+                                  </p>
+                                  
+                                  {/* Tracking number inputs */}
+                                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                                    {trackingNumbers.map((tracking, index) => (
+                                      <div key={index} className="flex items-center gap-2">
+                                        <span className="text-sm font-medium text-gray-500 w-6">
+                                          #{index + 1}
+                                        </span>
+                                        <Input
+                                          placeholder={`Tracking paquete ${index + 1}`}
+                                          value={tracking}
+                                          onChange={(e) => updateTrackingField(index, e.target.value)}
+                                          className="h-10 rounded-lg flex-1"
+                                          data-testid={`tracking-input-${index}`}
+                                        />
+                                        {trackingNumbers.length > 1 && (
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            onClick={() => removeTrackingField(index)}
+                                            className="h-10 w-10 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                            data-testid={`remove-tracking-${index}`}
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                  
+                                  {/* Add more button */}
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={addTrackingField}
+                                    className="w-full h-10 rounded-lg border-dashed"
+                                    data-testid="add-tracking-btn"
+                                  >
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    Agregar otro paquete
+                                  </Button>
+                                  
                                   <Button 
                                     onClick={() => handleUpdateTracking(shipment.id)}
-                                    className="w-full h-12 rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
+                                    className="w-full h-12 rounded-xl" 
+                                    style={{ background: '#1E3A5F', color: 'white' }}
+                                    data-testid="save-tracking-btn"
                                   >
-                                    Guardar
+                                    <Save className="h-4 w-4 mr-2" />
+                                    Guardar {trackingNumbers.filter(t => t.trim()).length} Tracking(s)
                                   </Button>
                                 </div>
                               </DialogContent>
@@ -1150,13 +1253,54 @@ export default function AdminShipments() {
                                     </div>
                                   </div>
                                   <div>
-                                    <Label>Tracking</Label>
-                                    <Input
-                                      value={editForm.tracking_number}
-                                      onChange={(e) => setEditForm({...editForm, tracking_number: e.target.value})}
-                                      className="h-12 rounded-xl mt-1"
-                                      placeholder="Número de tracking"
-                                    />
+                                    <Label className="flex items-center gap-2 mb-2">
+                                      <Package className="h-4 w-4" />
+                                      Tracking Numbers ({editForm.tracking_numbers?.length || 0} paquetes)
+                                    </Label>
+                                    <div className="space-y-2">
+                                      {(editForm.tracking_numbers || []).map((tracking, index) => (
+                                        <div key={index} className="flex items-center gap-2">
+                                          <span className="text-sm font-medium text-gray-500 w-6">#{index + 1}</span>
+                                          <Input
+                                            value={tracking}
+                                            onChange={(e) => {
+                                              const updated = [...(editForm.tracking_numbers || [])];
+                                              updated[index] = e.target.value;
+                                              setEditForm({...editForm, tracking_numbers: updated});
+                                            }}
+                                            className="h-10 rounded-lg flex-1"
+                                            placeholder={`Tracking paquete ${index + 1}`}
+                                          />
+                                          {(editForm.tracking_numbers?.length || 0) > 0 && (
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => {
+                                                const updated = editForm.tracking_numbers.filter((_, i) => i !== index);
+                                                setEditForm({...editForm, tracking_numbers: updated});
+                                              }}
+                                              className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
+                                            >
+                                              <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                          )}
+                                        </div>
+                                      ))}
+                                      <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setEditForm({
+                                          ...editForm, 
+                                          tracking_numbers: [...(editForm.tracking_numbers || []), ""]
+                                        })}
+                                        className="w-full h-10 rounded-lg border-dashed"
+                                      >
+                                        <Plus className="h-4 w-4 mr-2" />
+                                        Agregar Paquete
+                                      </Button>
+                                    </div>
                                   </div>
                                   <div>
                                     <Label>Información Adicional</Label>

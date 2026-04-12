@@ -187,7 +187,8 @@ class Shipment(BaseModel):
     country: str
     phone: str
     additional_info: Optional[str] = None
-    tracking_number: Optional[str] = None
+    tracking_number: Optional[str] = None  # Legacy single tracking (kept for backwards compatibility)
+    tracking_numbers: List[str] = []  # Multiple tracking numbers for multiple packages
     status: str = "preparing"
     attachments: List[str] = []
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -2238,14 +2239,37 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
     return {"message": "Envío creado", "shipment_id": shipment.id, "shipping_cost": shipment_data.shipping_cost, "weight_pounds": shipment_data.weight_pounds}
 
 @api_router.put("/shipments/{shipment_id}/tracking")
-async def update_tracking(shipment_id: str, tracking_number: str, current_user: dict = Depends(get_current_user)):
+async def update_tracking(shipment_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update tracking numbers for a shipment (supports multiple packages)"""
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
-    result = await db.shipments.update_one({"id": shipment_id, "tenant_id": current_user["tenant_id"]},
-        {"$set": {"tracking_number": tracking_number, "updated_at": datetime.now(timezone.utc).isoformat()}})
+    
+    tid = current_user["tenant_id"]
+    tracking_numbers = data.get("tracking_numbers", [])
+    
+    # Validate tracking numbers is a list
+    if not isinstance(tracking_numbers, list):
+        raise HTTPException(status_code=400, detail="tracking_numbers debe ser una lista")
+    
+    # Filter out empty strings
+    tracking_numbers = [t.strip() for t in tracking_numbers if t and t.strip()]
+    
+    # Also set legacy tracking_number to first one for backwards compatibility
+    tracking_number = tracking_numbers[0] if tracking_numbers else None
+    
+    result = await db.shipments.update_one(
+        {"id": shipment_id, "tenant_id": tid},
+        {"$set": {
+            "tracking_numbers": tracking_numbers,
+            "tracking_number": tracking_number,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Envío no encontrado")
-    return {"message": "Tracking actualizado"}
+    
+    return {"message": "Tracking actualizado", "tracking_numbers": tracking_numbers}
 
 @api_router.put("/shipments/{shipment_id}/status")
 async def update_shipment_status(shipment_id: str, status: str, current_user: dict = Depends(get_current_user)):

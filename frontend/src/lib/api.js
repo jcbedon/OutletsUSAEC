@@ -76,8 +76,8 @@ export const getPendingShipmentPurchases = (userId) => api.get(`/purchases/pendi
 
 // Shipments
 export const createShipment = (data) => api.post("/shipments", data);
-export const updateTracking = (shipmentId, trackingNumber) =>
-  api.put(`/shipments/${shipmentId}/tracking`, null, { params: { tracking_number: trackingNumber } });
+export const updateTracking = (shipmentId, data) =>
+  api.put(`/shipments/${shipmentId}/tracking`, data);
 export const updateShipmentStatus = (shipmentId, status) =>
   api.put(`/shipments/${shipmentId}/status`, null, { params: { status } });
 export const updateShipment = (shipmentId, data) => api.put(`/shipments/${shipmentId}`, data);
