@@ -2622,6 +2622,37 @@ async def get_pending_purchases_for_invoice(customer_id: str, current_user: dict
     
     return purchases
 
+@api_router.get("/invoices/client-available-deposits/{customer_id}")
+async def get_client_available_deposits(customer_id: str, current_user: dict = Depends(get_current_user)):
+    """Get deposits not yet assigned to any invoice for this client"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    client = await db.users.find_one({"customer_id": customer_id.upper(), "tenant_id": tid}, {"_id": 0, "id": 1})
+    if not client:
+        return []
+    
+    all_deposits = await db.wallet_transactions.find(
+        {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
+        {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
+    ).sort("created_at", 1).to_list(1000)
+    
+    # Get deposit IDs already used by existing invoices
+    invoices = await db.invoices.find(
+        {"customer_id": customer_id.upper(), "tenant_id": tid, "is_annulled": {"$ne": True}},
+        {"_id": 0, "applied_deposits": 1}
+    ).to_list(1000)
+    
+    used_ids = set()
+    for inv in invoices:
+        for ad in inv.get("applied_deposits", []):
+            if ad.get("deposit_id"):
+                used_ids.add(ad["deposit_id"])
+    
+    available = [d for d in all_deposits if d.get("id") not in used_ids]
+    return available
+
 @api_router.get("/invoices/client-pending-balance/{customer_id}")
 async def get_client_pending_balance(customer_id: str, current_user: dict = Depends(get_current_user)):
     """Calculate pending balance from previous unpaid invoices for a client"""

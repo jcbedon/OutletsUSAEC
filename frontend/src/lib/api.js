@@ -133,6 +133,7 @@ export const updateTenantTaxOptions = (taxOptions) => api.put("/admin/settings/t
 export const getPendingPurchases = (customerId) => api.get(`/invoices/client/${customerId}/pending-purchases`);
 export const createInvoice = (data) => api.post("/invoices", data);
 export const getClientPendingBalance = (customerId) => api.get(`/invoices/client-pending-balance/${customerId}`);
+export const getClientAvailableDeposits = (customerId) => api.get(`/invoices/client-available-deposits/${customerId}`);
 export const getClientInvoices = (customerId, includeAnnulled = false) => api.get(`/invoices/client/${customerId}${includeAnnulled ? '?include_annulled=true' : ''}`);
 export const getClientInvoicesForShipment = (customerId) => api.get(`/invoices/client/${customerId}/for-shipment`);
 export const getInvoiceDetail = (invoiceId) => api.get(`/invoices/${invoiceId}`);

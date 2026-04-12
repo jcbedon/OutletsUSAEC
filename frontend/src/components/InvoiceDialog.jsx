@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, annulInvoice } from "@/lib/api";
+import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, getClientAvailableDeposits, annulInvoice } from "@/lib/api";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info } from "lucide-react";
@@ -54,6 +54,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
   const [saldoPendiente, setSaldoPendiente] = useState("");
   const [autoPendingBalance, setAutoPendingBalance] = useState(0);
   const [pendingDetails, setPendingDetails] = useState([]);
+  const [availableDeposits, setAvailableDeposits] = useState([]);
   const [annulDialogOpen, setAnnulDialogOpen] = useState(false);
   const [annulTargetId, setAnnulTargetId] = useState(null);
   const [annulPassword, setAnnulPassword] = useState("");
@@ -77,13 +78,18 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
 
   const loadPendingBalance = async () => {
     try {
-      const res = await getClientPendingBalance(client.customer_id);
-      setAutoPendingBalance(res.data.total_pending || 0);
-      setPendingDetails(res.data.details || []);
-      setSaldoPendiente(res.data.total_pending > 0 ? res.data.total_pending.toFixed(2) : "");
+      const [balRes, depRes] = await Promise.all([
+        getClientPendingBalance(client.customer_id),
+        getClientAvailableDeposits(client.customer_id)
+      ]);
+      setAutoPendingBalance(balRes.data.total_pending || 0);
+      setPendingDetails(balRes.data.details || []);
+      setSaldoPendiente(balRes.data.total_pending > 0 ? balRes.data.total_pending.toFixed(2) : "");
+      setAvailableDeposits(depRes.data || []);
     } catch {
       setAutoPendingBalance(0);
       setSaldoPendiente("");
+      setAvailableDeposits([]);
     }
   };
 
@@ -934,22 +940,59 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                   {selectedPurchases.length > 0 && (
                     <div className="sticky bottom-0 bg-white pt-4 border-t">
                       <div className="p-4 rounded-xl" style={{ background: 'rgba(30,58,95,0.05)' }}>
-                        <div className="grid grid-cols-3 gap-4 mb-4">
-                          <div className="text-center">
-                            <p className="text-xs text-gray-500">Subtotal</p>
-                            <p className="font-bold text-lg">${selectedTotals.subtotal.toFixed(2)}</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-xs text-gray-500">Comisiones</p>
-                            <p className="font-bold text-lg">${selectedTotals.commission.toFixed(2)}</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-xs text-gray-500">Total</p>
-                            <p className="font-extrabold text-2xl" style={{ color: '#1E3A5F' }}>
-                              ${(selectedTotals.subtotal + selectedTotals.commission + (parseFloat(saldoPendiente) || 0)).toFixed(2)}
-                            </p>
-                          </div>
-                        </div>
+                        {(() => {
+                          const subtotal = selectedTotals.subtotal + selectedTotals.commission;
+                          const saldo = parseFloat(saldoPendiente) || 0;
+                          const grandTotal = subtotal + saldo;
+                          const totalAbonos = availableDeposits.reduce((s, d) => s + d.amount, 0);
+                          const totalAPagar = Math.max(0, grandTotal - totalAbonos);
+
+                          return (
+                            <>
+                              <div className="space-y-2 mb-3">
+                                <div className="flex justify-between text-sm">
+                                  <span className="text-gray-600">Subtotal:</span>
+                                  <span className="font-medium">${subtotal.toFixed(2)}</span>
+                                </div>
+                                {saldo > 0 && (
+                                  <div className="flex justify-between text-sm">
+                                    <span className="text-orange-600">Saldo Pendiente:</span>
+                                    <span className="font-medium text-orange-600">${saldo.toFixed(2)}</span>
+                                  </div>
+                                )}
+                                <div className="flex justify-between border-t pt-2">
+                                  <span className="font-bold">Total:</span>
+                                  <span className="font-bold text-xl" style={{ color: '#1E3A5F' }}>${grandTotal.toFixed(2)}</span>
+                                </div>
+                              </div>
+
+                              {/* Abonos (recargas disponibles) */}
+                              {availableDeposits.length > 0 && (
+                                <div className="space-y-1 mb-3 p-3 rounded-lg bg-green-50 border border-green-200" data-testid="create-abonos-section">
+                                  <p className="text-xs font-semibold text-green-800 mb-1">Abonos (Recargas del cliente)</p>
+                                  {availableDeposits.map((dep, idx) => (
+                                    <div key={dep.id} className="flex justify-between text-sm">
+                                      <span className="text-green-700">Abono {idx + 1}:</span>
+                                      <span className="font-bold text-green-700">-${dep.amount.toFixed(2)}</span>
+                                    </div>
+                                  ))}
+                                  <div className="border-t border-green-300 pt-1 mt-1 flex justify-between text-sm font-bold text-green-800">
+                                    <span>Total Abonos:</span>
+                                    <span>-${totalAbonos.toFixed(2)}</span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Total a pagar */}
+                              <div className="flex justify-between items-center mb-4 p-2 rounded-lg" style={{ background: totalAPagar > 0 ? 'rgba(220,38,38,0.05)' : 'rgba(22,163,74,0.05)' }}>
+                                <span className="font-extrabold text-lg">Total a pagar:</span>
+                                <span className="font-extrabold text-2xl" style={{ color: totalAPagar > 0 ? '#DC2626' : '#16A34A' }}>
+                                  ${totalAPagar.toFixed(2)}
+                                </span>
+                              </div>
+                            </>
+                          );
+                        })()}
                         <Button
                           onClick={handleCreateInvoice}
                           disabled={loading}
