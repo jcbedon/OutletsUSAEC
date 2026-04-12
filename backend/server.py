@@ -3080,8 +3080,20 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     applied_deposits = invoice.get("applied_deposits", [])
     deposits_applied = invoice.get("deposits_applied", 0)
     
-    # Auto-migrate: if invoice has no applied_deposits, calculate them now
+    # Always recalculate deposits if the current grand total (with shipping) is higher than what was assigned
+    # This handles: 1) invoices with no deposits, 2) invoices where shipping was added after creation
+    should_recalculate = False
     if not applied_deposits and client and not invoice.get("is_annulled"):
+        should_recalculate = True
+    elif applied_deposits and client and not invoice.get("is_annulled"):
+        inv_subtotal = invoice.get("subtotal", 0) + invoice.get("total_commission", 0) + invoice.get("total_tax", 0)
+        ship_cost = shipment.get("shipping_cost", 0) if shipment else 0
+        saldo_pend = invoice.get("saldo_pendiente", 0)
+        current_grand_total = inv_subtotal + ship_cost + saldo_pend
+        if deposits_applied < current_grand_total:
+            should_recalculate = True
+    
+    if should_recalculate:
         # Get all approved, non-deleted deposits for this client (chronological)
         all_deposits = await db.wallet_transactions.find(
             {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
@@ -3101,7 +3113,7 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
                 if dep_id:
                     partially_consumed[dep_id] = partially_consumed.get(dep_id, 0) + ad.get("amount_applied", 0)
         
-        # Calculate invoice grand total including saldo_pendiente
+        # Calculate invoice grand total including shipping and saldo_pendiente
         inv_subtotal = invoice.get("subtotal", 0) + invoice.get("total_commission", 0) + invoice.get("total_tax", 0)
         ship_cost = shipment.get("shipping_cost", 0) if shipment else 0
         saldo_pend = invoice.get("saldo_pendiente", 0)
@@ -3127,7 +3139,7 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
         
         deposits_applied = round(sum(ad["amount_applied"] for ad in applied_deposits), 2)
         
-        # Save to DB so it's persistent
+        # Save to DB
         await db.invoices.update_one(
             {"id": invoice_id, "tenant_id": tid},
             {"$set": {"applied_deposits": applied_deposits, "deposits_applied": deposits_applied}}
