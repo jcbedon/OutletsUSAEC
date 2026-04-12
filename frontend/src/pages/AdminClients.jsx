@@ -11,7 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText, UserX, Trash2, AlertTriangle, UserCheck, Hash } from "lucide-react";
+import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText, UserX, Trash2, AlertTriangle, UserCheck, Hash, Eye, EyeOff, Copy, Check } from "lucide-react";
 import InvoiceDialog from "@/components/InvoiceDialog";
 
 export default function AdminClients() {
@@ -39,6 +39,10 @@ export default function AdminClients() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clientToDelete, setClientToDelete] = useState(null);
   const [allowCustomClientId, setAllowCustomClientId] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showEditPassword, setShowEditPassword] = useState(false);
+  const [createdClientInfo, setCreatedClientInfo] = useState(null);
+  const [copied, setCopied] = useState(false);
   
   // Invoice dialog state
   const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
@@ -192,16 +196,41 @@ export default function AdminClients() {
     setSubmitting(true);
     try {
       const res = await createClient(newClient);
-      toast.success(`Cliente creado: #${res.data.customer_id}`);
+      // Store the created client info for the success message
+      setCreatedClientInfo({
+        customer_id: res.data.customer_id,
+        password: newClient.password,
+        name: newClient.name
+      });
       setCreateDialogOpen(false);
       setNewClient({ name: "", country: "", whatsapp: "", email: "", password: "", commission_fee: 3, initial_balance: 0, custom_customer_id: "" });
       setDuplicateWarning(null);
+      setShowPassword(false);
       loadClients();
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al crear cliente");
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const getWhatsAppMessage = () => {
+    if (!createdClientInfo) return "";
+    return `✅ *Bienvenido a Outlets USA EC*
+
+Tu cuenta fue creada:
+👤 Usuario: *${createdClientInfo.customer_id}*
+🔑 Clave: *${createdClientInfo.password}*
+
+🔗 Ingresa aquí:
+https://outletsusaec.shop/`;
+  };
+
+  const handleCopyMessage = () => {
+    navigator.clipboard.writeText(getWhatsAppMessage());
+    setCopied(true);
+    toast.success("Mensaje copiado");
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const handleToggleClientStatus = async (client) => {
@@ -339,8 +368,23 @@ export default function AdminClients() {
 
                 <div>
                   <Label>Contraseña *</Label>
-                  <Input data-testid="new-client-password" type="password" placeholder="Contraseña" className="rounded-xl mt-1"
-                    value={newClient.password} onChange={(e) => setNew("password", e.target.value)} />
+                  <div className="relative mt-1">
+                    <Input 
+                      data-testid="new-client-password" 
+                      type={showPassword ? "text" : "password"} 
+                      placeholder="Contraseña" 
+                      className="rounded-xl pr-10"
+                      value={newClient.password} 
+                      onChange={(e) => setNew("password", e.target.value)} 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    >
+                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
@@ -357,6 +401,55 @@ export default function AdminClients() {
                 <Button onClick={handleCreateClient} disabled={submitting} data-testid="submit-create-client-btn"
                   className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}>
                   {submitting ? "Creando..." : "Crear Cliente"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Success Dialog - Copy message for WhatsApp */}
+          <Dialog open={!!createdClientInfo} onOpenChange={(open) => !open && setCreatedClientInfo(null)}>
+            <DialogContent className="max-w-md rounded-2xl">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-green-700">
+                  <Check className="h-6 w-6 bg-green-100 rounded-full p-1" />
+                  ¡Cliente Creado!
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                <p className="text-sm text-gray-600">
+                  Copia este mensaje y envíalo por WhatsApp:
+                </p>
+                
+                <div className="bg-gray-50 rounded-xl p-4 border-2 border-gray-200">
+                  <pre className="text-sm text-gray-800 whitespace-pre-wrap font-sans">
+                    {getWhatsAppMessage()}
+                  </pre>
+                </div>
+                
+                <Button 
+                  onClick={handleCopyMessage}
+                  className="w-full h-12 font-bold rounded-xl flex items-center justify-center gap-2"
+                  style={{ background: copied ? '#10B981' : '#25D366', color: 'white' }}
+                >
+                  {copied ? (
+                    <>
+                      <Check className="h-5 w-5" />
+                      ¡Copiado!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-5 w-5" />
+                      Copiar Mensaje
+                    </>
+                  )}
+                </Button>
+                
+                <Button 
+                  variant="outline"
+                  onClick={() => setCreatedClientInfo(null)}
+                  className="w-full h-10 rounded-xl"
+                >
+                  Cerrar
                 </Button>
               </div>
             </DialogContent>
