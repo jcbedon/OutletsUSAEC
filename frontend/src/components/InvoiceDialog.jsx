@@ -427,58 +427,28 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       currentY += 12;
       
       // ========== PRODUCTS TABLE ==========
-      // Check tenant settings for tax display
-      const showTaxPerItem = tenantInfo?.invoice_show_tax_per_item !== false;
-      const showTaxSummary = tenantInfo?.invoice_show_tax_summary !== false;
-      
-      // Build table data based on settings
-      const tableData = (inv.purchases || []).map((p, idx) => {
-        if (showTaxPerItem) {
-          return [
-            (idx + 1).toString(),
-            p.item_name,
-            p.store,
-            `$${p.price.toFixed(2)}`,
-            `$${(p.tax || 0).toFixed(2)}`,
-            `$${(p.commission || 0).toFixed(2)}`,
-            `$${p.total.toFixed(2)}`
-          ];
-        } else {
-          return [
-            (idx + 1).toString(),
-            p.item_name,
-            p.store,
-            `$${p.price.toFixed(2)}`,
-            `$${(p.commission || 0).toFixed(2)}`,
-            `$${p.total.toFixed(2)}`
-          ];
-        }
+      // Build table data - CANTIDAD, DETALLE, COSTO, TIENDA, COMISION, TOTAL
+      const tableData = (inv.purchases || []).map((p) => {
+        return [
+          "1",
+          p.item_name,
+          `$${p.price.toFixed(2)}`,
+          p.store || "",
+          `$${(p.commission || 0).toFixed(2)}`,
+          `$${(p.price + (p.commission || 0)).toFixed(2)}`
+        ];
       });
       
-      // Define headers based on settings
-      const tableHeaders = showTaxPerItem 
-        ? [["#", "Producto", "Tienda", "Precio", "Tax", "Comisión", "Total"]]
-        : [["#", "Producto", "Tienda", "Precio", "Comisión", "Total"]];
+      const tableHeaders = [["CANTIDAD", "DETALLE", "COSTO", "TIENDA", "COMISION", "TOTAL"]];
       
-      // Define column styles based on settings
-      const columnStyles = showTaxPerItem 
-        ? {
-            0: { cellWidth: 10, halign: "center" },
-            1: { cellWidth: 52 },
-            2: { cellWidth: 25 },
-            3: { cellWidth: 22, halign: "right" },
-            4: { cellWidth: 18, halign: "right" },
-            5: { cellWidth: 22, halign: "right" },
-            6: { cellWidth: 22, halign: "right", fontStyle: "bold" }
-          }
-        : {
-            0: { cellWidth: 10, halign: "center" },
-            1: { cellWidth: 60 },
-            2: { cellWidth: 30 },
-            3: { cellWidth: 25, halign: "right" },
-            4: { cellWidth: 25, halign: "right" },
-            5: { cellWidth: 25, halign: "right", fontStyle: "bold" }
-          };
+      const columnStyles = {
+        0: { cellWidth: 18, halign: "center" },
+        1: { cellWidth: 50 },
+        2: { cellWidth: 22, halign: "right" },
+        3: { cellWidth: 30 },
+        4: { cellWidth: 22, halign: "right" },
+        5: { cellWidth: 25, halign: "right", fontStyle: "bold" }
+      };
       
       autoTable(doc, {
         startY: currentY,
@@ -513,47 +483,46 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
         }
       });
       
-      // ========== SHIPPING INFO SECTION (if available) ==========
-      let finalY = doc.lastAutoTable.finalY + 12;
+      // ========== SUMMARY STATS (Total articulos, Total Etiqueta, Peso) ==========
+      let finalY = doc.lastAutoTable.finalY + 8;
       
-      if (shipment && (shipment.tracking_number || shipment.shipping_cost > 0)) {
-        // Shipping info box
-        doc.setFillColor(249, 250, 251); // Very light gray
-        doc.roundedRect(margin, finalY - 2, contentWidth, 18, 3, 3, "F");
-        
-        doc.setTextColor(...colors.textSecondary);
-        doc.setFontSize(8);
-        doc.setFont("helvetica", "bold");
-        doc.text("INFORMACIÓN DE ENVÍO", margin + 4, finalY + 4);
-        
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "normal");
-        doc.setTextColor(...colors.textPrimary);
-        
-        const shipInfoY = finalY + 11;
-        let shipX = margin + 4;
-        
-        if (shipment.shipping_cost > 0) {
-          doc.text(`Costo: $${shipment.shipping_cost.toFixed(2)}`, shipX, shipInfoY);
-          shipX += 45;
-        }
-        
-        if (shipment.weight_pounds) {
-          doc.text(`Peso: ${shipment.weight_pounds} lbs`, shipX, shipInfoY);
-          shipX += 35;
-        }
-        
-        if (shipment.tracking_number) {
-          doc.setFont("helvetica", "bold");
-          doc.text(`Tracking: ${shipment.tracking_number}`, shipX, shipInfoY);
-        }
-        
-        finalY += 22;
-      }
+      const totalArticulos = inv.purchases?.length || 0;
+      const totalEtiqueta = inv.subtotal || 0; // sum of COSTO (base prices)
+      const weightPounds = shipment?.weight_pounds || 0;
       
-      // ========== TOTALS SECTION (right aligned) ==========
-      const totalsX = pageWidth - margin - 65;
-      const totalsWidth = 65;
+      // Draw summary stats row
+      doc.setFillColor(241, 245, 249);
+      doc.roundedRect(margin, finalY - 2, contentWidth, 14, 2, 2, "F");
+      
+      const statWidth = contentWidth / 3;
+      
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...colors.textSecondary);
+      doc.text("Total de articulos", margin + statWidth * 0.5, finalY + 3, { align: "center" });
+      doc.text("Total Etiqueta", margin + statWidth * 1.5, finalY + 3, { align: "center" });
+      doc.text("Peso en Libras", margin + statWidth * 2.5, finalY + 3, { align: "center" });
+      
+      doc.setFontSize(9);
+      doc.setTextColor(...colors.textPrimary);
+      doc.text(totalArticulos.toString(), margin + statWidth * 0.5, finalY + 9, { align: "center" });
+      doc.text(`$${totalEtiqueta.toFixed(2)}`, margin + statWidth * 1.5, finalY + 9, { align: "center" });
+      doc.text(`${weightPounds} lbs`, margin + statWidth * 2.5, finalY + 9, { align: "center" });
+      
+      finalY += 18;
+      
+      // ========== FINANCIAL SUMMARY (right aligned) ==========
+      const totalsX = pageWidth - margin - 70;
+      const totalsWidth = 70;
+      
+      // Calculate all financial values
+      const displaySubtotal = (inv.subtotal || 0) + (inv.total_commission || 0);
+      const taxes = inv.total_tax || 0;
+      const shippingCost = shipment?.shipping_cost || 0;
+      const grandTotal = displaySubtotal + taxes + shippingCost;
+      const saldoAnterior = Math.max(0, currentInvoice.client_balance || 0);
+      const totalDeposits = currentInvoice.total_deposits || 0;
+      const totalAPagar = Math.max(0, grandTotal - totalDeposits);
       
       doc.setTextColor(...colors.textSecondary);
       doc.setFontSize(9);
@@ -562,98 +531,86 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       // Subtotal
       doc.text("Subtotal:", totalsX, finalY);
       doc.setTextColor(...colors.textPrimary);
-      doc.text(`$${inv.subtotal.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+      doc.text(`$${displaySubtotal.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       
-      // Show tax summary only if configured
-      if (showTaxSummary && inv.total_tax > 0) {
+      // Taxes
+      if (taxes > 0) {
         finalY += 6;
         doc.setTextColor(...colors.textSecondary);
-        doc.text("Impuestos:", totalsX, finalY);
+        doc.text("Taxes:", totalsX, finalY);
         doc.setTextColor(...colors.textPrimary);
-        doc.text(`$${inv.total_tax.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+        doc.text(`$${taxes.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       }
       
-      finalY += 6;
-      doc.setTextColor(...colors.textSecondary);
-      doc.text("Comisiones:", totalsX, finalY);
-      doc.setTextColor(...colors.textPrimary);
-      doc.text(`$${inv.total_commission.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
-      
-      // Shipping cost in totals
-      if (shipment && shipment.shipping_cost > 0) {
+      // Envio
+      if (shippingCost > 0) {
         finalY += 6;
         doc.setTextColor(...colors.textSecondary);
-        doc.text("Envío:", totalsX, finalY);
+        doc.text("Envio:", totalsX, finalY);
         doc.setTextColor(...colors.textPrimary);
-        doc.text(`$${shipment.shipping_cost.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+        doc.text(`$${shippingCost.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       }
       
-      // Divider line before total
+      // Saldo Anterior
+      if (saldoAnterior > 0) {
+        finalY += 6;
+        doc.setTextColor(...colors.textSecondary);
+        doc.text("Saldo Anterior:", totalsX, finalY);
+        doc.setTextColor(22, 101, 52);
+        doc.text(`$${saldoAnterior.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+      }
+      
+      // Divider line before Total
       finalY += 4;
       doc.setDrawColor(...colors.divider);
       doc.setLineWidth(0.3);
       doc.line(totalsX, finalY, pageWidth - margin, finalY);
       
-      // TOTAL (larger, bold)
+      // TOTAL
       finalY += 8;
-      const grandTotal = inv.total + (shipment?.shipping_cost || 0);
-      
       doc.setTextColor(...colors.textPrimary);
       doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
-      doc.text("TOTAL:", totalsX, finalY);
-      doc.setFontSize(14);
+      doc.text("Total:", totalsX, finalY);
+      doc.setFontSize(13);
       doc.text(`$${grandTotal.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       
-      // ========== CLIENT BALANCE (if negative / owes money) ==========
-      const clientBalance = currentInvoice.client_balance || 0;
-      if (clientBalance < 0) {
-        finalY += 10;
-        
-        // Red warning box for pending balance
-        doc.setFillColor(254, 226, 226); // Light red background
-        doc.roundedRect(totalsX - 5, finalY - 4, totalsWidth + 10, 14, 3, 3, "F");
-        
-        doc.setTextColor(185, 28, 28); // Red text
-        doc.setFontSize(9);
-        doc.setFont("helvetica", "bold");
-        doc.text("SALDO PENDIENTE:", totalsX, finalY + 4);
-        doc.setFontSize(12);
-        doc.text(`$${Math.abs(clientBalance).toFixed(2)}`, pageWidth - margin, finalY + 4, { align: "right" });
-      }
-      
-      // ========== CLIENT DEPOSITS (ABONOS) SECTION ==========
+      // ========== ABONOS (Client Deposits) ==========
       if (currentInvoice.client_deposits && currentInvoice.client_deposits.length > 0) {
-        finalY += 15;
-        
-        // Green box for deposits
-        const depositsHeight = Math.min(currentInvoice.client_deposits.length * 5 + 8, 35);
-        doc.setFillColor(236, 253, 245); // Light green bg
-        doc.roundedRect(margin, finalY - 3, contentWidth, depositsHeight, 2, 2, "F");
-        
-        doc.setTextColor(22, 101, 52); // Green text
-        doc.setFontSize(7);
-        doc.setFont("helvetica", "bold");
-        doc.text(`ABONOS DEL CLIENTE (${currentInvoice.client_deposits.length})`, margin + 3, finalY + 2);
-        
+        finalY += 8;
+        doc.setFontSize(9);
         doc.setFont("helvetica", "normal");
-        doc.setFontSize(6);
         
-        let depY = finalY + 7;
-        currentInvoice.client_deposits.slice(0, 5).forEach((dep) => {
-          const depDate = new Date(dep.created_at);
-          const dateStr = depDate.toLocaleDateString("es-ES", { day: "2-digit", month: "short" }) + " " + depDate.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
-          doc.text(dateStr, margin + 3, depY);
-          doc.setFont("helvetica", "bold");
-          doc.text(`+$${dep.amount.toFixed(2)}`, margin + 45, depY);
-          doc.setFont("helvetica", "normal");
-          depY += 5;
+        currentInvoice.client_deposits.slice(0, 5).forEach((dep, idx) => {
+          doc.setTextColor(...colors.textSecondary);
+          doc.text(`Abono ${idx + 1}:`, totalsX, finalY);
+          doc.setTextColor(22, 101, 52);
+          doc.text(`$${dep.amount.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+          finalY += 5;
         });
         
         if (currentInvoice.client_deposits.length > 5) {
-          doc.text(`... y ${currentInvoice.client_deposits.length - 5} más`, margin + 3, depY);
+          doc.setTextColor(...colors.textSecondary);
+          doc.setFontSize(7);
+          doc.text(`...y ${currentInvoice.client_deposits.length - 5} abonos mas`, totalsX, finalY);
+          finalY += 5;
         }
       }
+      
+      // Divider before Total a pagar
+      finalY += 2;
+      doc.setDrawColor(...colors.textPrimary);
+      doc.setLineWidth(0.5);
+      doc.line(totalsX, finalY, pageWidth - margin, finalY);
+      
+      // TOTAL A PAGAR
+      finalY += 8;
+      doc.setTextColor(totalAPagar > 0 ? 185 : 22, totalAPagar > 0 ? 28 : 101, totalAPagar > 0 ? 28 : 52);
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("Total a pagar:", totalsX, finalY);
+      doc.setFontSize(14);
+      doc.text(`$${totalAPagar.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       
       // ========== FOOTER SECTION ==========
       const footerY = containerY + 273 - 25;
@@ -1015,28 +972,28 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
               )}
 
               {/* Purchases table */}
-              <div className="border rounded-xl overflow-hidden">
+              <div className="border rounded-xl overflow-hidden" data-testid="invoice-purchases-table">
                 <table className="w-full">
                   <thead>
                     <tr style={{ background: '#1E3A5F' }}>
-                      <th className="text-left p-3 text-white text-sm font-semibold">#</th>
-                      <th className="text-left p-3 text-white text-sm font-semibold">Producto</th>
-                      <th className="text-left p-3 text-white text-sm font-semibold">Tienda</th>
-                      <th className="text-right p-3 text-white text-sm font-semibold">Precio</th>
-                      <th className="text-right p-3 text-white text-sm font-semibold">Comisión</th>
-                      <th className="text-right p-3 text-white text-sm font-semibold">Total</th>
-                      <th className="text-center p-3 text-white text-sm font-semibold w-16"></th>
+                      <th className="text-center p-3 text-white text-sm font-semibold w-20">CANTIDAD</th>
+                      <th className="text-left p-3 text-white text-sm font-semibold">DETALLE</th>
+                      <th className="text-right p-3 text-white text-sm font-semibold">COSTO</th>
+                      <th className="text-left p-3 text-white text-sm font-semibold">TIENDA</th>
+                      <th className="text-right p-3 text-white text-sm font-semibold">COMISION</th>
+                      <th className="text-right p-3 text-white text-sm font-semibold">TOTAL</th>
+                      <th className="text-center p-3 text-white text-sm font-semibold w-10"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {currentInvoice.purchases?.map((p, idx) => (
                       <tr key={p.id} className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} group hover:bg-red-50 transition-colors`}>
-                        <td className="p-3 text-sm text-gray-600">{idx + 1}</td>
+                        <td className="p-3 text-sm text-center text-gray-600">1</td>
                         <td className="p-3 text-sm font-medium">{p.item_name}</td>
-                        <td className="p-3 text-sm text-gray-600">{p.store}</td>
                         <td className="p-3 text-sm text-right">${p.price.toFixed(2)}</td>
+                        <td className="p-3 text-sm text-gray-600">{p.store}</td>
                         <td className="p-3 text-sm text-right">${(p.commission || 0).toFixed(2)}</td>
-                        <td className="p-3 text-sm text-right font-bold">${p.total.toFixed(2)}</td>
+                        <td className="p-3 text-sm text-right font-bold">${(p.price + (p.commission || 0)).toFixed(2)}</td>
                         <td className="p-3 text-center">
                           {currentInvoice.purchases.length > 1 && (
                             <Button
@@ -1057,66 +1014,102 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                 </table>
               </div>
 
-              {/* Totals */}
-              <div className="flex justify-end">
-                <div className="w-80 p-4 rounded-xl bg-gray-50 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Subtotal:</span>
-                    <span className="font-medium">${currentInvoice.subtotal.toFixed(2)}</span>
-                  </div>
-                  {/* Impuestos - siempre mostrar si hay */}
-                  {currentInvoice.total_tax > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Impuestos:</span>
-                      <span className="font-medium">${currentInvoice.total_tax.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Comisiones:</span>
-                    <span className="font-medium">${currentInvoice.total_commission.toFixed(2)}</span>
-                  </div>
-                  {/* Shipping cost - from shipment or invoice */}
-                  {(currentInvoice.shipment?.shipping_cost > 0 || currentInvoice.shipping_cost > 0) && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600 flex items-center gap-1">
-                        <Package className="h-3 w-3" />
-                        Envío ({currentInvoice.shipment?.weight_pounds || currentInvoice.weight_pounds || 0} lbs):
-                      </span>
-                      <span className="font-medium text-purple-600">
-                        ${(currentInvoice.shipment?.shipping_cost || currentInvoice.shipping_cost || 0).toFixed(2)}
-                      </span>
-                    </div>
-                  )}
-                  {/* Divider */}
-                  <div className="border-t border-gray-300 pt-2 mt-2">
-                    <div className="flex justify-between">
-                      <span className="font-bold text-gray-800">TOTAL:</span>
-                      <span className="font-bold text-xl" style={{ color: '#1E3A5F' }}>
-                        ${(currentInvoice.total + (currentInvoice.shipment?.shipping_cost || currentInvoice.shipping_cost || 0)).toFixed(2)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              {/* Summary stats below table */}
+              {(() => {
+                const shippingCost = currentInvoice.shipment?.shipping_cost || currentInvoice.shipping_cost || 0;
+                const weightPounds = currentInvoice.shipment?.weight_pounds || currentInvoice.weight_pounds || 0;
+                const totalArticulos = currentInvoice.purchases?.length || 0;
+                const totalEtiqueta = currentInvoice.subtotal || 0;
+                const displaySubtotal = (currentInvoice.subtotal || 0) + (currentInvoice.total_commission || 0);
+                const taxes = currentInvoice.total_tax || 0;
+                const grandTotal = displaySubtotal + taxes + shippingCost;
+                const saldoAnterior = Math.max(0, currentInvoice.client_balance || 0);
+                const totalDeposits = currentInvoice.total_deposits || 0;
+                const totalAPagar = Math.max(0, grandTotal - totalDeposits);
 
-              {/* Client Deposits (Abonos) Section */}
-              {currentInvoice.client_deposits && currentInvoice.client_deposits.length > 0 && (
-                <div className="mt-4 p-3 rounded-xl bg-green-50 border border-green-200">
-                  <p className="text-xs font-semibold text-green-800 mb-2 flex items-center gap-1">
-                    💰 Abonos del Cliente ({currentInvoice.client_deposits.length})
-                  </p>
-                  <div className="space-y-1 max-h-24 overflow-y-auto">
-                    {currentInvoice.client_deposits.slice(0, 10).map((dep, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-xs">
-                        <span className="text-green-700">
-                          {new Date(dep.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })} {new Date(dep.created_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                        <span className="font-bold text-green-800">+${dep.amount.toFixed(2)}</span>
+                return (
+                  <>
+                    {/* Artículos / Etiqueta / Peso row */}
+                    <div className="grid grid-cols-3 gap-3 p-3 rounded-xl bg-gray-50 border" data-testid="invoice-summary-stats">
+                      <div className="text-center">
+                        <p className="text-xs text-gray-500 font-semibold">Total de artículos</p>
+                        <p className="font-bold text-lg" style={{ color: '#1E3A5F' }}>{totalArticulos}</p>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                      <div className="text-center">
+                        <p className="text-xs text-gray-500 font-semibold">Total Etiqueta</p>
+                        <p className="font-bold text-lg" style={{ color: '#1E3A5F' }}>${totalEtiqueta.toFixed(2)}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-xs text-gray-500 font-semibold">Peso en Libras</p>
+                        <p className="font-bold text-lg" style={{ color: '#1E3A5F' }}>{weightPounds} lbs</p>
+                      </div>
+                    </div>
+
+                    {/* Financial Summary */}
+                    <div className="flex justify-end">
+                      <div className="w-80 p-4 rounded-xl bg-gray-50 space-y-2" data-testid="invoice-financial-summary">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Subtotal:</span>
+                          <span className="font-medium">${displaySubtotal.toFixed(2)}</span>
+                        </div>
+                        {taxes > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Taxes:</span>
+                            <span className="font-medium">${taxes.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {shippingCost > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600 flex items-center gap-1">
+                              <Package className="h-3 w-3" />
+                              Envio:
+                            </span>
+                            <span className="font-medium text-purple-600">${shippingCost.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {saldoAnterior > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Saldo Anterior:</span>
+                            <span className="font-medium text-green-600">${saldoAnterior.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {/* Divider before Total */}
+                        <div className="border-t border-gray-300 pt-2 mt-2">
+                          <div className="flex justify-between">
+                            <span className="font-bold text-gray-800">Total:</span>
+                            <span className="font-bold text-xl" style={{ color: '#1E3A5F' }}>
+                              ${grandTotal.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                        {/* Abonos */}
+                        {currentInvoice.client_deposits && currentInvoice.client_deposits.length > 0 && (
+                          <div className="space-y-1 pt-1">
+                            {currentInvoice.client_deposits.slice(0, 5).map((dep, idx) => (
+                              <div key={idx} className="flex justify-between text-sm">
+                                <span className="text-green-700">Abono {idx + 1}:</span>
+                                <span className="font-medium text-green-700">${dep.amount.toFixed(2)}</span>
+                              </div>
+                            ))}
+                            {currentInvoice.client_deposits.length > 5 && (
+                              <p className="text-xs text-gray-400">...y {currentInvoice.client_deposits.length - 5} abonos más</p>
+                            )}
+                          </div>
+                        )}
+                        {/* Total a pagar */}
+                        <div className="border-t-2 border-gray-400 pt-2 mt-2">
+                          <div className="flex justify-between">
+                            <span className="font-extrabold text-gray-900">Total a pagar:</span>
+                            <span className="font-extrabold text-2xl" style={{ color: totalAPagar > 0 ? '#DC2626' : '#16A34A' }}>
+                              ${totalAPagar.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* Shipment Creation Prompt - Show after creating invoice */}
               {showShipmentPrompt && currentInvoice.status !== "approved" && !currentInvoice.shipment && (

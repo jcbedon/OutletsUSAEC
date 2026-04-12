@@ -2895,6 +2895,7 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     
     # Get client's approved deposits (abonos) - only approved ones
     client_deposits = []
+    total_deposits = 0
     if client:
         deposits = await db.wallet_transactions.find(
             {
@@ -2906,11 +2907,19 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
             {"_id": 0, "amount": 1, "created_at": 1, "description": 1}
         ).sort("created_at", -1).limit(20).to_list(20)
         client_deposits = deposits
+        # Sum ALL approved deposits for this client
+        pipeline = [
+            {"$match": {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved"}},
+            {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+        ]
+        agg_result = await db.wallet_transactions.aggregate(pipeline).to_list(1)
+        total_deposits = agg_result[0]["total"] if agg_result else 0
     
     return {
         **invoice,
         "client": client,
         "client_balance": client_wallet.get("available", 0) if client_wallet else 0,
+        "total_deposits": round(total_deposits, 2),
         "purchases": purchases,
         "tenant": tenant,
         "shipment": shipment,
