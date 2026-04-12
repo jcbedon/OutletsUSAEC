@@ -224,8 +224,29 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 
 ## P2 - Future
 - [ ] Multi-language support
-- [ ] Backend refactoring (split server.py into routers - currently ~3600+ lines)
-- [ ] InvoiceDialog.jsx refactoring (currently ~920 lines)
+- [ ] Backend refactoring (split server.py into routers - currently ~4000+ lines)
+- [ ] InvoiceDialog.jsx refactoring (currently ~1200+ lines)
+
+## Recently Completed (Apr 12, 2026)
+
+### Invoice Column Format Update (Apr 12, 2026)
+- [x] **UPDATED: Tabla de productos** con nuevo formato de columnas:
+  - CANTIDAD | DETALLE | COSTO | TIENDA | COMISION | TOTAL
+  - TOTAL por item = COSTO + COMISION (sin tax por item)
+- [x] **NEW: Resumen de articulos** debajo de la tabla:
+  - Total de articulos (cantidad)
+  - Total Etiqueta (suma de COSTO/precios base)
+  - Peso en Libras (del envio asociado)
+- [x] **UPDATED: Resumen financiero** estilo imagen del usuario:
+  - Subtotal (COSTO + COMISION sumados)
+  - Taxes (impuestos separados)
+  - Envio (costo de envio)
+  - Saldo Anterior (credito del cliente si wallet balance > 0)
+  - Total (Subtotal + Taxes + Envio)
+  - Abonos individuales (depositos del cliente listados)
+  - Total a pagar = max(0, Total - total_depositos)
+- [x] **Backend**: Nuevo campo `total_deposits` en endpoint `/api/invoices/{id}` (suma de todos los depositos aprobados del cliente)
+- [x] **PDF**: Actualizado con mismo formato de columnas y resumen financiero
 
 ## Recently Completed (Apr 11, 2026)
 
