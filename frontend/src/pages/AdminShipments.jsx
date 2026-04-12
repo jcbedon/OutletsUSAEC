@@ -239,10 +239,6 @@ export default function AdminShipments() {
       toast.error("Selecciona el tipo de envío");
       return;
     }
-    if (!shipmentForm.address) {
-      toast.error("Ingresa la dirección completa");
-      return;
-    }
     if (!shipmentForm.shipping_cost) {
       toast.error("Ingresa el costo de envío");
       return;
@@ -819,9 +815,9 @@ export default function AdminShipments() {
                       </div>
                     )}
 
-                    {/* Address */}
+                    {/* Address - Optional */}
                     <div>
-                      <Label>Dirección Completa</Label>
+                      <Label className="text-gray-600">Dirección Completa (opcional)</Label>
                       <Textarea
                         placeholder="Calle, número, ciudad..."
                         value={shipmentForm.address}
@@ -831,19 +827,21 @@ export default function AdminShipments() {
                       />
                     </div>
 
-                    {/* Country & Phone */}
+                    {/* Country & Phone - Optional */}
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label>País</Label>
+                        <Label className="text-gray-600">País (opcional)</Label>
                         <Input
+                          placeholder="Ecuador"
                           value={shipmentForm.country}
                           onChange={(e) => setShipmentForm({ ...shipmentForm, country: e.target.value })}
                           className="h-12 rounded-xl mt-1"
                         />
                       </div>
                       <div>
-                        <Label>Teléfono</Label>
+                        <Label className="text-gray-600">Teléfono (opcional)</Label>
                         <Input
+                          placeholder="+593..."
                           value={shipmentForm.phone}
                           onChange={(e) => setShipmentForm({ ...shipmentForm, phone: e.target.value })}
                           className="h-12 rounded-xl mt-1"

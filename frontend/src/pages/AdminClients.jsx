@@ -181,8 +181,12 @@ export default function AdminClients() {
   };
 
   const handleCreateClient = async () => {
-    if (!newClient.name || !newClient.whatsapp || !newClient.password) {
-      toast.error("Completa nombre, WhatsApp y contraseña");
+    if (!newClient.name || !newClient.password) {
+      toast.error("Completa nombre y contraseña");
+      return;
+    }
+    if (!newClient.whatsapp || !newClient.whatsapp.startsWith('+')) {
+      toast.error("WhatsApp obligatorio con código de país (ej: +593991325912)");
       return;
     }
     setSubmitting(true);
@@ -286,24 +290,28 @@ export default function AdminClients() {
                     onBlur={checkForDuplicates}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>WhatsApp *</Label>
-                    <Input data-testid="new-client-whatsapp" placeholder="+593..." className="rounded-xl mt-1"
-                      value={newClient.whatsapp} 
-                      onChange={(e) => setNew("whatsapp", e.target.value)} 
-                      onBlur={checkForDuplicates}
-                    />
-                  </div>
-                  <div>
-                    <Label>País</Label>
-                    <Input placeholder="Ecuador" className="rounded-xl mt-1"
-                      value={newClient.country} onChange={(e) => setNew("country", e.target.value)} />
+                <div>
+                  <Label className="flex items-center gap-2">
+                    WhatsApp * 
+                    <span className="text-xs text-gray-500 font-normal">(con código de país)</span>
+                  </Label>
+                  <Input data-testid="new-client-whatsapp" placeholder="+593991325912" className="rounded-xl mt-1"
+                    value={newClient.whatsapp} 
+                    onChange={(e) => setNew("whatsapp", e.target.value)} 
+                    onBlur={checkForDuplicates}
+                  />
+                  <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-xl">
+                    <p className="text-xs text-green-800 font-medium flex items-center gap-1">
+                      📱 Importante: Notificaciones por WhatsApp
+                    </p>
+                    <p className="text-xs text-green-700 mt-1">
+                      Ingresa el número completo con código de país. Ejemplo: <strong>+593991325912</strong>
+                    </p>
                   </div>
                 </div>
                 <div>
                   <Label>Email (opcional)</Label>
-                  <Input type="email" placeholder="email@..." className="rounded-xl mt-1"
+                  <Input type="email" placeholder="email@ejemplo.com" className="rounded-xl mt-1"
                     value={newClient.email} 
                     onChange={(e) => setNew("email", e.target.value)} 
                     onBlur={checkForDuplicates}

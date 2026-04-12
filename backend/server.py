@@ -183,9 +183,9 @@ class Shipment(BaseModel):
     shipping_type: str
     shipping_cost: float
     weight_pounds: float = 0
-    address: str
-    country: str
-    phone: str
+    address: str = ""  # Optional - can be empty
+    country: str = ""  # Optional
+    phone: str = ""    # Optional
     additional_info: Optional[str] = None
     tracking_number: Optional[str] = None  # Legacy single tracking (kept for backwards compatibility)
     tracking_numbers: List[str] = []  # Multiple tracking numbers for multiple packages
@@ -300,9 +300,9 @@ class ShipmentCreate(BaseModel):
     shipping_type: str
     shipping_cost: float
     weight_pounds: float = 0
-    address: str
-    country: str
-    phone: str
+    address: Optional[str] = ""  # Optional - can be empty
+    country: Optional[str] = ""  # Optional
+    phone: Optional[str] = ""    # Optional
     additional_info: Optional[str] = None
     invoice_id: Optional[str] = None  # Link shipment to invoice
 
