@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, getClientAvailableDeposits, annulInvoice } from "@/lib/api";
+import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, getClientAvailableDeposits, annulInvoice, updateInvoiceSaldoPendiente } from "@/lib/api";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info } from "lucide-react";
@@ -59,7 +59,15 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
   const [annulTargetId, setAnnulTargetId] = useState(null);
   const [annulPassword, setAnnulPassword] = useState("");
   const [annulling, setAnnulling] = useState(false);
+  const [editSaldoPendiente, setEditSaldoPendiente] = useState("");
   const invoiceRef = useRef(null);
+
+  // Sync editSaldoPendiente when currentInvoice changes
+  useEffect(() => {
+    if (currentInvoice) {
+      setEditSaldoPendiente(currentInvoice.saldo_pendiente > 0 ? currentInvoice.saldo_pendiente.toFixed(2) : "");
+    }
+  }, [currentInvoice?.id, currentInvoice?.saldo_pendiente]);
 
   useEffect(() => {
     if (open) {
@@ -271,6 +279,20 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       toast.error(error.response?.data?.detail || "Error al eliminar factura");
     } finally {
       setAnnulling(false);
+    }
+  };
+
+  const handleSaveSaldoPendiente = async () => {
+    if (!currentInvoice) return;
+    const newSaldo = parseFloat(editSaldoPendiente) || 0;
+    try {
+      await updateInvoiceSaldoPendiente(currentInvoice.id, newSaldo);
+      toast.success("Saldo pendiente actualizado");
+      const invoiceRes = await getInvoiceDetail(currentInvoice.id);
+      setCurrentInvoice(invoiceRes.data);
+      loadInvoices();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al actualizar");
     }
   };
 
@@ -1178,7 +1200,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                 const totalEtiqueta = currentInvoice.subtotal || 0;
                 const displaySubtotal = (currentInvoice.subtotal || 0) + (currentInvoice.total_commission || 0);
                 const taxes = currentInvoice.total_tax || 0;
-                const saldoPend = currentInvoice.saldo_pendiente || 0;
+                const saldoPend = parseFloat(editSaldoPendiente) || 0;
                 const grandTotal = displaySubtotal + taxes + shippingCost + saldoPend;
                 const appliedDeposits = currentInvoice.applied_deposits || [];
                 const depositsApplied = currentInvoice.deposits_applied || 0;
@@ -1224,12 +1246,26 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                             <span className="font-medium text-purple-600">${shippingCost.toFixed(2)}</span>
                           </div>
                         )}
-                        {saldoPend > 0 && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-orange-600 font-medium">Saldo Pendiente:</span>
-                            <span className="font-medium text-orange-600">${saldoPend.toFixed(2)}</span>
+                        {/* Saldo Pendiente - editable */}
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-orange-600 font-medium">Saldo Pendiente:</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-orange-600">$</span>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              placeholder="0.00"
+                              value={editSaldoPendiente}
+                              onChange={(e) => setEditSaldoPendiente(e.target.value)}
+                              onBlur={handleSaveSaldoPendiente}
+                              onKeyDown={(e) => e.key === 'Enter' && handleSaveSaldoPendiente()}
+                              className="h-7 w-24 text-right text-sm font-bold text-orange-700 rounded px-2"
+                              data-testid="view-saldo-pendiente-input"
+                              onWheel={(e) => e.target.blur()}
+                            />
                           </div>
-                        )}
+                        </div>
                         {/* Divider before Total */}
                         <div className="border-t border-gray-300 pt-2 mt-2">
                           <div className="flex justify-between">

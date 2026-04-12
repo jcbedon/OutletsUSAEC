@@ -3254,6 +3254,21 @@ async def reopen_invoice(invoice_id: str, current_user: dict = Depends(get_curre
     
     return {"message": "Factura reabierta para modificaciones"}
 
+@api_router.put("/invoices/{invoice_id}/saldo-pendiente")
+async def update_invoice_saldo_pendiente(invoice_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update saldo_pendiente for an existing invoice"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    saldo = round(float(data.get("saldo_pendiente", 0)), 2)
+    result = await db.invoices.update_one(
+        {"id": invoice_id, "tenant_id": tid, "is_annulled": {"$ne": True}},
+        {"$set": {"saldo_pendiente": saldo}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    return {"message": "Saldo pendiente actualizado", "saldo_pendiente": saldo}
+
 @api_router.put("/invoices/{invoice_id}/approve")
 async def approve_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
     """Approve an invoice - moves purchases to paid history"""
