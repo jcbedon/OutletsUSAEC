@@ -2955,6 +2955,58 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     applied_deposits = invoice.get("applied_deposits", [])
     deposits_applied = invoice.get("deposits_applied", 0)
     
+    # Auto-migrate: if invoice has no applied_deposits, calculate them now
+    if not applied_deposits and client and not invoice.get("is_annulled"):
+        # Get all approved deposits for this client (chronological)
+        all_deposits = await db.wallet_transactions.find(
+            {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved"},
+            {"_id": 0, "id": 1, "amount": 1, "created_at": 1}
+        ).sort("created_at", 1).to_list(1000)
+        
+        # Get deposits already consumed by OTHER invoices
+        other_invoices = await db.invoices.find(
+            {"customer_id": invoice["customer_id"], "tenant_id": tid, "id": {"$ne": invoice_id}, "is_annulled": {"$ne": True}},
+            {"_id": 0, "applied_deposits": 1}
+        ).to_list(1000)
+        
+        partially_consumed = {}
+        for inv_doc in other_invoices:
+            for ad in inv_doc.get("applied_deposits", []):
+                dep_id = ad.get("deposit_id")
+                if dep_id:
+                    partially_consumed[dep_id] = partially_consumed.get(dep_id, 0) + ad.get("amount_applied", 0)
+        
+        # Calculate invoice grand total
+        inv_subtotal = invoice.get("subtotal", 0) + invoice.get("total_commission", 0) + invoice.get("total_tax", 0)
+        ship_cost = shipment.get("shipping_cost", 0) if shipment else 0
+        inv_grand_total = inv_subtotal + ship_cost
+        
+        remaining = inv_grand_total
+        applied_deposits = []
+        for dep in all_deposits:
+            if remaining <= 0:
+                break
+            dep_id = dep.get("id", "")
+            available = dep["amount"] - partially_consumed.get(dep_id, 0)
+            if available <= 0:
+                continue
+            amount_to_apply = min(available, remaining)
+            applied_deposits.append({
+                "deposit_id": dep_id,
+                "amount_original": dep["amount"],
+                "amount_applied": round(amount_to_apply, 2),
+                "created_at": dep.get("created_at", "")
+            })
+            remaining -= amount_to_apply
+        
+        deposits_applied = round(sum(ad["amount_applied"] for ad in applied_deposits), 2)
+        
+        # Save to DB so it's persistent
+        await db.invoices.update_one(
+            {"id": invoice_id, "tenant_id": tid},
+            {"$set": {"applied_deposits": applied_deposits, "deposits_applied": deposits_applied}}
+        )
+    
     return {
         **invoice,
         "client": client,
