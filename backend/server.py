@@ -1612,6 +1612,20 @@ async def delete_deposit(transaction_id: str, data: dict, current_user: dict = D
         }}
     )
     
+    # Remove this deposit from ALL invoices that have it assigned
+    affected_invoices = await db.invoices.find(
+        {"tenant_id": tid, "is_annulled": {"$ne": True}, "applied_deposits.deposit_id": transaction_id},
+        {"_id": 0, "id": 1, "applied_deposits": 1}
+    ).to_list(1000)
+    
+    for inv in affected_invoices:
+        new_deposits = [d for d in inv.get("applied_deposits", []) if d.get("deposit_id") != transaction_id]
+        new_total = round(sum(d["amount_applied"] for d in new_deposits), 2)
+        await db.invoices.update_one(
+            {"id": inv["id"], "tenant_id": tid},
+            {"$set": {"applied_deposits": new_deposits, "deposits_applied": new_total}}
+        )
+    
     # Audit
     actor = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0, "name": 1})
     await log_audit_action(
