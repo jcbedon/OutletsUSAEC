@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus } from "@/lib/api";
+import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,7 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart, QrCode, Smartphone, Loader2 } from "lucide-react";
+import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart, QrCode, Smartphone, Loader2, Trash2 } from "lucide-react";
 import RechargeReport from "@/components/RechargeReport";
 import QRCode from "qrcode";
 
@@ -38,6 +38,16 @@ export default function AdminWallet() {
   
   // Recharge Report state
   const [showReport, setShowReport] = useState(false);
+  
+  // Deleted tab state
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [deletedDeposits, setDeletedDeposits] = useState([]);
+  
+  // Delete confirmation state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState(null);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleting, setDeleting] = useState(false);
   
   // Ajuste de balance state
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
@@ -74,14 +84,16 @@ export default function AdminWallet() {
 
   const loadData = async () => {
     try {
-      const [pendingRes, allRes, clientsRes] = await Promise.all([
+      const [pendingRes, allRes, clientsRes, deletedRes] = await Promise.all([
         getPendingDeposits(),
         getAllDeposits(),
-        getAllClients()
+        getAllClients(),
+        getDeletedDeposits().catch(() => ({ data: [] }))
       ]);
       setPendingDeposits(pendingRes.data);
       setAllDeposits(allRes.data);
       setClients(clientsRes.data);
+      setDeletedDeposits(deletedRes.data || []);
     } catch (error) {
       toast.error("Error al cargar datos");
     } finally {
@@ -112,6 +124,32 @@ export default function AdminWallet() {
       toast.error(error.response?.data?.detail || "Error al rechazar");
     } finally {
       setRejecting(null);
+    }
+  };
+
+  const openDeleteDialog = (transactionId) => {
+    setDeleteTargetId(transactionId);
+    setDeletePassword("");
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteDeposit = async () => {
+    if (!deletePassword) {
+      toast.error("Ingresa tu contraseña");
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteDeposit(deleteTargetId, deletePassword);
+      toast.success("Recarga eliminada exitosamente");
+      setDeleteDialogOpen(false);
+      setDeletePassword("");
+      setDeleteTargetId(null);
+      loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al eliminar");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -378,33 +416,42 @@ export default function AdminWallet() {
         </div>
 
         {/* Navigation Tabs */}
-        <Tabs value={showReport ? "report" : (showHistory ? "history" : "pending")} className="mb-6">
-          <TabsList className="grid w-full grid-cols-3 h-12 rounded-xl bg-gray-100">
+        <Tabs value={showDeleted ? "deleted" : showReport ? "report" : (showHistory ? "history" : "pending")} className="mb-6">
+          <TabsList className="grid w-full grid-cols-4 h-12 rounded-xl bg-gray-100">
             <TabsTrigger 
               value="pending"
-              onClick={() => { setShowHistory(false); setShowReport(false); }}
+              onClick={() => { setShowHistory(false); setShowReport(false); setShowDeleted(false); }}
               className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
               data-testid="show-pending-btn"
             >
-              <Clock className="h-4 w-4 mr-2" />
+              <Clock className="h-4 w-4 mr-1" />
               Pendientes ({pendingDeposits.length})
             </TabsTrigger>
             <TabsTrigger 
               value="history"
-              onClick={() => { setShowHistory(true); setShowReport(false); }}
+              onClick={() => { setShowHistory(true); setShowReport(false); setShowDeleted(false); }}
               className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
               data-testid="show-history-btn"
             >
-              <History className="h-4 w-4 mr-2" />
+              <History className="h-4 w-4 mr-1" />
               Historial
             </TabsTrigger>
             <TabsTrigger 
+              value="deleted"
+              onClick={() => { setShowDeleted(true); setShowHistory(false); setShowReport(false); }}
+              className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
+              data-testid="show-deleted-btn"
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Eliminados ({deletedDeposits.length})
+            </TabsTrigger>
+            <TabsTrigger 
               value="report"
-              onClick={() => { setShowReport(true); setShowHistory(false); }}
+              onClick={() => { setShowReport(true); setShowHistory(false); setShowDeleted(false); }}
               className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
               data-testid="show-report-btn"
             >
-              <FileBarChart className="h-4 w-4 mr-2" />
+              <FileBarChart className="h-4 w-4 mr-1" />
               Reporte
             </TabsTrigger>
           </TabsList>
@@ -770,6 +817,7 @@ export default function AdminWallet() {
           </div>
         )}
 
+        {!showDeleted && !showReport && (
         <ScrollArea className="h-[calc(100vh-400px)]">
           {!showHistory ? (
             // Pending Deposits View
@@ -941,6 +989,16 @@ export default function AdminWallet() {
                                 ${deposit.amount.toFixed(2)}
                               </p>
                             </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-gray-400 hover:text-red-600 hover:bg-red-50"
+                              onClick={() => openDeleteDialog(deposit.id)}
+                              data-testid={`delete-deposit-${deposit.id}`}
+                              title="Eliminar recarga"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </div>
                       </CardContent>
@@ -951,6 +1009,121 @@ export default function AdminWallet() {
             )
           )}
         </ScrollArea>
+        )}
+
+        {/* Deleted Deposits Tab */}
+        {showDeleted && (
+          <ScrollArea className="h-[calc(100vh-400px)]">
+            {deletedDeposits.length === 0 ? (
+              <Card className="rounded-2xl border-dashed border-2 border-gray-200">
+                <CardContent className="p-8 text-center">
+                  <Trash2 className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 font-medium">No hay recargas eliminadas</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {deletedDeposits.map((deposit) => {
+                  const proofUrl = getProofUrl(deposit);
+                  return (
+                    <Card key={deposit.id} className="rounded-xl bg-red-50/30 border-red-100" data-testid="deleted-deposit-item">
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Badge variant="outline" className="font-bold text-xs">#{deposit.customer_id}</Badge>
+                              <span className="font-semibold text-slate-800">{deposit.user_name}</span>
+                              <Badge className="bg-red-100 text-red-700 text-xs">Eliminada</Badge>
+                            </div>
+                            <p className="text-sm text-gray-500">{deposit.description}</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              Creada: {new Date(deposit.created_at).toLocaleDateString('es-ES', {
+                                day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                              })}
+                            </p>
+                            {deposit.deleted_at && (
+                              <p className="text-xs text-red-400 mt-0.5">
+                                Eliminada: {new Date(deposit.deleted_at).toLocaleDateString('es-ES', {
+                                  day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                                })}
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-right flex items-center gap-3">
+                            {proofUrl && (
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="text-gray-400 hover:text-gray-600">
+                                    <Image className="h-4 w-4" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="rounded-2xl max-w-2xl">
+                                  <DialogHeader>
+                                    <DialogTitle>Comprobante - #{deposit.customer_id}</DialogTitle>
+                                  </DialogHeader>
+                                  <img src={proofUrl} alt="Comprobante" className="w-full rounded-xl" />
+                                </DialogContent>
+                              </Dialog>
+                            )}
+                            <div className="bg-red-50 px-3 py-1 rounded-lg">
+                              <p className="text-xl font-bold text-red-600 line-through">${deposit.amount.toFixed(2)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </ScrollArea>
+        )}
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteDialogOpen} onOpenChange={(open) => { setDeleteDialogOpen(open); if (!open) setDeletePassword(""); }}>
+          <DialogContent className="rounded-2xl max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600">
+                <Trash2 className="h-5 w-5" />
+                Eliminar Recarga
+              </DialogTitle>
+              <DialogDescription>
+                Esta accion revertira el monto del wallet del cliente. Ingresa tu contrasena de administrador para confirmar.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div>
+                <Label>Contrasena del Administrador</Label>
+                <Input
+                  type="password"
+                  placeholder="Tu contrasena..."
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  className="mt-1 h-11 rounded-xl"
+                  data-testid="delete-password-input"
+                  onKeyDown={(e) => e.key === 'Enter' && handleDeleteDeposit()}
+                />
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteDialogOpen(false)}
+                  className="flex-1 h-11 rounded-xl"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleDeleteDeposit}
+                  disabled={deleting || !deletePassword}
+                  className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold"
+                  data-testid="confirm-delete-btn"
+                >
+                  {deleting ? "Eliminando..." : "Confirmar Eliminacion"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Recharge Report Section */}
         {showReport && (

@@ -1337,8 +1337,23 @@ async def get_all_deposits(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     transactions = await db.wallet_transactions.find(
-        {"type": "deposit", "tenant_id": tid}, {"_id": 0}
+        {"type": "deposit", "tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}
     ).sort("created_at", -1).to_list(500)
+    result = []
+    for t in transactions:
+        user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
+        result.append({**t, "user_name": user["name"] if user else "Unknown"})
+    return result
+
+@api_router.get("/wallet/deleted-deposits")
+async def get_deleted_deposits(current_user: dict = Depends(get_current_user)):
+    """Get all soft-deleted deposits"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    transactions = await db.wallet_transactions.find(
+        {"type": "deposit", "tenant_id": tid, "is_deleted": True}, {"_id": 0}
+    ).sort("deleted_at", -1).to_list(500)
     result = []
     for t in transactions:
         user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
@@ -1553,6 +1568,65 @@ async def reject_deposit(transaction_id: str, current_user: dict = Depends(get_c
     )
     
     return {"message": "Depósito rechazado"}
+
+@api_router.post("/wallet/delete-deposit/{transaction_id}")
+async def delete_deposit(transaction_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Soft-delete a deposit after admin password verification. Reverses wallet amount."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo el administrador puede eliminar recargas")
+    tid = current_user["tenant_id"]
+    
+    admin_password = data.get("password", "")
+    if not admin_password:
+        raise HTTPException(status_code=400, detail="Contraseña requerida")
+    
+    # Verify admin password
+    admin = await db.users.find_one({"id": current_user["user_id"], "tenant_id": tid})
+    if not admin or not verify_password(admin_password, admin["password_hash"]):
+        raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+    
+    # Find the transaction
+    transaction = await db.wallet_transactions.find_one({"id": transaction_id, "tenant_id": tid}, {"_id": 0})
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transacción no encontrada")
+    if transaction.get("is_deleted"):
+        raise HTTPException(status_code=400, detail="Esta recarga ya fue eliminada")
+    
+    # Reverse wallet balance if it was approved
+    if transaction.get("status") == "approved":
+        wallet = await db.wallets.find_one({"user_id": transaction["user_id"], "tenant_id": tid}, {"_id": 0})
+        if wallet:
+            new_balance = wallet["available"] - transaction["amount"]
+            await db.wallets.update_one(
+                {"user_id": transaction["user_id"], "tenant_id": tid},
+                {"$set": {"available": new_balance, "updated_at": datetime.now(timezone.utc).isoformat()}}
+            )
+    
+    # Soft-delete
+    await db.wallet_transactions.update_one(
+        {"id": transaction_id, "tenant_id": tid},
+        {"$set": {
+            "is_deleted": True,
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_by": current_user["user_id"]
+        }}
+    )
+    
+    # Audit
+    actor = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0, "name": 1})
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=actor["name"] if actor else "Admin",
+        user_role="admin",
+        action="delete_recharge",
+        entity_type="wallet_transaction",
+        entity_id=transaction_id,
+        entity_name=f"${transaction['amount']:.2f} - {transaction.get('customer_id', '')}",
+        details={"amount": transaction["amount"], "customer_id": transaction.get("customer_id", "")}
+    )
+    
+    return {"message": "Recarga eliminada exitosamente"}
 
 class AdminBalanceAdjustment(BaseModel):
     user_id: str

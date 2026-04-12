@@ -52,6 +52,8 @@ export const adminCreateRecharge = (formData) => api.post("/wallet/admin-recharg
 export const getRechargeReport = () => api.get("/wallet/recharge-report");
 export const getWalletTransactions = (userId) => api.get(`/wallet/transactions/${userId}`);
 export const getPendingDeposits = () => api.get("/wallet/pending-deposits");
+export const deleteDeposit = (transactionId, password) => api.post(`/wallet/delete-deposit/${transactionId}`, { password });
+export const getDeletedDeposits = () => api.get("/wallet/deleted-deposits");
 
 // Lives
 export const createLive = (data) => api.post("/lives", data);
