@@ -551,8 +551,8 @@ export default function AdminWallet() {
                         <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-full p-0 rounded-xl" align="start">
-                      <Command>
+                    <PopoverContent className="w-[380px] p-0 rounded-xl" align="start">
+                      <Command shouldFilter={false}>
                         <CommandInput 
                           placeholder="Buscar por nombre o código..." 
                           value={rechargeClientSearch}
@@ -582,7 +582,7 @@ export default function AdminWallet() {
                                 >
                                   <div className="flex items-center gap-3 w-full">
                                     <span className="font-bold text-green-600">#{client.customer_id}</span>
-                                    <span className="flex-1">{client.name}</span>
+                                    <span className="flex-1 text-gray-900">{client.name}</span>
                                     <span className="text-sm text-gray-500">${client.wallet_balance?.toFixed(2) || '0.00'}</span>
                                   </div>
                                 </CommandItem>
