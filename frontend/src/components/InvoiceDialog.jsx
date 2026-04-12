@@ -622,6 +622,39 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
         doc.text(`$${Math.abs(clientBalance).toFixed(2)}`, pageWidth - margin, finalY + 4, { align: "right" });
       }
       
+      // ========== CLIENT DEPOSITS (ABONOS) SECTION ==========
+      if (currentInvoice.client_deposits && currentInvoice.client_deposits.length > 0) {
+        finalY += 15;
+        
+        // Green box for deposits
+        const depositsHeight = Math.min(currentInvoice.client_deposits.length * 5 + 8, 35);
+        doc.setFillColor(236, 253, 245); // Light green bg
+        doc.roundedRect(margin, finalY - 3, contentWidth, depositsHeight, 2, 2, "F");
+        
+        doc.setTextColor(22, 101, 52); // Green text
+        doc.setFontSize(7);
+        doc.setFont("helvetica", "bold");
+        doc.text(`ABONOS DEL CLIENTE (${currentInvoice.client_deposits.length})`, margin + 3, finalY + 2);
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(6);
+        
+        let depY = finalY + 7;
+        currentInvoice.client_deposits.slice(0, 5).forEach((dep) => {
+          const depDate = new Date(dep.created_at);
+          const dateStr = depDate.toLocaleDateString("es-ES", { day: "2-digit", month: "short" }) + " " + depDate.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+          doc.text(dateStr, margin + 3, depY);
+          doc.setFont("helvetica", "bold");
+          doc.text(`+$${dep.amount.toFixed(2)}`, margin + 45, depY);
+          doc.setFont("helvetica", "normal");
+          depY += 5;
+        });
+        
+        if (currentInvoice.client_deposits.length > 5) {
+          doc.text(`... y ${currentInvoice.client_deposits.length - 5} más`, margin + 3, depY);
+        }
+      }
+      
       // ========== FOOTER SECTION ==========
       const footerY = containerY + 273 - 25;
       
@@ -1050,6 +1083,25 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                   </div>
                 </div>
               </div>
+
+              {/* Client Deposits (Abonos) Section */}
+              {currentInvoice.client_deposits && currentInvoice.client_deposits.length > 0 && (
+                <div className="mt-4 p-3 rounded-xl bg-green-50 border border-green-200">
+                  <p className="text-xs font-semibold text-green-800 mb-2 flex items-center gap-1">
+                    💰 Abonos del Cliente ({currentInvoice.client_deposits.length})
+                  </p>
+                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                    {currentInvoice.client_deposits.slice(0, 10).map((dep, idx) => (
+                      <div key={idx} className="flex justify-between items-center text-xs">
+                        <span className="text-green-700">
+                          {new Date(dep.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })} {new Date(dep.created_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                        <span className="font-bold text-green-800">+${dep.amount.toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Shipment Creation Prompt - Show after creating invoice */}
               {showShipmentPrompt && currentInvoice.status !== "approved" && !currentInvoice.shipment && (

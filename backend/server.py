@@ -2868,13 +2868,28 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
             sort=[("created_at", -1)]  # Get the most recent one
         )
     
+    # Get client's approved deposits (abonos) - only approved ones
+    client_deposits = []
+    if client:
+        deposits = await db.wallet_transactions.find(
+            {
+                "user_id": client["id"],
+                "tenant_id": tid,
+                "type": "deposit",
+                "status": "approved"
+            },
+            {"_id": 0, "amount": 1, "created_at": 1, "description": 1}
+        ).sort("created_at", -1).limit(20).to_list(20)
+        client_deposits = deposits
+    
     return {
         **invoice,
         "client": client,
         "client_balance": client_wallet.get("available", 0) if client_wallet else 0,
         "purchases": purchases,
         "tenant": tenant,
-        "shipment": shipment
+        "shipment": shipment,
+        "client_deposits": client_deposits
     }
 
 @api_router.put("/invoices/{invoice_id}/remove-item")
