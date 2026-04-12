@@ -2622,6 +2622,55 @@ async def get_pending_purchases_for_invoice(customer_id: str, current_user: dict
     
     return purchases
 
+@api_router.get("/invoices/client-pending-balance/{customer_id}")
+async def get_client_pending_balance(customer_id: str, current_user: dict = Depends(get_current_user)):
+    """Calculate pending balance from previous unpaid invoices for a client"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    
+    # Get all non-annulled invoices for this client
+    invoices = await db.invoices.find(
+        {"customer_id": customer_id.upper(), "tenant_id": tid, "is_annulled": {"$ne": True}},
+        {"_id": 0, "id": 1, "invoice_number": 1, "subtotal": 1, "total_tax": 1, 
+         "total_commission": 1, "total": 1, "applied_deposits": 1, "deposits_applied": 1,
+         "saldo_pendiente": 1, "shipping_cost": 1, "status": 1}
+    ).to_list(1000)
+    
+    total_pending = 0
+    pending_details = []
+    
+    for inv in invoices:
+        # Calculate grand total for this invoice
+        inv_subtotal = inv.get("subtotal", 0) + inv.get("total_commission", 0) + inv.get("total_tax", 0)
+        ship_cost = inv.get("shipping_cost", 0)
+        saldo_prev = inv.get("saldo_pendiente", 0)
+        
+        # Check if shipment exists for this invoice
+        shipment = await db.shipments.find_one(
+            {"invoice_id": inv["id"], "tenant_id": tid}, {"_id": 0, "shipping_cost": 1}
+        )
+        if shipment:
+            ship_cost = shipment.get("shipping_cost", 0)
+        
+        grand_total = inv_subtotal + ship_cost + saldo_prev
+        deposits = inv.get("deposits_applied", 0)
+        remaining = max(0, grand_total - deposits)
+        
+        if remaining > 0:
+            pending_details.append({
+                "invoice_number": inv.get("invoice_number", ""),
+                "total": round(grand_total, 2),
+                "deposits": round(deposits, 2),
+                "remaining": round(remaining, 2)
+            })
+            total_pending += remaining
+    
+    return {
+        "total_pending": round(total_pending, 2),
+        "details": pending_details
+    }
+
 @api_router.post("/invoices")
 async def create_invoice(data: dict, current_user: dict = Depends(get_current_user)):
     """Create a new invoice for a client with pending purchases"""
@@ -2631,6 +2680,7 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     customer_id = data.get("customer_id", "").upper()
     purchase_ids = data.get("purchase_ids", [])
     notes = data.get("notes", "")
+    saldo_pendiente = round(float(data.get("saldo_pendiente", 0)), 2)
     
     if not customer_id or not purchase_ids:
         raise HTTPException(status_code=400, detail="customer_id y purchase_ids son requeridos")
@@ -2732,6 +2782,7 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     total_deposits_applied = round(sum(ad["amount_applied"] for ad in applied_deposits), 2)
     invoice_dict["applied_deposits"] = applied_deposits
     invoice_dict["deposits_applied"] = total_deposits_applied
+    invoice_dict["saldo_pendiente"] = saldo_pendiente
     
     await db.invoices.insert_one(invoice_dict)
     

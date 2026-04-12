@@ -5,8 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken } from "@/lib/api";
+import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance } from "@/lib/api";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
 import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -50,6 +51,9 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
   const [viewMode, setViewMode] = useState("create"); // create, view, history
   const [generatingPDF, setGeneratingPDF] = useState(false);
   const [showShipmentPrompt, setShowShipmentPrompt] = useState(false);
+  const [saldoPendiente, setSaldoPendiente] = useState("");
+  const [autoPendingBalance, setAutoPendingBalance] = useState(0);
+  const [pendingDetails, setPendingDetails] = useState([]);
   const invoiceRef = useRef(null);
 
   useEffect(() => {
@@ -60,11 +64,24 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       } else if (client) {
         loadPendingPurchases();
         loadInvoices();
+        loadPendingBalance();
         setShowShipmentPrompt(false);
         setViewMode("create");
       }
     }
   }, [open, client, existingInvoice]);
+
+  const loadPendingBalance = async () => {
+    try {
+      const res = await getClientPendingBalance(client.customer_id);
+      setAutoPendingBalance(res.data.total_pending || 0);
+      setPendingDetails(res.data.details || []);
+      setSaldoPendiente(res.data.total_pending > 0 ? res.data.total_pending.toFixed(2) : "");
+    } catch {
+      setAutoPendingBalance(0);
+      setSaldoPendiente("");
+    }
+  };
 
   const loadExistingInvoice = async (invoice) => {
     try {
@@ -116,7 +133,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       setLoading(true);
       const res = await createInvoice({
         customer_id: client.customer_id,
-        purchase_ids: selectedPurchases
+        purchase_ids: selectedPurchases,
+        saldo_pendiente: parseFloat(saldoPendiente) || 0
       });
       toast.success(`Factura ${res.data.invoice_number} creada`);
       
@@ -519,7 +537,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       const displaySubtotal = (inv.subtotal || 0) + (inv.total_commission || 0);
       const taxes = inv.total_tax || 0;
       const shippingCost = shipment?.shipping_cost || 0;
-      const grandTotal = displaySubtotal + taxes + shippingCost;
+      const saldoPend = currentInvoice.saldo_pendiente || 0;
+      const grandTotal = displaySubtotal + taxes + shippingCost + saldoPend;
       const appliedDeposits = currentInvoice.applied_deposits || [];
       const depositsApplied = currentInvoice.deposits_applied || 0;
       const totalAPagar = Math.max(0, grandTotal - depositsApplied);
@@ -549,6 +568,14 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
         doc.text("Envio:", totalsX, finalY);
         doc.setTextColor(...colors.textPrimary);
         doc.text(`$${shippingCost.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+      }
+      
+      // Saldo Pendiente
+      if (saldoPend > 0) {
+        finalY += 6;
+        doc.setTextColor(194, 65, 12); // orange-700
+        doc.text("Saldo Pendiente:", totalsX, finalY);
+        doc.text(`$${saldoPend.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       }
       
       // Divider line before Total
@@ -833,6 +860,41 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                     ))}
                   </div>
 
+                  {/* Saldo Pendiente Field */}
+                  {selectedPurchases.length > 0 && (
+                    <div className="p-3 rounded-xl border border-orange-200 bg-orange-50/50" data-testid="saldo-pendiente-section">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <p className="text-sm font-semibold text-orange-800">Saldo Pendiente</p>
+                          <p className="text-xs text-orange-600">Deuda de facturas anteriores sin pagar</p>
+                        </div>
+                        <div className="w-32">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            value={saldoPendiente}
+                            onChange={(e) => setSaldoPendiente(e.target.value)}
+                            className="h-9 text-right font-bold text-orange-700 rounded-lg"
+                            data-testid="saldo-pendiente-input"
+                            onWheel={(e) => e.target.blur()}
+                          />
+                        </div>
+                      </div>
+                      {pendingDetails.length > 0 && (
+                        <div className="text-xs text-orange-600 space-y-0.5 border-t border-orange-200 pt-2 mt-1">
+                          {pendingDetails.map((d, i) => (
+                            <div key={i} className="flex justify-between">
+                              <span>{d.invoice_number}</span>
+                              <span>${d.remaining.toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Totals and Create button */}
                   {selectedPurchases.length > 0 && (
                     <div className="sticky bottom-0 bg-white pt-4 border-t">
@@ -848,7 +910,9 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                           </div>
                           <div className="text-center">
                             <p className="text-xs text-gray-500">Total</p>
-                            <p className="font-extrabold text-2xl" style={{ color: '#1E3A5F' }}>${(selectedTotals.subtotal + selectedTotals.commission).toFixed(2)}</p>
+                            <p className="font-extrabold text-2xl" style={{ color: '#1E3A5F' }}>
+                              ${(selectedTotals.subtotal + selectedTotals.commission + (parseFloat(saldoPendiente) || 0)).toFixed(2)}
+                            </p>
                           </div>
                         </div>
                         <Button
@@ -1028,7 +1092,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                 const totalEtiqueta = currentInvoice.subtotal || 0;
                 const displaySubtotal = (currentInvoice.subtotal || 0) + (currentInvoice.total_commission || 0);
                 const taxes = currentInvoice.total_tax || 0;
-                const grandTotal = displaySubtotal + taxes + shippingCost;
+                const saldoPend = currentInvoice.saldo_pendiente || 0;
+                const grandTotal = displaySubtotal + taxes + shippingCost + saldoPend;
                 const appliedDeposits = currentInvoice.applied_deposits || [];
                 const depositsApplied = currentInvoice.deposits_applied || 0;
                 const totalAPagar = Math.max(0, grandTotal - depositsApplied);
@@ -1071,6 +1136,12 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                               Envio:
                             </span>
                             <span className="font-medium text-purple-600">${shippingCost.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {saldoPend > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-orange-600 font-medium">Saldo Pendiente:</span>
+                            <span className="font-medium text-orange-600">${saldoPend.toFixed(2)}</span>
                           </div>
                         )}
                         {/* Divider before Total */}
