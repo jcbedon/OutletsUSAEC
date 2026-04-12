@@ -273,11 +273,11 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       
       // Subtle shadow effect
       doc.setFillColor(200, 200, 200);
-      doc.roundedRect(containerX + 1, containerY + 1, containerWidth, 273, 6, 6, "F");
+      doc.roundedRect(containerX + 1, containerY + 1, containerWidth, 297 - containerY * 2, 6, 6, "F");
       
-      // White container
+      // White container - full page height
       doc.setFillColor(...colors.white);
-      doc.roundedRect(containerX, containerY, containerWidth, 273, 6, 6, "F");
+      doc.roundedRect(containerX, containerY, containerWidth, 297 - containerY * 2, 6, 6, "F");
       
       let currentY = containerY + 20;
       
@@ -596,8 +596,29 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       doc.setFontSize(14);
       doc.text(`$${totalAPagar.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
       
-      // ========== FOOTER SECTION ==========
-      const footerY = containerY + 273 - 25;
+      // ========== FOOTER SECTION (dynamic position) ==========
+      // Ensure footer is below content with some padding
+      const minFooterY = finalY + 20;
+      const pageBottom = containerY + 273 - 25;
+      let footerY;
+      
+      if (minFooterY > pageBottom - 5) {
+        // Content overflows - add new page
+        // First, extend the white container on current page to cover full area
+        doc.setFillColor(...colors.white);
+        doc.roundedRect(containerX, containerY + 273, containerWidth, 0, 0, 0, "F");
+        
+        doc.addPage();
+        // Background for new page
+        doc.setFillColor(...colors.background);
+        doc.rect(0, 0, pageWidth, 297, "F");
+        // White container for new page
+        doc.setFillColor(...colors.white);
+        doc.roundedRect(containerX, 12, containerWidth, 50, 6, 6, "F");
+        footerY = 30;
+      } else {
+        footerY = pageBottom;
+      }
       
       // Divider before footer
       doc.setDrawColor(...colors.divider);
