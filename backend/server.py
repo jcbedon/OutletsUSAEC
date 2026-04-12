@@ -2101,6 +2101,7 @@ class PurchaseUpdate(BaseModel):
     tax_rate: Optional[float] = None
     apply_commission: Optional[bool] = None
     commission: Optional[float] = None
+    customer_id: Optional[str] = None  # Allow changing the client
 
 @api_router.put("/purchases/{purchase_id}")
 async def update_purchase(purchase_id: str, data: PurchaseUpdate, current_user: dict = Depends(get_current_user)):
@@ -2125,6 +2126,42 @@ async def update_purchase(purchase_id: str, data: PurchaseUpdate, current_user: 
         updates["item_name"] = data.item_name
     if data.store is not None:
         updates["store"] = data.store
+    
+    # Handle customer change
+    if data.customer_id is not None and data.customer_id != purchase["customer_id"]:
+        # Verify the new customer exists
+        new_customer = await db.users.find_one(
+            {"customer_id": data.customer_id, "tenant_id": tid, "role": "client"},
+            {"_id": 0, "id": 1, "customer_id": 1}
+        )
+        if not new_customer:
+            raise HTTPException(status_code=400, detail=f"Cliente {data.customer_id} no encontrado")
+        
+        # Update purchase with new customer
+        updates["customer_id"] = data.customer_id
+        updates["user_id"] = new_customer["id"]
+        
+        # Move the amount from old wallet to new wallet
+        old_wallet = await db.wallets.find_one({"user_id": purchase["user_id"], "tenant_id": tid})
+        new_wallet = await db.wallets.find_one({"user_id": new_customer["id"], "tenant_id": tid})
+        
+        if old_wallet:
+            # Refund to old wallet
+            await db.wallets.update_one(
+                {"user_id": purchase["user_id"], "tenant_id": tid},
+                {"$inc": {"available": purchase["total"]}}
+            )
+        
+        if new_wallet:
+            # Charge new wallet
+            await db.wallets.update_one(
+                {"user_id": new_customer["id"], "tenant_id": tid},
+                {"$inc": {"available": -purchase["total"]}}
+            )
+        else:
+            # Create wallet for new customer if doesn't exist
+            new_wallet_obj = Wallet(tenant_id=tid, user_id=new_customer["id"], available=-purchase["total"])
+            await db.wallets.insert_one(new_wallet_obj.model_dump())
     
     # Recalculate totals if any financial field changed
     price_changed = data.price is not None

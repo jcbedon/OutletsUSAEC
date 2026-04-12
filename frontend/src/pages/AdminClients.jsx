@@ -744,39 +744,39 @@ https://outletsusaec.shop/`;
                   data-testid="edit-client-name"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>WhatsApp *</Label>
-                  <Input 
-                    placeholder="+593..." 
-                    className="rounded-xl mt-1"
-                    value={editForm.whatsapp} 
-                    onChange={(e) => setEdit("whatsapp", e.target.value)}
-                    data-testid="edit-client-whatsapp"
-                  />
-                </div>
-                <div>
-                  <Label>País</Label>
-                  <Input 
-                    placeholder="Ecuador" 
-                    className="rounded-xl mt-1"
-                    value={editForm.country} 
-                    onChange={(e) => setEdit("country", e.target.value)} 
-                  />
+              <div>
+                <Label className="flex items-center gap-2">
+                  WhatsApp * 
+                  <span className="text-xs text-gray-500 font-normal">(con código de país)</span>
+                </Label>
+                <Input 
+                  placeholder="+593991325912" 
+                  className="rounded-xl mt-1"
+                  value={editForm.whatsapp} 
+                  onChange={(e) => setEdit("whatsapp", e.target.value)}
+                  data-testid="edit-client-whatsapp"
+                />
+                <div className="mt-2 p-3 bg-green-50 border border-green-200 rounded-xl">
+                  <p className="text-xs text-green-800 font-medium flex items-center gap-1">
+                    📱 Importante: Notificaciones por WhatsApp
+                  </p>
+                  <p className="text-xs text-green-700 mt-1">
+                    Ingresa el número completo con código de país. Ejemplo: <strong>+593991325912</strong>
+                  </p>
                 </div>
               </div>
               <div>
-                <Label>Email</Label>
+                <Label>Email (opcional)</Label>
                 <Input 
                   type="email" 
-                  placeholder="email@..." 
+                  placeholder="email@ejemplo.com" 
                   className="rounded-xl mt-1"
                   value={editForm.email} 
                   onChange={(e) => setEdit("email", e.target.value)} 
                 />
               </div>
               
-              {/* Password Section */}
+              {/* Commission Section */}
               <div className="border-t pt-4">
                 <div className="flex items-center gap-2 mb-2">
                   <DollarSign className="h-4 w-4 text-green-500" />
@@ -803,14 +803,23 @@ https://outletsusaec.shop/`;
                   <Key className="h-4 w-4 text-orange-500" />
                   <Label className="text-orange-600 font-medium">Cambiar Contraseña</Label>
                 </div>
-                <Input 
-                  type="password" 
-                  placeholder="Nueva contraseña (dejar vacío para no cambiar)" 
-                  className="rounded-xl"
-                  value={editForm.new_password} 
-                  onChange={(e) => setEdit("new_password", e.target.value)}
-                  data-testid="edit-client-password"
-                />
+                <div className="relative">
+                  <Input 
+                    type={showEditPassword ? "text" : "password"}
+                    placeholder="Nueva contraseña (dejar vacío para no cambiar)" 
+                    className="rounded-xl pr-10"
+                    value={editForm.new_password} 
+                    onChange={(e) => setEdit("new_password", e.target.value)}
+                    data-testid="edit-client-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowEditPassword(!showEditPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  >
+                    {showEditPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
                 <p className="text-xs text-gray-500 mt-1">
                   Solo completa este campo si deseas asignar una nueva contraseña
                 </p>

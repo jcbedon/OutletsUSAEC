@@ -116,8 +116,11 @@ export default function AdminLive() {
     tax_option: "8.25",
     custom_tax: "",
     apply_commission: true,
-    commission: "3"
+    commission: "3",
+    customer_id: "" // Added for changing client
   });
+  const [editClientSearchOpen, setEditClientSearchOpen] = useState(false);
+  const [editClientSearchValue, setEditClientSearchValue] = useState("");
   
   // Client autocomplete state
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
@@ -488,8 +491,11 @@ export default function AdminLive() {
       tax_option: tax_option,
       custom_tax: custom_tax,
       apply_commission: purchase.apply_commission !== false,
-      commission: (purchase.commission || 0).toString()
+      commission: (purchase.commission || 0).toString(),
+      customer_id: purchase.customer_id // Include customer_id for editing
     });
+    setEditClientSearchValue("");
+    setEditClientSearchOpen(false);
   };
 
   const handleSaveEdit = async (purchaseId) => {
@@ -501,6 +507,9 @@ export default function AdminLive() {
       if (editForm.item_name !== orig.item_name) data.item_name = editForm.item_name;
       if (editForm.store !== orig.store) data.store = editForm.store;
       if (parseFloat(editForm.price) !== orig.price) data.price = parseFloat(editForm.price);
+      
+      // Customer change
+      if (editForm.customer_id !== orig.customer_id) data.customer_id = editForm.customer_id;
       
       // Tax fields - use new tax option system
       const newTaxRate = getEffectiveTaxRate(editForm.tax_option, editForm.custom_tax);
@@ -525,6 +534,7 @@ export default function AdminLive() {
       await updatePurchase(purchaseId, data);
       toast.success("Compra actualizada");
       setEditingPurchase(null);
+      setEditClientSearchOpen(false);
       loadData(true); // Preserve selection to stay on current Live
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al editar");
@@ -1135,6 +1145,58 @@ export default function AdminLive() {
                             <CardContent className="p-3">
                               {editingPurchase === purchase.id ? (
                                 <div className="space-y-2">
+                                  {/* Client selector */}
+                                  <div className="p-2 bg-purple-50 rounded-lg">
+                                    <p className="text-xs font-medium text-gray-600 mb-1">Cliente</p>
+                                    <Popover open={editClientSearchOpen} onOpenChange={setEditClientSearchOpen}>
+                                      <PopoverTrigger asChild>
+                                        <Button variant="outline" role="combobox" className="w-full h-8 justify-between text-xs rounded">
+                                          <span className="truncate">
+                                            {editForm.customer_id ? `#${editForm.customer_id} - ${activeClients.find(c => c.customer_id === editForm.customer_id)?.name || ''}` : "Seleccionar cliente..."}
+                                          </span>
+                                          <Search className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                                        </Button>
+                                      </PopoverTrigger>
+                                      <PopoverContent className="w-72 p-0 rounded-xl" align="start">
+                                        <Command>
+                                          <CommandInput 
+                                            placeholder="Buscar cliente..." 
+                                            value={editClientSearchValue}
+                                            onValueChange={setEditClientSearchValue}
+                                            className="h-9"
+                                          />
+                                          <CommandList>
+                                            <CommandEmpty>No encontrado</CommandEmpty>
+                                            <CommandGroup>
+                                              {activeClients
+                                                .filter(c => 
+                                                  editClientSearchValue.length === 0 ||
+                                                  c.name.toLowerCase().includes(editClientSearchValue.toLowerCase()) ||
+                                                  c.customer_id.toLowerCase().includes(editClientSearchValue.toLowerCase())
+                                                )
+                                                .slice(0, 10)
+                                                .map((c) => (
+                                                  <CommandItem
+                                                    key={c.customer_id}
+                                                    value={c.customer_id}
+                                                    onSelect={() => {
+                                                      setEditForm({...editForm, customer_id: c.customer_id});
+                                                      setEditClientSearchOpen(false);
+                                                    }}
+                                                    className="cursor-pointer"
+                                                  >
+                                                    <span className="font-bold text-red-600">#{c.customer_id}</span>
+                                                    <span className="ml-2">{c.name}</span>
+                                                  </CommandItem>
+                                                ))
+                                              }
+                                            </CommandGroup>
+                                          </CommandList>
+                                        </Command>
+                                      </PopoverContent>
+                                    </Popover>
+                                  </div>
+                                  
                                   <Input value={editForm.item_name} onChange={(e) => setEditForm({...editForm, item_name: e.target.value})}
                                     placeholder="Producto" className="h-9 rounded-lg text-sm" data-testid="edit-item-name" />
                                   <div className="flex gap-2">
