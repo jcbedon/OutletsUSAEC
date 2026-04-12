@@ -1728,6 +1728,88 @@ async def admin_create_recharge(
         "amount_credited": amount
     }
 
+# ==================== RECHARGE QR UPLOAD ENDPOINTS ====================
+
+@api_router.post("/wallet/generate-upload-qr/{user_id}")
+async def generate_recharge_upload_qr(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Generate a temporary token for mobile upload of recharge proof via QR code"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    
+    tid = current_user["tenant_id"]
+    
+    # Verify user exists
+    user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0, "id": 1, "customer_id": 1})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    # Create a temporary upload token (expires in 10 minutes)
+    upload_token = str(uuid.uuid4())
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+    
+    # Store token in database
+    await db.upload_tokens.insert_one({
+        "token": upload_token,
+        "user_id": user_id,
+        "type": "recharge_proof",
+        "tenant_id": tid,
+        "expires_at": expires_at,
+        "used": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+    
+    return {
+        "upload_token": upload_token,
+        "expires_in_minutes": 10
+    }
+
+@api_router.post("/wallet/mobile-upload/{upload_token}")
+async def mobile_upload_recharge_proof(upload_token: str, file: UploadFile = File(...)):
+    """Upload recharge proof from mobile device using temporary token (no auth required)"""
+    # Find and validate token
+    token_doc = await db.upload_tokens.find_one({"token": upload_token, "type": "recharge_proof"}, {"_id": 0})
+    if not token_doc:
+        raise HTTPException(status_code=404, detail="Token inválido o expirado")
+    
+    if token_doc.get("used"):
+        raise HTTPException(status_code=400, detail="Este token ya fue utilizado")
+    
+    # Check expiration
+    expires_at = datetime.fromisoformat(token_doc["expires_at"].replace("Z", "+00:00"))
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Token expirado")
+    
+    # Save file
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
+    filename = f"recharge_proof_{upload_token[:8]}_{uuid.uuid4().hex[:8]}.{ext}"
+    filepath = UPLOAD_DIR / filename
+    
+    with open(filepath, "wb") as f:
+        content = await file.read()
+        f.write(content)
+    
+    image_url = f"/api/uploads/{filename}"
+    
+    # Mark token as used and store image URL
+    await db.upload_tokens.update_one(
+        {"token": upload_token}, 
+        {"$set": {"used": True, "image_url": image_url}}
+    )
+    
+    return {"message": "Imagen subida exitosamente", "image_url": image_url}
+
+@api_router.get("/wallet/check-upload/{upload_token}")
+async def check_recharge_upload_status(upload_token: str):
+    """Check if a recharge proof image was uploaded using the token (for polling from desktop)"""
+    token_doc = await db.upload_tokens.find_one({"token": upload_token, "type": "recharge_proof"}, {"_id": 0})
+    if not token_doc:
+        raise HTTPException(status_code=404, detail="Token no encontrado")
+    
+    return {
+        "used": token_doc.get("used", False),
+        "image_url": token_doc.get("image_url")
+    }
+
 # ==================== LIVE SHOPPING ENDPOINTS ====================
 
 @api_router.post("/lives")

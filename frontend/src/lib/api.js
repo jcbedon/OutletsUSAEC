@@ -66,6 +66,10 @@ export const uploadStoreInvoiceImage = (liveId, formData) => api.post(`/lives/${
 export const generateUploadQR = (liveId) => api.post(`/lives/${liveId}/generate-upload-qr`);
 export const checkUploadStatus = (uploadToken) => api.get(`/lives/check-upload/${uploadToken}`);
 
+// Recharge QR Upload
+export const generateRechargeUploadQR = (userId) => api.post(`/wallet/generate-upload-qr/${userId}`);
+export const checkRechargeUploadStatus = (uploadToken) => api.get(`/wallet/check-upload/${uploadToken}`);
+
 // Purchases
 export const createPurchase = (data) => api.post("/purchases", data);
 export const getUserPurchases = (userId) => api.get(`/purchases/user/${userId}`);

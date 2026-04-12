@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients } from "@/lib/api";
+import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,10 +11,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart } from "lucide-react";
+import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart, QrCode, Smartphone, Loader2 } from "lucide-react";
 import RechargeReport from "@/components/RechargeReport";
+import QRCode from "qrcode";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -46,14 +48,24 @@ export default function AdminWallet() {
 
   // Crear recarga state
   const [rechargeDialogOpen, setRechargeDialogOpen] = useState(false);
-  const [rechargeClient, setRechargeClient] = useState("");
+  const [rechargeClient, setRechargeClient] = useState(null); // Changed to object
   const [rechargeAmount, setRechargeAmount] = useState("");
   const [rechargeDescription, setRechargeDescription] = useState("");
   const [rechargeProof, setRechargeProof] = useState(null);
   const [rechargeProofPreview, setRechargeProofPreview] = useState(null);
   const [creatingRecharge, setCreatingRecharge] = useState(false);
+  const [rechargeClientSearchOpen, setRechargeClientSearchOpen] = useState(false);
   const [rechargeClientSearch, setRechargeClientSearch] = useState("");
   const rechargeFileInputRef = useRef(null);
+  
+  // QR Upload state
+  const [showQRDialog, setShowQRDialog] = useState(false);
+  const [qrCodeUrl, setQrCodeUrl] = useState("");
+  const [uploadToken, setUploadToken] = useState("");
+  const [polling, setPolling] = useState(false);
+  const pollingRef = useRef(null);
+  
+  const APP_URL = process.env.REACT_APP_BACKEND_URL?.replace('/api', '') || window.location.origin;
 
   useEffect(() => { 
     loadData(); 
@@ -163,7 +175,7 @@ export default function AdminWallet() {
     setCreatingRecharge(true);
     try {
       const formData = new FormData();
-      formData.append("user_id", rechargeClient);
+      formData.append("user_id", rechargeClient.id);
       formData.append("amount", parseFloat(rechargeAmount));
       formData.append("description", rechargeDescription || "Recarga creada por administrador");
       formData.append("proof", rechargeProof);
@@ -181,16 +193,92 @@ export default function AdminWallet() {
   };
 
   const resetRechargeForm = () => {
-    setRechargeClient("");
+    setRechargeClient(null);
     setRechargeAmount("");
     setRechargeDescription("");
     setRechargeProof(null);
     setRechargeProofPreview(null);
     setRechargeClientSearch("");
+    setRechargeClientSearchOpen(false);
     if (rechargeFileInputRef.current) {
       rechargeFileInputRef.current.value = "";
     }
+    // Cleanup QR polling
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+    setPolling(false);
   };
+
+  // QR Functions
+  const handleGenerateQR = async () => {
+    if (!rechargeClient) {
+      toast.error("Primero selecciona un cliente");
+      return;
+    }
+    
+    try {
+      const res = await generateRechargeUploadQR(rechargeClient.id);
+      const token = res.data.upload_token;
+      setUploadToken(token);
+      
+      // Generate QR code
+      const uploadUrl = `${APP_URL}/upload-recharge/${token}`;
+      const qr = await QRCode.toDataURL(uploadUrl, {
+        width: 300,
+        margin: 2,
+        color: { dark: "#2ECC71", light: "#ffffff" }
+      });
+      setQrCodeUrl(qr);
+      setShowQRDialog(true);
+      
+      // Start polling to check if image was uploaded
+      setPolling(true);
+      pollingRef.current = setInterval(async () => {
+        try {
+          const statusRes = await checkRechargeUploadStatus(token);
+          if (statusRes.data.used && statusRes.data.image_url) {
+            clearInterval(pollingRef.current);
+            setPolling(false);
+            setShowQRDialog(false);
+            
+            // Set the uploaded image as proof
+            setRechargeProofPreview(statusRes.data.image_url);
+            // We need to fetch the file for the form
+            const response = await fetch(statusRes.data.image_url);
+            const blob = await response.blob();
+            const file = new File([blob], "proof_qr.jpg", { type: blob.type });
+            setRechargeProof(file);
+            
+            toast.success("¡Imagen recibida desde el teléfono!");
+          }
+        } catch (err) {
+          clearInterval(pollingRef.current);
+          setPolling(false);
+        }
+      }, 3000);
+      
+    } catch (error) {
+      toast.error("Error al generar código QR");
+    }
+  };
+
+  const handleCloseQR = () => {
+    setShowQRDialog(false);
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+    setPolling(false);
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+    };
+  }, []);
 
   const getProofUrl = (deposit) => {
     if (!deposit.proof_url) return null;
@@ -224,14 +312,6 @@ export default function AdminWallet() {
       clientSearch === "" || 
       c.name?.toLowerCase().includes(clientSearch.toLowerCase()) ||
       c.customer_id?.toLowerCase().includes(clientSearch.toLowerCase())
-    )
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  const filteredRechargeClients = clients
-    .filter(c => 
-      rechargeClientSearch === "" || 
-      c.name?.toLowerCase().includes(rechargeClientSearch.toLowerCase()) ||
-      c.customer_id?.toLowerCase().includes(rechargeClientSearch.toLowerCase())
     )
     .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -447,33 +527,71 @@ export default function AdminWallet() {
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
-                {/* Cliente selector */}
+                {/* Cliente selector - Single Search Field */}
                 <div className="space-y-2">
                   <Label>Cliente <span className="text-red-500">*</span></Label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <Input 
-                      placeholder="Buscar cliente..."
-                      value={rechargeClientSearch}
-                      onChange={(e) => setRechargeClientSearch(e.target.value)}
-                      className="pl-9 rounded-xl mb-2"
-                      data-testid="recharge-client-search-input"
-                    />
-                  </div>
-                  <Select value={rechargeClient} onValueChange={setRechargeClient}>
-                    <SelectTrigger className="rounded-xl" data-testid="recharge-select-client-trigger">
-                      <SelectValue placeholder="Seleccionar cliente" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-60">
-                      {filteredRechargeClients.map(client => (
-                        <SelectItem key={client.id} value={client.id} data-testid={`recharge-client-option-${client.customer_id}`}>
-                          <span className="font-medium">{client.name}</span>
-                          <span className="text-gray-500 ml-2">#{client.customer_id}</span>
-                          <span className="text-green-600 ml-2">${client.wallet_balance?.toFixed(2)}</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={rechargeClientSearchOpen} onOpenChange={setRechargeClientSearchOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        className="w-full h-12 justify-between rounded-xl"
+                        data-testid="recharge-select-client-trigger"
+                      >
+                        {rechargeClient ? (
+                          <span className="flex items-center gap-2">
+                            <span className="font-bold text-green-600">#{rechargeClient.customer_id}</span>
+                            <span>{rechargeClient.name}</span>
+                            <span className="text-gray-500">(${rechargeClient.wallet_balance?.toFixed(2) || '0.00'})</span>
+                          </span>
+                        ) : (
+                          <span className="text-gray-500">Buscar cliente...</span>
+                        )}
+                        <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-full p-0 rounded-xl" align="start">
+                      <Command>
+                        <CommandInput 
+                          placeholder="Buscar por nombre o código..." 
+                          value={rechargeClientSearch}
+                          onValueChange={setRechargeClientSearch}
+                          className="h-11"
+                          data-testid="recharge-client-search-input"
+                        />
+                        <CommandList>
+                          <CommandEmpty>No se encontró cliente</CommandEmpty>
+                          <CommandGroup>
+                            {clients
+                              .filter(c => 
+                                rechargeClientSearch.length === 0 ||
+                                c.name.toLowerCase().includes(rechargeClientSearch.toLowerCase()) ||
+                                c.customer_id.toLowerCase().includes(rechargeClientSearch.toLowerCase())
+                              )
+                              .slice(0, 10)
+                              .map((client) => (
+                                <CommandItem
+                                  key={client.id}
+                                  value={client.customer_id}
+                                  onSelect={() => {
+                                    setRechargeClient(client);
+                                    setRechargeClientSearchOpen(false);
+                                  }}
+                                  className="cursor-pointer py-3"
+                                >
+                                  <div className="flex items-center gap-3 w-full">
+                                    <span className="font-bold text-green-600">#{client.customer_id}</span>
+                                    <span className="flex-1">{client.name}</span>
+                                    <span className="text-sm text-gray-500">${client.wallet_balance?.toFixed(2) || '0.00'}</span>
+                                  </div>
+                                </CommandItem>
+                              ))
+                            }
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 {/* Monto */}
@@ -486,7 +604,7 @@ export default function AdminWallet() {
                     placeholder="0.00"
                     value={rechargeAmount}
                     onChange={(e) => setRechargeAmount(e.target.value)}
-                    className="rounded-xl"
+                    className="rounded-xl h-12 text-lg font-bold"
                     data-testid="recharge-amount-input"
                   />
                 </div>
@@ -503,46 +621,57 @@ export default function AdminWallet() {
                   />
                 </div>
 
-                {/* Comprobante - Obligatorio */}
+                {/* Comprobante con QR */}
                 <div className="space-y-2">
                   <Label>Comprobante de Pago <span className="text-red-500">*</span></Label>
-                  <div 
-                    className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${
-                      rechargeProofPreview ? 'border-green-300 bg-green-50' : 'border-gray-300 hover:border-green-400 hover:bg-green-50/50'
-                    }`}
-                    onClick={() => rechargeFileInputRef.current?.click()}
-                  >
-                    <input
-                      ref={rechargeFileInputRef}
-                      type="file"
-                      accept="image/*,.pdf"
-                      onChange={handleRechargeProofChange}
-                      className="hidden"
-                      data-testid="recharge-proof-input"
-                    />
-                    {rechargeProofPreview ? (
-                      <div className="space-y-2">
-                        <img 
-                          src={rechargeProofPreview} 
-                          alt="Vista previa" 
-                          className="max-h-32 mx-auto rounded-lg object-contain"
-                        />
-                        <p className="text-sm text-green-600 font-medium flex items-center justify-center gap-1">
-                          <CheckCircle className="h-4 w-4" />
-                          {rechargeProof?.name}
-                        </p>
-                        <p className="text-xs text-gray-500">Clic para cambiar</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2 py-4">
-                        <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto">
-                          <Upload className="h-6 w-6 text-gray-400" />
-                        </div>
-                        <p className="text-sm text-gray-600 font-medium">Subir comprobante</p>
-                        <p className="text-xs text-gray-400">JPG, PNG, PDF - Máx 10MB</p>
-                      </div>
-                    )}
+                  
+                  {/* Upload Options */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Upload from PC */}
+                    <div 
+                      className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors ${
+                        rechargeProofPreview ? 'border-green-300 bg-green-50' : 'border-gray-300 hover:border-green-400 hover:bg-green-50/50'
+                      }`}
+                      onClick={() => rechargeFileInputRef.current?.click()}
+                    >
+                      <input
+                        ref={rechargeFileInputRef}
+                        type="file"
+                        accept="image/*,.pdf"
+                        onChange={handleRechargeProofChange}
+                        className="hidden"
+                        data-testid="recharge-proof-input"
+                      />
+                      <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                      <p className="text-sm font-medium text-gray-600">Desde PC</p>
+                      <p className="text-xs text-gray-400">Clic para subir</p>
+                    </div>
+                    
+                    {/* Upload via QR */}
+                    <div 
+                      className="border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors border-gray-300 hover:border-green-400 hover:bg-green-50/50"
+                      onClick={handleGenerateQR}
+                    >
+                      <QrCode className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                      <p className="text-sm font-medium text-gray-600">Desde Celular</p>
+                      <p className="text-xs text-gray-400">Escanear QR</p>
+                    </div>
                   </div>
+                  
+                  {/* Preview */}
+                  {rechargeProofPreview && (
+                    <div className="mt-3 relative">
+                      <img 
+                        src={rechargeProofPreview} 
+                        alt="Vista previa" 
+                        className="w-full max-h-40 object-contain rounded-xl border border-green-200"
+                      />
+                      <div className="absolute top-2 right-2 bg-green-500 text-white px-2 py-1 rounded-lg text-xs flex items-center gap-1">
+                        <CheckCircle className="h-3 w-3" />
+                        Comprobante listo
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               <DialogFooter className="gap-2">
@@ -553,7 +682,7 @@ export default function AdminWallet() {
                   onClick={handleCreateRecharge}
                   disabled={creatingRecharge || !rechargeClient || !rechargeAmount || !rechargeProof}
                   className="rounded-xl bg-green-600 hover:bg-green-700"
-                  data-testid="confirm-recharge-btn"
+                  data-testid="submit-recharge-btn"
                 >
                   {creatingRecharge ? (
                     <span className="flex items-center gap-2">
@@ -562,10 +691,43 @@ export default function AdminWallet() {
                     </span>
                   ) : (
                     <>
-                      <Plus className="h-4 w-4 mr-2" />
+                      <CheckCircle className="h-4 w-4 mr-2" />
                       Crear Recarga
                     </>
                   )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* QR Dialog */}
+          <Dialog open={showQRDialog} onOpenChange={(open) => !open && handleCloseQR()}>
+            <DialogContent className="rounded-2xl max-w-sm">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-green-700">
+                  <Smartphone className="h-5 w-5" />
+                  Escanea con tu celular
+                </DialogTitle>
+              </DialogHeader>
+              <div className="text-center py-4">
+                <div className="bg-white p-4 rounded-xl inline-block shadow-lg border">
+                  {qrCodeUrl && <img src={qrCodeUrl} alt="QR Code" className="w-64 h-64" />}
+                </div>
+                <div className="mt-4 flex items-center justify-center gap-2 text-green-600">
+                  {polling && (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                      <span className="text-sm font-medium">Esperando imagen...</span>
+                    </>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500 mt-3">
+                  Escanea el código QR con tu celular para subir el comprobante de pago
+                </p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={handleCloseQR} className="w-full rounded-xl">
+                  Cancelar
                 </Button>
               </DialogFooter>
             </DialogContent>
