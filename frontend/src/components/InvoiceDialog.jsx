@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance } from "@/lib/api";
+import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, annulInvoice } from "@/lib/api";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info } from "lucide-react";
@@ -54,6 +54,10 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
   const [saldoPendiente, setSaldoPendiente] = useState("");
   const [autoPendingBalance, setAutoPendingBalance] = useState(0);
   const [pendingDetails, setPendingDetails] = useState([]);
+  const [annulDialogOpen, setAnnulDialogOpen] = useState(false);
+  const [annulTargetId, setAnnulTargetId] = useState(null);
+  const [annulPassword, setAnnulPassword] = useState("");
+  const [annulling, setAnnulling] = useState(false);
   const invoiceRef = useRef(null);
 
   useEffect(() => {
@@ -116,7 +120,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
 
   const loadInvoices = async () => {
     try {
-      const res = await getClientInvoices(client.customer_id);
+      const res = await getClientInvoices(client.customer_id, true);
       setInvoices(res.data);
     } catch (error) {
       console.error("Error loading invoices:", error);
@@ -230,6 +234,37 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       toast.error(error.response?.data?.detail || "Error al reabrir factura");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openAnnulDialog = (invoiceId, e) => {
+    if (e) e.stopPropagation();
+    setAnnulTargetId(invoiceId);
+    setAnnulPassword("");
+    setAnnulDialogOpen(true);
+  };
+
+  const handleAnnulInvoice = async () => {
+    if (!annulPassword) {
+      toast.error("Ingresa tu contraseña");
+      return;
+    }
+    setAnnulling(true);
+    try {
+      await annulInvoice(annulTargetId, annulPassword);
+      toast.success("Factura eliminada exitosamente");
+      setAnnulDialogOpen(false);
+      setAnnulTargetId(null);
+      setAnnulPassword("");
+      loadInvoices();
+      if (currentInvoice?.id === annulTargetId) {
+        setCurrentInvoice(null);
+        setViewMode("history");
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al eliminar factura");
+    } finally {
+      setAnnulling(false);
     }
   };
 
@@ -1294,30 +1329,48 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                 invoices.map((inv) => (
                   <div
                     key={inv.id}
-                    className="p-4 rounded-xl border hover:border-blue-300 hover:shadow-md transition-all cursor-pointer"
-                    onClick={() => handleViewInvoice(inv)}
+                    className={`p-4 rounded-xl border transition-all ${inv.is_annulled ? 'bg-red-50/30 border-red-100 opacity-60' : 'hover:border-blue-300 hover:shadow-md cursor-pointer'}`}
+                    onClick={() => !inv.is_annulled && handleViewInvoice(inv)}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'rgba(30,58,95,0.1)' }}>
-                          <FileText className="h-6 w-6" style={{ color: '#1E3A5F' }} />
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: inv.is_annulled ? 'rgba(220,38,38,0.1)' : 'rgba(30,58,95,0.1)' }}>
+                          <FileText className="h-6 w-6" style={{ color: inv.is_annulled ? '#DC2626' : '#1E3A5F' }} />
                         </div>
                         <div>
-                          <p className="font-bold" style={{ color: '#1E3A5F' }}>{inv.invoice_number}</p>
+                          <p className={`font-bold ${inv.is_annulled ? 'text-red-400 line-through' : ''}`} style={{ color: inv.is_annulled ? undefined : '#1E3A5F' }}>{inv.invoice_number}</p>
                           <p className="text-sm text-gray-500">
                             {new Date(inv.created_at).toLocaleDateString("es-ES")} · {inv.purchase_ids?.length || 0} items
                           </p>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-extrabold text-xl" style={{ color: '#1E3A5F' }}>${inv.total.toFixed(2)}</p>
-                        <Badge className={inv.status === "approved" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}>
-                          {inv.status === "approved" ? (
-                            <><CheckCircle className="h-3 w-3 mr-1" /> Pagada</>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <p className={`font-extrabold text-xl ${inv.is_annulled ? 'line-through text-red-400' : ''}`} style={{ color: inv.is_annulled ? undefined : '#1E3A5F' }}>${inv.total.toFixed(2)}</p>
+                          {inv.is_annulled ? (
+                            <Badge className="bg-red-100 text-red-700">Anulada</Badge>
                           ) : (
-                            <><Clock className="h-3 w-3 mr-1" /> Pendiente</>
+                            <Badge className={inv.status === "approved" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}>
+                              {inv.status === "approved" ? (
+                                <><CheckCircle className="h-3 w-3 mr-1" /> Pagada</>
+                              ) : (
+                                <><Clock className="h-3 w-3 mr-1" /> Pendiente</>
+                              )}
+                            </Badge>
                           )}
-                        </Badge>
+                        </div>
+                        {!inv.is_annulled && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                            onClick={(e) => openAnnulDialog(inv.id, e)}
+                            title="Eliminar factura"
+                            data-testid={`annul-invoice-${inv.id}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1326,6 +1379,47 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
             </div>
           )}
         </ScrollArea>
+
+        {/* Annul Invoice Confirmation Dialog */}
+        <Dialog open={annulDialogOpen} onOpenChange={(open) => { setAnnulDialogOpen(open); if (!open) setAnnulPassword(""); }}>
+          <DialogContent className="max-w-sm rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600">
+                <Trash2 className="h-5 w-5" />
+                Eliminar Factura
+              </DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-gray-600">
+              Esta accion anulara la factura, liberara las compras y los abonos asignados. Ingresa tu contrasena de administrador para confirmar.
+            </p>
+            <div className="space-y-4 py-2">
+              <div>
+                <Input
+                  type="password"
+                  placeholder="Contrasena del administrador..."
+                  value={annulPassword}
+                  onChange={(e) => setAnnulPassword(e.target.value)}
+                  className="h-11 rounded-xl"
+                  data-testid="annul-password-input"
+                  onKeyDown={(e) => e.key === 'Enter' && handleAnnulInvoice()}
+                />
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setAnnulDialogOpen(false)} className="flex-1 h-11 rounded-xl">
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={handleAnnulInvoice}
+                  disabled={annulling || !annulPassword}
+                  className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold"
+                  data-testid="confirm-annul-btn"
+                >
+                  {annulling ? "Eliminando..." : "Confirmar"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

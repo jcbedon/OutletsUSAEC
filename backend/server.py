@@ -3295,12 +3295,18 @@ async def get_client_purchase_history(customer_id: str, current_user: dict = Dep
     return purchases
 
 @api_router.put("/invoices/{invoice_id}/annul")
-async def annul_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
-    """Annul an invoice (soft delete) - only admins can do this"""
+async def annul_invoice(invoice_id: str, data: dict = None, current_user: dict = Depends(get_current_user)):
+    """Annul an invoice (soft delete) - only admins can do this, requires password"""
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores pueden anular facturas")
     tid = current_user["tenant_id"]
     user_id = current_user["user_id"]
+    
+    # Verify admin password if provided
+    if data and data.get("password"):
+        admin = await db.users.find_one({"id": user_id, "tenant_id": tid})
+        if not admin or not verify_password(data["password"], admin["password_hash"]):
+            raise HTTPException(status_code=401, detail="Contraseña incorrecta")
     
     # Get admin user info for audit
     admin_user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0})
@@ -3315,14 +3321,16 @@ async def annul_invoice(invoice_id: str, current_user: dict = Depends(get_curren
     
     now = datetime.now(timezone.utc).isoformat()
     
-    # Update invoice to annulled
+    # Update invoice to annulled - also clear applied_deposits to free them
     await db.invoices.update_one(
         {"id": invoice_id, "tenant_id": tid},
         {"$set": {
             "is_annulled": True,
             "annulled_at": now,
             "annulled_by": user_id,
-            "annulled_by_name": admin_name
+            "annulled_by_name": admin_name,
+            "applied_deposits": [],
+            "deposits_applied": 0
         }}
     )
     

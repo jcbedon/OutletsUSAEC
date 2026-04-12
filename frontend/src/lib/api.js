@@ -133,14 +133,14 @@ export const updateTenantTaxOptions = (taxOptions) => api.put("/admin/settings/t
 export const getPendingPurchases = (customerId) => api.get(`/invoices/client/${customerId}/pending-purchases`);
 export const createInvoice = (data) => api.post("/invoices", data);
 export const getClientPendingBalance = (customerId) => api.get(`/invoices/client-pending-balance/${customerId}`);
-export const getClientInvoices = (customerId) => api.get(`/invoices/client/${customerId}`);
+export const getClientInvoices = (customerId, includeAnnulled = false) => api.get(`/invoices/client/${customerId}${includeAnnulled ? '?include_annulled=true' : ''}`);
 export const getClientInvoicesForShipment = (customerId) => api.get(`/invoices/client/${customerId}/for-shipment`);
 export const getInvoiceDetail = (invoiceId) => api.get(`/invoices/${invoiceId}`);
 export const approveInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/approve`);
 export const removeItemFromInvoice = (invoiceId, purchaseId) => api.put(`/invoices/${invoiceId}/remove-item`, { purchase_id: purchaseId });
 export const reopenInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/reopen`);
 export const getClientPurchaseHistory = (customerId) => api.get(`/invoices/client/${customerId}/history`);
-export const annulInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/annul`);
+export const annulInvoice = (invoiceId, password) => api.put(`/invoices/${invoiceId}/annul`, { password });
 export const searchInvoices = (query, statusFilter = "all") => api.get(`/invoices/search?q=${encodeURIComponent(query)}&status_filter=${statusFilter}`);
 
 // Temporary Access Tokens (for QR codes)
