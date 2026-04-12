@@ -25,6 +25,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import TrackingDialog from "@/components/TrackingDialog";
+import ShipmentEditDialog from "@/components/ShipmentEditDialog";
 import { 
   ArrowLeft, 
   Truck, 
@@ -34,14 +36,12 @@ import {
   Plus,
   MapPin,
   Phone,
-  Edit,
   Navigation,
   Search,
   Paperclip,
   X,
   Image as ImageIcon,
   Trash2,
-  Save,
   FileText,
   AlertCircle
 } from "lucide-react";
@@ -1074,251 +1074,30 @@ export default function AdminShipments() {
                               </Select>
                             </div>
 
-                            {/* Tracking Button */}
-                            <Dialog 
-                              open={trackingDialogOpen === shipment.id} 
-                              onOpenChange={(open) => {
-                                if (!open) {
-                                  setTrackingDialogOpen(null);
-                                  setTrackingNumbers([""]);
-                                }
-                              }}
-                            >
-                              <DialogTrigger asChild>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="rounded-lg" 
-                                  data-testid={`tracking-btn-${shipment.id}`}
-                                  onClick={() => handleOpenTrackingDialog(shipment)}
-                                >
-                                  <Edit className="h-4 w-4 mr-1" />
-                                  Tracking ({shipment.tracking_numbers?.length || (shipment.tracking_number ? 1 : 0)})
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="rounded-2xl max-w-md">
-                                <DialogHeader>
-                                  <DialogTitle className="flex items-center gap-2">
-                                    <Package className="h-5 w-5" />
-                                    Tracking de Paquetes
-                                  </DialogTitle>
-                                </DialogHeader>
-                                <div className="space-y-4 pt-4">
-                                  <p className="text-sm text-gray-600">
-                                    ¿Cuántos paquetes envías? Agrega un tracking por cada paquete.
-                                  </p>
-                                  
-                                  {/* Tracking number inputs */}
-                                  <div className="space-y-3 max-h-64 overflow-y-auto">
-                                    {trackingNumbers.map((tracking, index) => (
-                                      <div key={index} className="flex items-center gap-2">
-                                        <span className="text-sm font-medium text-gray-500 w-6">
-                                          #{index + 1}
-                                        </span>
-                                        <Input
-                                          placeholder={`Tracking paquete ${index + 1}`}
-                                          value={tracking}
-                                          onChange={(e) => updateTrackingField(index, e.target.value)}
-                                          className="h-10 rounded-lg flex-1"
-                                          data-testid={`tracking-input-${index}`}
-                                        />
-                                        {trackingNumbers.length > 1 && (
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => removeTrackingField(index)}
-                                            className="h-10 w-10 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                            data-testid={`remove-tracking-${index}`}
-                                          >
-                                            <Trash2 className="h-4 w-4" />
-                                          </Button>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
-                                  
-                                  {/* Add more button */}
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={addTrackingField}
-                                    className="w-full h-10 rounded-lg border-dashed"
-                                    data-testid="add-tracking-btn"
-                                  >
-                                    <Plus className="h-4 w-4 mr-2" />
-                                    Agregar otro paquete
-                                  </Button>
-                                  
-                                  <Button 
-                                    onClick={() => handleUpdateTracking(shipment.id)}
-                                    className="w-full h-12 rounded-xl" 
-                                    style={{ background: '#1E3A5F', color: 'white' }}
-                                    data-testid="save-tracking-btn"
-                                  >
-                                    <Save className="h-4 w-4 mr-2" />
-                                    Guardar {trackingNumbers.filter(t => t.trim()).length} Tracking(s)
-                                  </Button>
-                                </div>
-                              </DialogContent>
-                            </Dialog>
+                            {/* Tracking Button - Using separate component */}
+                            <TrackingDialog
+                              shipment={shipment}
+                              trackingDialogOpen={trackingDialogOpen}
+                              setTrackingDialogOpen={setTrackingDialogOpen}
+                              trackingNumbers={trackingNumbers}
+                              setTrackingNumbers={setTrackingNumbers}
+                              handleOpenTrackingDialog={handleOpenTrackingDialog}
+                              handleUpdateTracking={handleUpdateTracking}
+                              addTrackingField={addTrackingField}
+                              removeTrackingField={removeTrackingField}
+                              updateTrackingField={updateTrackingField}
+                            />
 
-                            {/* Edit Button */}
-                            <Dialog 
-                              open={editDialogOpen === shipment.id} 
-                              onOpenChange={(open) => {
-                                if (!open) setEditDialogOpen(null);
-                              }}
-                            >
-                              <DialogTrigger asChild>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm" 
-                                  className="rounded-lg"
-                                  onClick={() => handleOpenEditDialog(shipment)}
-                                  data-testid={`edit-shipment-${shipment.id}`}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="rounded-2xl max-h-[90vh] overflow-y-auto">
-                                <DialogHeader>
-                                  <DialogTitle>Editar Envío - #{shipment.customer_id}</DialogTitle>
-                                </DialogHeader>
-                                <div className="space-y-4 pt-4">
-                                  <div>
-                                    <Label>Tipo de Envío</Label>
-                                    <Select 
-                                      value={editForm.shipping_type}
-                                      onValueChange={(v) => setEditForm({...editForm, shipping_type: v})}
-                                    >
-                                      <SelectTrigger className="h-12 rounded-xl mt-1">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="with_family">Con Familiar en USA</SelectItem>
-                                        <SelectItem value="without_family">Sin Familiar en USA</SelectItem>
-                                        <SelectItem value="custom">Personalizado</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div>
-                                    <Label>Costo de Envío (USD)</Label>
-                                    <Input 
-                                      type="number" 
-                                      step="0.01"
-                                      value={editForm.shipping_cost}
-                                      onChange={(e) => setEditForm({...editForm, shipping_cost: e.target.value})}
-                                      onWheel={(e) => e.target.blur()}
-                                      className="h-12 rounded-xl mt-1"
-                                    />
-                                  </div>
-                                  <div>
-                                    <Label>Peso (Libras)</Label>
-                                    <Input 
-                                      type="number" 
-                                      step="0.1"
-                                      placeholder="Ej: 5.5"
-                                      value={editForm.weight_pounds}
-                                      onChange={(e) => setEditForm({...editForm, weight_pounds: e.target.value})}
-                                      onWheel={(e) => e.target.blur()}
-                                      className="h-12 rounded-xl mt-1"
-                                    />
-                                  </div>
-                                  <div>
-                                    <Label>Dirección</Label>
-                                    <Textarea
-                                      value={editForm.address}
-                                      onChange={(e) => setEditForm({...editForm, address: e.target.value})}
-                                      className="rounded-xl mt-1"
-                                    />
-                                  </div>
-                                  <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                      <Label>País</Label>
-                                      <Input
-                                        value={editForm.country}
-                                        onChange={(e) => setEditForm({...editForm, country: e.target.value})}
-                                        className="h-12 rounded-xl mt-1"
-                                      />
-                                    </div>
-                                    <div>
-                                      <Label>Teléfono</Label>
-                                      <Input
-                                        value={editForm.phone}
-                                        onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
-                                        className="h-12 rounded-xl mt-1"
-                                      />
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <Label className="flex items-center gap-2 mb-2">
-                                      <Package className="h-4 w-4" />
-                                      Tracking Numbers ({editForm.tracking_numbers?.length || 0} paquetes)
-                                    </Label>
-                                    <div className="space-y-2">
-                                      {(editForm.tracking_numbers || []).map((tracking, index) => (
-                                        <div key={index} className="flex items-center gap-2">
-                                          <span className="text-sm font-medium text-gray-500 w-6">#{index + 1}</span>
-                                          <Input
-                                            value={tracking}
-                                            onChange={(e) => {
-                                              const updated = [...(editForm.tracking_numbers || [])];
-                                              updated[index] = e.target.value;
-                                              setEditForm({...editForm, tracking_numbers: updated});
-                                            }}
-                                            className="h-10 rounded-lg flex-1"
-                                            placeholder={`Tracking paquete ${index + 1}`}
-                                          />
-                                          {(editForm.tracking_numbers?.length || 0) > 0 && (
-                                            <Button
-                                              type="button"
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={() => {
-                                                const updated = editForm.tracking_numbers.filter((_, i) => i !== index);
-                                                setEditForm({...editForm, tracking_numbers: updated});
-                                              }}
-                                              className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
-                                            >
-                                              <Trash2 className="h-4 w-4" />
-                                            </Button>
-                                          )}
-                                        </div>
-                                      ))}
-                                      <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => setEditForm({
-                                          ...editForm, 
-                                          tracking_numbers: [...(editForm.tracking_numbers || []), ""]
-                                        })}
-                                        className="w-full h-10 rounded-lg border-dashed"
-                                      >
-                                        <Plus className="h-4 w-4 mr-2" />
-                                        Agregar Paquete
-                                      </Button>
-                                    </div>
-                                  </div>
-                                  <div>
-                                    <Label>Información Adicional</Label>
-                                    <Textarea
-                                      value={editForm.additional_info}
-                                      onChange={(e) => setEditForm({...editForm, additional_info: e.target.value})}
-                                      className="rounded-xl mt-1"
-                                    />
-                                  </div>
-                                  <Button 
-                                    onClick={() => handleSaveEdit(shipment.id)}
-                                    className="w-full h-12 font-bold rounded-xl" 
-                                    style={{ background: '#1E3A5F', color: 'white' }}
-                                  >
-                                    <Save className="h-5 w-5 mr-2" />
-                                    Guardar Cambios
-                                  </Button>
-                                </div>
-                              </DialogContent>
-                            </Dialog>
+                            {/* Edit Button - Using separate component */}
+                            <ShipmentEditDialog
+                              shipment={shipment}
+                              editDialogOpen={editDialogOpen}
+                              setEditDialogOpen={setEditDialogOpen}
+                              editForm={editForm}
+                              setEditForm={setEditForm}
+                              handleOpenEditDialog={handleOpenEditDialog}
+                              handleSaveEdit={handleSaveEdit}
+                            />
 
                             {/* Delete Button */}
                             <Button 
