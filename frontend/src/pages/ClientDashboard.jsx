@@ -11,6 +11,7 @@ import {
   getClientInvoices,
   getInvoiceDetail
 } from "@/lib/api";
+import { generateInvoicePDF } from "@/lib/invoicePDF";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,7 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import InvoiceDialog from "@/components/InvoiceDialog";
 import { 
   ShoppingBag, 
   Truck, 
@@ -64,8 +64,7 @@ export default function ClientDashboard() {
   const [selectedShipment, setSelectedShipment] = useState(null);
   const [shipmentProducts, setShipmentProducts] = useState([]);
   const [clientInvoices, setClientInvoices] = useState([]);
-  const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [downloadingPDF, setDownloadingPDF] = useState(null);
   
   const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
 
@@ -99,9 +98,18 @@ export default function ClientDashboard() {
     }
   };
 
-  const handleOpenInvoice = async (invoice) => {
-    setSelectedInvoice(invoice);
-    setInvoiceDialogOpen(true);
+  const handleDownloadInvoice = async (invoice, e) => {
+    if (e) e.stopPropagation();
+    setDownloadingPDF(invoice.id);
+    try {
+      const res = await getInvoiceDetail(invoice.id);
+      await generateInvoicePDF(res.data, { business_name: user?.tenant_name, logo_url: user?.tenant_logo });
+      toast.success("PDF descargado");
+    } catch (error) {
+      toast.error("Error al descargar PDF");
+    } finally {
+      setDownloadingPDF(null);
+    }
   };
 
 
@@ -522,39 +530,89 @@ export default function ClientDashboard() {
                   </CardContent>
                 </Card>
               ) : (
-                <div className="space-y-3">
-                  {clientInvoices.map((inv, idx) => (
-                    <Card 
-                      key={inv.id} 
-                      className={`rounded-xl cursor-pointer hover:shadow-md transition-all ${idx === 0 ? 'border-2 border-blue-300 bg-blue-50/30' : ''}`}
-                      onClick={() => handleOpenInvoice(inv)}
-                      data-testid={`client-invoice-${inv.id}`}
-                    >
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="font-bold text-lg" style={{ color: '#1E3A5F' }}>{inv.invoice_number}</p>
-                              {idx === 0 && <Badge className="bg-blue-500 text-white text-xs">Ultima</Badge>}
-                            </div>
-                            <p className="text-sm text-gray-500">
-                              {new Date(inv.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
-                              {' · '}{inv.purchase_ids?.length || 0} items
-                            </p>
-                          </div>
-                          <div className="text-right flex items-center gap-3">
-                            <div>
-                              <p className="font-extrabold text-xl" style={{ color: '#1E3A5F' }}>${inv.total?.toFixed(2)}</p>
-                              <Badge className={inv.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}>
-                                {inv.status === 'approved' ? 'Aprobada' : 'Pendiente'}
-                              </Badge>
-                            </div>
-                            <Download className="h-5 w-5 text-gray-400" />
-                          </div>
+                <div className="space-y-4">
+                  {(() => {
+                    // Group invoices by week (Sunday to Sunday)
+                    const getWeekLabel = (dateStr) => {
+                      const d = new Date(dateStr);
+                      const day = d.getDay();
+                      const sunday = new Date(d);
+                      sunday.setDate(d.getDate() - day);
+                      sunday.setHours(0, 0, 0, 0);
+                      const saturday = new Date(sunday);
+                      saturday.setDate(sunday.getDate() + 6);
+                      const fmt = (dt) => dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+                      return `${fmt(sunday)} - ${fmt(saturday)}`;
+                    };
+                    const getWeekKey = (dateStr) => {
+                      const d = new Date(dateStr);
+                      const day = d.getDay();
+                      const sunday = new Date(d);
+                      sunday.setDate(d.getDate() - day);
+                      sunday.setHours(0, 0, 0, 0);
+                      return sunday.toISOString().slice(0, 10);
+                    };
+
+                    const grouped = {};
+                    clientInvoices.forEach((inv) => {
+                      const key = getWeekKey(inv.created_at);
+                      if (!grouped[key]) grouped[key] = { label: getWeekLabel(inv.created_at), invoices: [] };
+                      grouped[key].invoices.push(inv);
+                    });
+
+                    const weeks = Object.entries(grouped).sort((a, b) => b[0].localeCompare(a[0]));
+                    let globalIdx = 0;
+
+                    return weeks.map(([key, { label, invoices }]) => (
+                      <div key={key}>
+                        <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-1">Semana: {label}</p>
+                        <div className="space-y-2">
+                          {invoices.map((inv) => {
+                            const isFirst = globalIdx === 0;
+                            globalIdx++;
+                            return (
+                              <Card key={inv.id} className={`rounded-xl ${isFirst ? 'border-2 border-blue-300 bg-blue-50/30' : ''}`} data-testid={`client-invoice-${inv.id}`}>
+                                <CardContent className="p-3">
+                                  <div className="flex justify-between items-center">
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <p className="font-bold" style={{ color: '#1E3A5F' }}>{inv.invoice_number}</p>
+                                        {isFirst && <Badge className="bg-blue-500 text-white text-xs">Ultima</Badge>}
+                                        <Badge className={inv.status === 'approved' ? 'bg-green-100 text-green-700 text-xs' : 'bg-yellow-100 text-yellow-700 text-xs'}>
+                                          {inv.status === 'approved' ? 'Aprobada' : 'Pendiente'}
+                                        </Badge>
+                                      </div>
+                                      <p className="text-xs text-gray-500 mt-1">
+                                        {new Date(inv.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                                        {' · '}{inv.purchase_ids?.length || 0} items
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <p className="font-extrabold text-lg" style={{ color: '#1E3A5F' }}>${inv.total?.toFixed(2)}</p>
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-9 w-9 p-0 rounded-lg"
+                                        onClick={(e) => handleDownloadInvoice(inv, e)}
+                                        disabled={downloadingPDF === inv.id}
+                                        data-testid={`download-invoice-${inv.id}`}
+                                      >
+                                        {downloadingPDF === inv.id ? (
+                                          <div className="h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                                        ) : (
+                                          <Download className="h-4 w-4" />
+                                        )}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            );
+                          })}
                         </div>
-                      </CardContent>
-                    </Card>
-                  ))}
+                      </div>
+                    ));
+                  })()}
                 </div>
               )}
             </ScrollArea>
@@ -844,18 +902,6 @@ export default function ClientDashboard() {
         shipment={selectedShipment}
         products={shipmentProducts}
         backendUrl={backendUrl}
-      />
-
-      {/* Invoice Dialog for viewing/downloading */}
-      <InvoiceDialog
-        open={invoiceDialogOpen}
-        onOpenChange={(open) => {
-          setInvoiceDialogOpen(open);
-          if (!open) setSelectedInvoice(null);
-        }}
-        client={{ customer_id: user?.customer_id, name: user?.name }}
-        existingInvoice={selectedInvoice}
-        tenantInfo={{ business_name: user?.tenant_name, logo_url: user?.tenant_logo }}
       />
     </div>
   );
