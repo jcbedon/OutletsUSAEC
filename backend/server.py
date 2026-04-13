@@ -3464,15 +3464,30 @@ async def get_reports_summary(current_user: dict = Depends(get_current_user)):
     }
 
 @api_router.get("/admin/reports/business-stats")
-async def get_business_stats(current_user: dict = Depends(get_current_user)):
-    """Get detailed business statistics including sales by store, time-based trends, and profit analysis"""
+async def get_business_stats(period: str = "all", current_user: dict = Depends(get_current_user)):
+    """Get detailed business statistics with optional date filter"""
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
+    # Build date filter
+    from datetime import timedelta
+    date_filter = {}
+    if period == "today":
+        date_filter = {"created_at": {"$gte": datetime.now(timezone.utc).strftime("%Y-%m-%d")}}
+    elif period == "7days":
+        date_filter = {"created_at": {"$gte": (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()}}
+    elif period == "30days":
+        date_filter = {"created_at": {"$gte": (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()}}
+    elif period == "90days":
+        date_filter = {"created_at": {"$gte": (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()}}
+    
+    purchase_match = {"tenant_id": tid, **date_filter}
+    shipment_match = {"tenant_id": tid, **date_filter}
+    
     # Total revenue, taxes, commissions, and profit
     revenue_stats = await db.purchases.aggregate([
-        {"$match": {"tenant_id": tid}},
+        {"$match": purchase_match},
         {"$group": {
             "_id": None,
             "total_price": {"$sum": "$price"},
@@ -3485,7 +3500,7 @@ async def get_business_stats(current_user: dict = Depends(get_current_user)):
     
     # Shipping revenue
     shipping_stats = await db.shipments.aggregate([
-        {"$match": {"tenant_id": tid}},
+        {"$match": shipment_match},
         {"$group": {
             "_id": None,
             "total_shipping": {"$sum": "$shipping_cost"},
@@ -3496,7 +3511,7 @@ async def get_business_stats(current_user: dict = Depends(get_current_user)):
     
     # Sales by store
     sales_by_store = await db.purchases.aggregate([
-        {"$match": {"tenant_id": tid}},
+        {"$match": purchase_match},
         {"$group": {
             "_id": "$store",
             "total_sales": {"$sum": "$price"},
@@ -3508,8 +3523,11 @@ async def get_business_stats(current_user: dict = Depends(get_current_user)):
     ]).to_list(10)
     
     # Sales by live
+    live_match = {"tenant_id": tid}
+    if date_filter:
+        live_match.update(date_filter)
     sales_by_live = await db.lives.aggregate([
-        {"$match": {"tenant_id": tid}},
+        {"$match": live_match},
         {"$project": {
             "title": 1,
             "store": 1,
@@ -3523,12 +3541,12 @@ async def get_business_stats(current_user: dict = Depends(get_current_user)):
         {"$limit": 15}
     ]).to_list(15)
     
-    # Sales trend by date (last 30 days)
-    from datetime import timedelta
-    thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    # Sales trend by date
+    trend_days = 7 if period == "7days" else 30 if period == "30days" else 90 if period == "90days" else 30
+    trend_since = (datetime.now(timezone.utc) - timedelta(days=trend_days)).isoformat()
     
     sales_by_date = await db.purchases.aggregate([
-        {"$match": {"tenant_id": tid, "created_at": {"$gte": thirty_days_ago}}},
+        {"$match": {"tenant_id": tid, "created_at": {"$gte": trend_since}}},
         {"$project": {
             "date": {"$substr": ["$created_at", 0, 10]},
             "price": 1,
@@ -3545,8 +3563,11 @@ async def get_business_stats(current_user: dict = Depends(get_current_user)):
     ]).to_list(30)
     
     # Wallet deposits (approved) - total recharges received
+    deposit_match = {"tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}}
+    if date_filter:
+        deposit_match.update(date_filter)
     deposits_stats = await db.wallet_transactions.aggregate([
-        {"$match": {"tenant_id": tid, "type": "deposit", "status": "approved"}},
+        {"$match": deposit_match},
         {"$group": {
             "_id": None,
             "total_deposits": {"$sum": "$amount"},
@@ -3569,8 +3590,8 @@ async def get_business_stats(current_user: dict = Depends(get_current_user)):
     deposits = deposits_stats[0] if deposits_stats else {"total_deposits": 0, "deposit_count": 0}
     wallets = wallet_stats[0] if wallet_stats else {"total_balance": 0, "wallet_count": 0}
     
-    # Calculate profit (commissions + shipping = gross profit for the business)
-    gross_profit = revenue["total_commission"] + shipping["total_shipping"]
+    # Calculate profit (commissions only = gross profit for the business)
+    gross_profit = revenue["total_commission"]
     
     return {
         "revenue": {

@@ -47,6 +47,7 @@ export default function AdminStats() {
   const [debtsData, setDebtsData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("resumen");
+  const [period, setPeriod] = useState("all");
   
   // Filtros para deudas
   const [searchTerm, setSearchTerm] = useState("");
@@ -56,23 +57,30 @@ export default function AdminStats() {
   const [sortBy, setSortBy] = useState("debt");
   const [sortAsc, setSortAsc] = useState(false);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [statsRes, debtsRes] = await Promise.all([
-          getBusinessStats(),
-          getClientsDebtsReport()
-        ]);
-        setStats(statsRes.data);
-        setDebtsData(debtsRes.data);
-      } catch (e) {
-        toast.error("Error al cargar estadisticas");
-      } finally {
-        setLoading(false);
-      }
+  const loadStats = async (p) => {
+    try {
+      setLoading(true);
+      const [statsRes, debtsRes] = await Promise.all([
+        getBusinessStats(p || period),
+        getClientsDebtsReport()
+      ]);
+      setStats(statsRes.data);
+      setDebtsData(debtsRes.data);
+    } catch (e) {
+      toast.error("Error al cargar estadisticas");
+    } finally {
+      setLoading(false);
     }
-    load();
+  };
+
+  useEffect(() => {
+    loadStats();
   }, []);
+
+  const handlePeriodChange = (newPeriod) => {
+    setPeriod(newPeriod);
+    loadStats(newPeriod);
+  };
 
   // Datos filtrados y ordenados
   const filteredClients = useMemo(() => {
@@ -183,13 +191,36 @@ export default function AdminStats() {
       </div>
 
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+        {/* Period Filter */}
+        <div className="flex flex-wrap gap-2" data-testid="period-filter">
+          {[
+            { value: "today", label: "Hoy" },
+            { value: "7days", label: "7 dias" },
+            { value: "30days", label: "30 dias" },
+            { value: "90days", label: "90 dias" },
+            { value: "all", label: "Todo" }
+          ].map((opt) => (
+            <Button
+              key={opt.value}
+              variant={period === opt.value ? "default" : "outline"}
+              size="sm"
+              className={`rounded-xl text-sm ${period === opt.value ? '' : ''}`}
+              style={period === opt.value ? { background: '#1E3A5F', color: 'white' } : {}}
+              onClick={() => handlePeriodChange(opt.value)}
+              data-testid={`period-${opt.value}`}
+            >
+              {opt.label}
+            </Button>
+          ))}
+        </div>
+
         {/* Summary Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="rounded-xl bg-gradient-to-br from-green-50 to-green-100 border-green-200">
             <CardContent className="p-4">
               <Badge className="bg-green-600 text-white text-xs mb-2">Ganancia</Badge>
               <p className="text-2xl font-extrabold text-green-700">{formatMoney(rev.gross_profit)}</p>
-              <p className="text-xs text-green-600">Comisiones + Envios</p>
+              <p className="text-xs text-green-600">Solo Comisiones</p>
             </CardContent>
           </Card>
           <Card className="rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
