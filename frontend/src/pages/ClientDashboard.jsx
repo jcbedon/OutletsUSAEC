@@ -262,7 +262,8 @@ export default function ClientDashboard() {
               const totalRecharges = transactions
                 .filter(t => (t.type === 'deposit' || t.type === 'initial_balance' || t.type === 'referral_bonus') && t.status === 'approved' && !t.is_deleted)
                 .reduce((sum, t) => sum + t.amount, 0);
-              const totalDebt = totalPurchases + totalShipping;
+              const saldoAnterior = wallet?.total_saldo_pendiente || 0;
+              const totalDebt = totalPurchases + totalShipping + saldoAnterior;
               const balance = totalRecharges - totalDebt;
               const needsRecharge = balance < 0;
               
@@ -295,6 +296,12 @@ export default function ClientDashboard() {
                       <p className="text-white/70">Total Envios:</p>
                       <p className="font-medium text-red-300">${totalShipping.toFixed(2)}</p>
                     </div>
+                    {saldoAnterior > 0 && (
+                      <div className="flex justify-between items-center text-sm">
+                        <p className="text-white/70">Saldo Anterior:</p>
+                        <p className="font-medium text-orange-300">${saldoAnterior.toFixed(2)}</p>
+                      </div>
+                    )}
                     <div className="flex justify-between items-center text-sm border-t border-white/20 pt-2">
                       <p className="text-white/70">Total Recargas:</p>
                       <p className="font-medium text-green-300">${totalRecharges.toFixed(2)}</p>

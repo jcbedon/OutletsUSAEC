@@ -1072,6 +1072,14 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
     ]).to_list(len(user_ids))
     pending_purchases_dict = {p["_id"]: p["count"] for p in pending_purchases_agg}
     
+    # Aggregate saldo_pendiente from non-annulled invoices per customer
+    customer_ids_list = [u.get("customer_id") for u in users if u.get("customer_id")]
+    saldo_pendiente_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": {"$in": customer_ids_list}, "is_annulled": {"$ne": True}, "saldo_pendiente": {"$gt": 0}}},
+        {"$group": {"_id": "$customer_id", "total_saldo": {"$sum": "$saldo_pendiente"}}}
+    ]).to_list(len(customer_ids_list) or 1)
+    saldo_pendiente_dict = {s["_id"]: s["total_saldo"] for s in saldo_pendiente_agg}
+    
     result = []
     for user in users:
         uid = user["id"]
@@ -1079,13 +1087,15 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         wallet_balance = wallet["available"] if wallet else 0
         purch = purchases_dict.get(uid, {"total": 0, "count": 0})
         total_shipping = shipments_dict.get(uid, 0)
-        pending_balance = wallet_balance - total_shipping
+        total_saldo_pendiente = saldo_pendiente_dict.get(user.get("customer_id"), 0)
+        pending_balance = wallet_balance - total_shipping - total_saldo_pendiente
         pending_to_invoice = pending_purchases_dict.get(uid, 0)
         result.append({
             **user, 
             "wallet_balance": round(wallet_balance, 2),
             "total_purchases": round(purch["total"], 2),
             "total_shipping": round(total_shipping, 2),
+            "total_saldo_pendiente": round(total_saldo_pendiente, 2),
             "pending_balance": round(pending_balance, 2),
             "purchase_count": purch["count"],
             "is_active": user.get("is_active", True),
@@ -1450,7 +1460,18 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
     wallet = await db.wallets.find_one({"user_id": user_id, "tenant_id": tid}, {"_id": 0})
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
-    return wallet
+    
+    # Include total saldo_pendiente from invoices
+    customer_id = wallet.get("customer_id")
+    saldo_pend = 0
+    if customer_id:
+        agg = await db.invoices.aggregate([
+            {"$match": {"tenant_id": tid, "customer_id": customer_id, "is_annulled": {"$ne": True}, "saldo_pendiente": {"$gt": 0}}},
+            {"$group": {"_id": None, "total": {"$sum": "$saldo_pendiente"}}}
+        ]).to_list(1)
+        saldo_pend = agg[0]["total"] if agg else 0
+    
+    return {**wallet, "total_saldo_pendiente": round(saldo_pend, 2)}
 
 @api_router.post("/wallet/deposit-request")
 async def request_deposit(deposit: WalletDepositRequest, current_user: dict = Depends(get_current_user)):
@@ -3770,6 +3791,14 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
     total_debt = 0
     clients_with_debt = 0
     
+    # Get saldo_pendiente per customer from invoices
+    cust_ids = [c.get("customer_id") for c in clients if c.get("customer_id")]
+    saldo_pend_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": {"$in": cust_ids}, "is_annulled": {"$ne": True}, "saldo_pendiente": {"$gt": 0}}},
+        {"$group": {"_id": "$customer_id", "total_saldo": {"$sum": "$saldo_pendiente"}}}
+    ]).to_list(len(cust_ids) or 1)
+    saldo_pend_dict = {s["_id"]: s["total_saldo"] for s in saldo_pend_agg}
+    
     for client in clients:
         uid = client["id"]
         wallet = wallets_dict.get(uid)
@@ -3777,10 +3806,10 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         
         purch = purchases_dict.get(uid, {"total_spent": 0, "purchase_count": 0})
         ship = shipments_dict.get(uid, {"total_shipping": 0, "shipment_count": 0})
+        saldo_ant = saldo_pend_dict.get(client.get("customer_id"), 0)
         
-        # Pending balance = what client still owes (wallet balance - shipping costs)
-        # Negative means they owe money
-        pending_balance = round(wallet_balance - ship["total_shipping"], 2)
+        # Pending balance = wallet balance - shipping - saldo pendiente (deuda anterior)
+        pending_balance = round(wallet_balance - ship["total_shipping"] - saldo_ant, 2)
         
         # If pending_balance is negative, the client has debt
         debt_amount = abs(pending_balance) if pending_balance < 0 else 0
@@ -3799,6 +3828,7 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
             "wallet_balance": round(wallet_balance, 2),
             "total_spent": round(purch["total_spent"], 2),
             "total_shipping": round(ship["total_shipping"], 2),
+            "total_saldo_pendiente": round(saldo_ant, 2),
             "pending_balance": pending_balance,
             "debt_amount": debt_amount,
             "purchase_count": purch["purchase_count"],

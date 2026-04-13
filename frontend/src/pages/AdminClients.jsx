@@ -567,9 +567,9 @@ https://outletsusaec.shop/`;
                                 data-testid={`pending-balance-${client.customer_id}`}>
                                 {client.pending_balance < 0 ? '-' : '+'}${Math.abs(client.pending_balance || 0).toFixed(2)}
                               </p>
-                              {(client.total_purchases > 0 || client.total_shipping > 0) && (
+                              {(client.total_purchases > 0 || client.total_shipping > 0 || client.total_saldo_pendiente > 0) && (
                                 <p className="text-xs text-gray-400 mt-1">
-                                  Compras: ${client.total_purchases?.toFixed(2)} | Envío: ${client.total_shipping?.toFixed(2)}
+                                  Compras: ${client.total_purchases?.toFixed(2)} | Envio: ${client.total_shipping?.toFixed(2)}{client.total_saldo_pendiente > 0 ? ` | Ant: $${client.total_saldo_pendiente?.toFixed(2)}` : ''}
                                 </p>
                               )}
                             </div>
