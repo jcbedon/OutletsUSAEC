@@ -27,7 +27,7 @@ export default function AdminClients() {
   const [editingClient, setEditingClient] = useState(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState({
-    name: "", whatsapp: "", country: "", email: "", new_password: "", commission_fee: ""
+    name: "", whatsapp: "", country: "", email: "", new_password: "", commission_fee: "", customer_id: ""
   });
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -130,7 +130,8 @@ export default function AdminClients() {
       country: client.country || "",
       email: client.email || "",
       new_password: "",
-      commission_fee: client.commission_fee?.toString() || "3"
+      commission_fee: client.commission_fee?.toString() || "3",
+      customer_id: client.customer_id || ""
     });
     setEditDialogOpen(true);
   };
@@ -216,7 +217,8 @@ export default function AdminClients() {
 
   const getWhatsAppMessage = () => {
     if (!createdClientInfo) return "";
-    return `✅ *Bienvenido a Outlets USA EC*
+    const storeName = tenantInfo?.business_name || "Outlets USA EC";
+    return `✅ *Bienvenido a ${storeName}*
 
 Tu cuenta fue creada:
 👤 Usuario: *${createdClientInfo.customer_id}*
@@ -339,8 +341,8 @@ https://outletsusaec.shop/`;
                   </div>
                 </div>
                 <div>
-                  <Label>Email (opcional)</Label>
-                  <Input type="email" placeholder="email@ejemplo.com" className="rounded-xl mt-1"
+                  <Label>Email de Cliente (opcional)</Label>
+                  <Input type="email" placeholder="" className="rounded-xl mt-1"
                     value={newClient.email} 
                     onChange={(e) => setNew("email", e.target.value)} 
                     onBlur={checkForDuplicates}
@@ -372,7 +374,7 @@ https://outletsusaec.shop/`;
                     <Input 
                       data-testid="new-client-password" 
                       type={showPassword ? "text" : "password"} 
-                      placeholder="Contraseña" 
+                      placeholder="" 
                       className="rounded-xl pr-10"
                       value={newClient.password} 
                       onChange={(e) => setNew("password", e.target.value)} 
@@ -734,6 +736,22 @@ https://outletsusaec.shop/`;
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4 pt-2">
+              {/* Customer ID - Editable */}
+              <div>
+                <Label className="flex items-center gap-2">
+                  <Hash className="h-4 w-4" />
+                  Código de Cliente
+                </Label>
+                <Input 
+                  placeholder="Código de cliente" 
+                  className="rounded-xl mt-1 font-bold"
+                  value={editForm.customer_id} 
+                  onChange={(e) => setEdit("customer_id", e.target.value.toUpperCase())} 
+                  data-testid="edit-client-customer-id"
+                  maxLength={20}
+                />
+                <p className="text-xs text-gray-500 mt-1">Este es el código con el que el cliente hace login</p>
+              </div>
               <div>
                 <Label>Nombre *</Label>
                 <Input 

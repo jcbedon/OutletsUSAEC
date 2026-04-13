@@ -1273,6 +1273,7 @@ class ClientUpdate(BaseModel):
     email: Optional[str] = None
     new_password: Optional[str] = None
     commission_fee: Optional[float] = None
+    customer_id: Optional[str] = None
 
 @api_router.put("/admin/clients/{user_id}")
 async def update_client(user_id: str, data: ClientUpdate, current_user: dict = Depends(get_current_user)):
@@ -1297,6 +1298,18 @@ async def update_client(user_id: str, data: ClientUpdate, current_user: dict = D
         updates["commission_fee"] = data.commission_fee
     if data.new_password:
         updates["password_hash"] = hash_password(data.new_password)
+    if data.customer_id:
+        new_cid = data.customer_id.strip().upper()
+        if new_cid != user.get("customer_id"):
+            existing = await db.users.find_one({"customer_id": new_cid, "tenant_id": tid}, {"_id": 0})
+            if existing:
+                raise HTTPException(status_code=400, detail=f"El código {new_cid} ya está en uso por otro cliente")
+            updates["customer_id"] = new_cid
+            # Update customer_id in related collections
+            await db.wallets.update_many({"user_id": user_id, "tenant_id": tid}, {"$set": {"customer_id": new_cid}})
+            await db.purchases.update_many({"user_id": user_id, "tenant_id": tid}, {"$set": {"customer_id": new_cid}})
+            await db.invoices.update_many({"user_id": user_id, "tenant_id": tid}, {"$set": {"customer_id": new_cid}})
+            await db.wallet_transactions.update_many({"user_id": user_id, "tenant_id": tid}, {"$set": {"customer_id": new_cid}})
     
     if updates:
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
