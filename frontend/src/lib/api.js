@@ -136,8 +136,8 @@ export const getClientPendingBalance = (customerId) => api.get(`/invoices/client
 export const getClientAvailableDeposits = (customerId) => api.get(`/invoices/client-available-deposits/${customerId}`);
 export const updateInvoiceSaldoPendiente = (invoiceId, saldoPendiente) => api.put(`/invoices/${invoiceId}/saldo-pendiente`, { saldo_pendiente: saldoPendiente });
 export const getClientInvoices = (customerId, includeAnnulled = false) => api.get(`/invoices/client/${customerId}${includeAnnulled ? '?include_annulled=true' : ''}`);
-export const getClientInvoicesForShipment = (customerId) => api.get(`/invoices/client/${customerId}/for-shipment`);
 export const getInvoiceDetail = (invoiceId) => api.get(`/invoices/${invoiceId}`);
+export const getClientInvoicesForShipment = (customerId) => api.get(`/invoices/client/${customerId}/for-shipment`);
 export const approveInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/approve`);
 export const removeItemFromInvoice = (invoiceId, purchaseId) => api.put(`/invoices/${invoiceId}/remove-item`, { purchase_id: purchaseId });
 export const reopenInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/reopen`);

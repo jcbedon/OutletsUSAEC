@@ -2862,9 +2862,15 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
 @api_router.get("/invoices/client/{customer_id}")
 async def get_client_invoices(customer_id: str, include_annulled: bool = False, current_user: dict = Depends(get_current_user)):
     """Get all invoices for a client"""
-    if current_user["role"] not in ["admin", "employee"]:
+    if current_user["role"] not in ["admin", "employee", "client"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
+    
+    # Client can only see their own invoices
+    if current_user["role"] == "client":
+        user = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0, "customer_id": 1})
+        if not user or user.get("customer_id", "").upper() != customer_id.upper():
+            raise HTTPException(status_code=403, detail="No autorizado")
     
     query = {
         "customer_id": customer_id.upper(),
@@ -3091,13 +3097,19 @@ async def search_invoices(
 @api_router.get("/invoices/{invoice_id}")
 async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_current_user)):
     """Get invoice with full details"""
-    if current_user["role"] not in ["admin", "employee"]:
+    if current_user["role"] not in ["admin", "employee", "client"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
     invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid}, {"_id": 0})
     if not invoice:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    # Client can only see their own invoices
+    if current_user["role"] == "client":
+        user = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0, "customer_id": 1})
+        if not user or invoice.get("customer_id") != user.get("customer_id"):
+            raise HTTPException(status_code=403, detail="No autorizado")
     
     # Get client info
     client = await db.users.find_one({"customer_id": invoice["customer_id"], "tenant_id": tid}, {"_id": 0})

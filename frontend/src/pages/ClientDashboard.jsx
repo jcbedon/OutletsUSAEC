@@ -7,7 +7,9 @@ import {
   getUserShipments, 
   getUserNotifications,
   getWalletTransactions,
-  requestDepositWithProof
+  requestDepositWithProof,
+  getClientInvoices,
+  getInvoiceDetail
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import InvoiceDialog from "@/components/InvoiceDialog";
 import { 
   ShoppingBag, 
   Truck, 
@@ -31,7 +34,9 @@ import {
   Camera,
   X,
   Paperclip,
-  Eye
+  Eye,
+  FileText,
+  Download
 } from "lucide-react";
 
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
@@ -58,6 +63,9 @@ export default function ClientDashboard() {
   const [shipmentDetailOpen, setShipmentDetailOpen] = useState(false);
   const [selectedShipment, setSelectedShipment] = useState(null);
   const [shipmentProducts, setShipmentProducts] = useState([]);
+  const [clientInvoices, setClientInvoices] = useState([]);
+  const [invoiceDialogOpen, setInvoiceDialogOpen] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
   
   const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
 
@@ -69,12 +77,13 @@ export default function ClientDashboard() {
 
   const loadData = async () => {
     try {
-      const [walletRes, purchasesRes, shipmentsRes, notificationsRes, transactionsRes] = await Promise.all([
+      const [walletRes, purchasesRes, shipmentsRes, notificationsRes, transactionsRes, invoicesRes] = await Promise.all([
         getWallet(user.user_id),
         getUserPurchases(user.user_id),
         getUserShipments(user.user_id),
         getUserNotifications(user.user_id),
-        getWalletTransactions(user.user_id)
+        getWalletTransactions(user.user_id),
+        getClientInvoices(user.customer_id).catch(() => ({ data: [] }))
       ]);
 
       setWallet(walletRes.data);
@@ -82,12 +91,19 @@ export default function ClientDashboard() {
       setShipments(shipmentsRes.data);
       setNotifications(notificationsRes.data);
       setTransactions(transactionsRes.data);
+      setClientInvoices(invoicesRes.data || []);
     } catch (error) {
       toast.error("Error al cargar datos");
     } finally {
       setLoading(false);
     }
   };
+
+  const handleOpenInvoice = async (invoice) => {
+    setSelectedInvoice(invoice);
+    setInvoiceDialogOpen(true);
+  };
+
 
   const handleRequestDeposit = async () => {
     if (!depositAmount || parseFloat(depositAmount) <= 0) {
@@ -451,8 +467,16 @@ export default function ClientDashboard() {
 
       {/* Tabs */}
       <div className="max-w-lg mx-auto px-4 mt-6">
-        <Tabs defaultValue="purchases" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-gray-100 rounded-xl p-1 h-auto">
+        <Tabs defaultValue="invoices" className="w-full">
+          <TabsList className="grid w-full grid-cols-5 bg-gray-100 rounded-xl p-1 h-auto">
+            <TabsTrigger 
+              value="invoices" 
+              className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
+              data-testid="tab-invoices"
+            >
+              <FileText className="h-4 w-4 mb-1" />
+              <span className="hidden sm:inline ml-1">Facturas</span>
+            </TabsTrigger>
             <TabsTrigger 
               value="purchases" 
               className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
@@ -475,7 +499,7 @@ export default function ClientDashboard() {
               data-testid="tab-shipments"
             >
               <Truck className="h-4 w-4 mb-1" />
-              <span className="hidden sm:inline ml-1">Envíos</span>
+              <span className="hidden sm:inline ml-1">Envios</span>
             </TabsTrigger>
             <TabsTrigger 
               value="notifications"
@@ -486,6 +510,55 @@ export default function ClientDashboard() {
               <span className="hidden sm:inline ml-1">Avisos</span>
             </TabsTrigger>
           </TabsList>
+
+          {/* Invoices Tab */}
+          <TabsContent value="invoices" className="mt-4">
+            <ScrollArea className="h-[400px]">
+              {clientInvoices.length === 0 ? (
+                <Card className="rounded-xl border-dashed border-2">
+                  <CardContent className="p-6 text-center">
+                    <FileText className="h-10 w-10 mx-auto text-gray-300 mb-2" />
+                    <p className="text-gray-500">No tienes facturas</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-3">
+                  {clientInvoices.map((inv, idx) => (
+                    <Card 
+                      key={inv.id} 
+                      className={`rounded-xl cursor-pointer hover:shadow-md transition-all ${idx === 0 ? 'border-2 border-blue-300 bg-blue-50/30' : ''}`}
+                      onClick={() => handleOpenInvoice(inv)}
+                      data-testid={`client-invoice-${inv.id}`}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="font-bold text-lg" style={{ color: '#1E3A5F' }}>{inv.invoice_number}</p>
+                              {idx === 0 && <Badge className="bg-blue-500 text-white text-xs">Ultima</Badge>}
+                            </div>
+                            <p className="text-sm text-gray-500">
+                              {new Date(inv.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              {' · '}{inv.purchase_ids?.length || 0} items
+                            </p>
+                          </div>
+                          <div className="text-right flex items-center gap-3">
+                            <div>
+                              <p className="font-extrabold text-xl" style={{ color: '#1E3A5F' }}>${inv.total?.toFixed(2)}</p>
+                              <Badge className={inv.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}>
+                                {inv.status === 'approved' ? 'Aprobada' : 'Pendiente'}
+                              </Badge>
+                            </div>
+                            <Download className="h-5 w-5 text-gray-400" />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </TabsContent>
 
           {/* Purchases Tab */}
           <TabsContent value="purchases" className="mt-4">
@@ -771,6 +844,18 @@ export default function ClientDashboard() {
         shipment={selectedShipment}
         products={shipmentProducts}
         backendUrl={backendUrl}
+      />
+
+      {/* Invoice Dialog for viewing/downloading */}
+      <InvoiceDialog
+        open={invoiceDialogOpen}
+        onOpenChange={(open) => {
+          setInvoiceDialogOpen(open);
+          if (!open) setSelectedInvoice(null);
+        }}
+        client={{ customer_id: user?.customer_id, name: user?.name }}
+        existingInvoice={selectedInvoice}
+        tenantInfo={{ business_name: user?.tenant_name, logo_url: user?.tenant_logo }}
       />
     </div>
   );
