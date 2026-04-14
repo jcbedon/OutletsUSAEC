@@ -227,6 +227,12 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [ ] Backend refactoring (split server.py into routers - currently ~4000+ lines)
 - [ ] InvoiceDialog.jsx refactoring (currently ~1200+ lines)
 
+## Recently Completed (Apr 14, 2026)
+
+### Bug Fixes (Apr 14, 2026)
+- [x] **P0 FIX: Lista de productos se comprimía al seleccionar en InvoiceDialog** - Eliminado `sticky bottom-0` de la sección de totales que cubría la lista de compras pendientes al crear factura
+- [x] **P1 FIX: Filtro semanal del Dashboard no aplicaba a Clientes** - Agregado `date_filter` al query de `client_count` en `/api/admin/reports/summary` para que filtre por `created_at` dentro de la semana actual
+
 ## Recently Completed (Apr 12, 2026)
 
 ### Invoice Column Format Update (Apr 12, 2026)
