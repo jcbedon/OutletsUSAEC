@@ -43,7 +43,9 @@ import {
   Image as ImageIcon,
   Trash2,
   FileText,
-  AlertCircle
+  AlertCircle,
+  DollarSign,
+  ChevronDown
 } from "lucide-react";
 
 const LOGO_URL_DEFAULT = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
@@ -66,6 +68,7 @@ export default function AdminShipments() {
   const [shipments, setShipments] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [weekFilter, setWeekFilter] = useState("all");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [trackingDialogOpen, setTrackingDialogOpen] = useState(null);
   const [trackingNumbers, setTrackingNumbers] = useState([""]);  // Array of tracking numbers
@@ -438,8 +441,22 @@ export default function AdminShipments() {
   };
 
   const filterByStatus = (status) => {
-    if (status === "all") return shipments;
-    return shipments.filter(s => s.status === status);
+    const getWeekKey = (dateStr) => {
+      const d = new Date(dateStr);
+      const day = d.getDay();
+      const sunday = new Date(d);
+      sunday.setDate(d.getDate() - day);
+      sunday.setHours(0, 0, 0, 0);
+      return sunday.toISOString().slice(0, 10);
+    };
+    let filtered = shipments;
+    if (weekFilter !== "all") {
+      filtered = filtered.filter(s => getWeekKey(s.created_at) === weekFilter);
+    }
+    if (status !== "all") {
+      filtered = filtered.filter(s => s.status === status);
+    }
+    return filtered;
   };
 
   if (loading) {
@@ -928,36 +945,106 @@ export default function AdminShipments() {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-6">
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <Card className="rounded-xl">
-            <CardContent className="p-4 text-center">
-              <Clock className="h-6 w-6 text-yellow-600 mx-auto mb-2" />
-              <p className="text-2xl font-extrabold text-slate-800">
-                {shipments.filter(s => s.status === "preparing").length}
-              </p>
-              <p className="text-xs text-gray-500">Preparando</p>
-            </CardContent>
-          </Card>
-          <Card className="rounded-xl">
-            <CardContent className="p-4 text-center">
-              <Truck className="h-6 w-6 text-blue-600 mx-auto mb-2" />
-              <p className="text-2xl font-extrabold text-slate-800">
-                {shipments.filter(s => s.status === "in_transit").length}
-              </p>
-              <p className="text-xs text-gray-500">En Tránsito</p>
-            </CardContent>
-          </Card>
-          <Card className="rounded-xl">
-            <CardContent className="p-4 text-center">
-              <CheckCircle className="h-6 w-6 text-green-600 mx-auto mb-2" />
-              <p className="text-2xl font-extrabold text-slate-800">
-                {shipments.filter(s => s.status === "delivered").length}
-              </p>
-              <p className="text-xs text-gray-500">Entregados</p>
-            </CardContent>
-          </Card>
-        </div>
+        {/* Week Filter */}
+        {(() => {
+          // Generate week options from shipments
+          const getWeekKey = (dateStr) => {
+            const d = new Date(dateStr);
+            const day = d.getDay();
+            const sunday = new Date(d);
+            sunday.setDate(d.getDate() - day);
+            sunday.setHours(0, 0, 0, 0);
+            return sunday.toISOString().slice(0, 10);
+          };
+          const getWeekLabel = (dateStr) => {
+            const d = new Date(dateStr);
+            const day = d.getDay();
+            const sunday = new Date(d);
+            sunday.setDate(d.getDate() - day);
+            const saturday = new Date(sunday);
+            saturday.setDate(sunday.getDate() + 6);
+            const fmt = (dt) => dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+            return `${fmt(sunday)} - ${fmt(saturday)}`;
+          };
+
+          const weeks = {};
+          shipments.forEach(s => {
+            const key = getWeekKey(s.created_at);
+            if (!weeks[key]) weeks[key] = { label: getWeekLabel(s.created_at), total: 0, count: 0 };
+            weeks[key].total += s.shipping_cost || 0;
+            weeks[key].count++;
+          });
+          const weekList = Object.entries(weeks).sort((a, b) => b[0].localeCompare(a[0]));
+
+          const filtered = weekFilter === "all" ? shipments : shipments.filter(s => getWeekKey(s.created_at) === weekFilter);
+          const totalShipping = filtered.reduce((sum, s) => sum + (s.shipping_cost || 0), 0);
+          const totalWeight = filtered.reduce((sum, s) => sum + (s.weight_pounds || 0), 0);
+
+          return (
+            <>
+              {/* Total shipping + week selector */}
+              <div className="flex flex-wrap items-center gap-3 mb-4">
+                <Card className="rounded-xl flex-1 bg-gradient-to-r from-purple-50 to-purple-100 border-purple-200">
+                  <CardContent className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-purple-200 rounded-xl flex items-center justify-center">
+                        <DollarSign className="h-5 w-5 text-purple-700" />
+                      </div>
+                      <div>
+                        <p className="text-2xl font-extrabold text-purple-800">${totalShipping.toFixed(2)}</p>
+                        <p className="text-xs text-purple-600">Envios ({filtered.length}) · {totalWeight.toFixed(1)} lbs</p>
+                      </div>
+                    </div>
+                    <Select value={weekFilter} onValueChange={setWeekFilter}>
+                      <SelectTrigger className="w-48 h-9 rounded-lg text-xs bg-white" data-testid="week-filter">
+                        <SelectValue placeholder="Filtrar por semana" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas las semanas</SelectItem>
+                        {weekList.map(([key, w]) => (
+                          <SelectItem key={key} value={key} className="text-xs">
+                            {w.label} ({w.count}) · ${w.total.toFixed(0)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Status Stats */}
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <Card className="rounded-xl">
+                  <CardContent className="p-4 text-center">
+                    <Clock className="h-6 w-6 text-yellow-600 mx-auto mb-2" />
+                    <p className="text-2xl font-extrabold text-slate-800">
+                      {filtered.filter(s => s.status === "preparing").length}
+                    </p>
+                    <p className="text-xs text-gray-500">Preparando</p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl">
+                  <CardContent className="p-4 text-center">
+                    <Truck className="h-6 w-6 text-blue-600 mx-auto mb-2" />
+                    <p className="text-2xl font-extrabold text-slate-800">
+                      {filtered.filter(s => s.status === "in_transit").length}
+                    </p>
+                    <p className="text-xs text-gray-500">En Transito</p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl">
+                  <CardContent className="p-4 text-center">
+                    <CheckCircle className="h-6 w-6 text-green-600 mx-auto mb-2" />
+                    <p className="text-2xl font-extrabold text-slate-800">
+                      {filtered.filter(s => s.status === "delivered").length}
+                    </p>
+                    <p className="text-xs text-gray-500">Entregados</p>
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          );
+        })()}
 
         {/* Tabs */}
         <Tabs defaultValue="all" className="w-full">
