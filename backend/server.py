@@ -2720,10 +2720,10 @@ async def get_client_pending_balance(customer_id: str, current_user: dict = Depe
     pending_details = []
     
     for inv in invoices:
-        # Calculate grand total for this invoice
+        # Calculate total for this invoice WITHOUT saldo_pendiente
+        # (saldo_pendiente is debt carried from previous invoices, not new debt from this invoice)
         inv_subtotal = inv.get("subtotal", 0) + inv.get("total_commission", 0) + inv.get("total_tax", 0)
         ship_cost = inv.get("shipping_cost", 0)
-        saldo_prev = inv.get("saldo_pendiente", 0)
         
         # Check if shipment exists for this invoice
         shipment = await db.shipments.find_one(
@@ -2732,7 +2732,7 @@ async def get_client_pending_balance(customer_id: str, current_user: dict = Depe
         if shipment:
             ship_cost = shipment.get("shipping_cost", 0)
         
-        grand_total = inv_subtotal + ship_cost + saldo_prev
+        grand_total = inv_subtotal + ship_cost
         deposits = inv.get("deposits_applied", 0)
         remaining = max(0, grand_total - deposits)
         
