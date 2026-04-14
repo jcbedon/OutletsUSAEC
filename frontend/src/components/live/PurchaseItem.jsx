@@ -204,6 +204,9 @@ export default function PurchaseItem({
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Badge variant="outline" className="font-bold">#{purchase.customer_id}</Badge>
+                <span className="text-sm font-medium text-gray-700">
+                  {activeClients.find(c => c.customer_id === purchase.customer_id)?.name || ''}
+                </span>
                 <span className="text-xs text-gray-400">
                   {new Date(purchase.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
                 </span>
