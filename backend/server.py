@@ -3483,6 +3483,10 @@ async def get_reports_summary(current_user: dict = Depends(get_current_user)):
     total_shipping = await db.shipments.aggregate([
         {"$match": {"tenant_id": tid}}, {"$group": {"_id": None, "total": {"$sum": "$shipping_cost"}}}
     ]).to_list(1)
+    # Calculate total packages (8 lbs = 1 package per shipment)
+    all_weights = await db.shipments.find({"tenant_id": tid}, {"_id": 0, "weight_pounds": 1}).to_list(1000)
+    import math
+    total_packages = sum(math.ceil((s.get("weight_pounds", 0) or 0) / 8) for s in all_weights if (s.get("weight_pounds", 0) or 0) > 0)
     top_customers = await db.purchases.aggregate([
         {"$match": {"tenant_id": tid}},
         {"$group": {"_id": "$customer_id", "user_id": {"$first": "$user_id"}, "total_spent": {"$sum": "$total"}, "purchase_count": {"$sum": 1}}},
@@ -3498,6 +3502,7 @@ async def get_reports_summary(current_user: dict = Depends(get_current_user)):
         "client_count": client_count, "live_count": live_count,
         "pending_shipments": pending_shipments,
         "total_shipping": total_shipping[0]["total"] if total_shipping else 0,
+        "total_packages": total_packages,
         "top_customers": top_customers
     }
 

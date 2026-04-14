@@ -177,7 +177,7 @@ export default function AdminDashboard() {
         )}
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <Card className="rounded-xl" data-testid="stat-clients">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -235,6 +235,22 @@ export default function AdminDashboard() {
                     ${summary?.total_shipping?.toFixed(0) || 0}
                   </p>
                   <p className="text-xs text-gray-500">Envios</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-xl" data-testid="stat-packages">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
+                  <Package className="h-5 w-5 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-extrabold text-slate-800">
+                    {summary?.total_packages || 0}
+                  </p>
+                  <p className="text-xs text-gray-500">Paquetes</p>
                 </div>
               </div>
             </CardContent>
