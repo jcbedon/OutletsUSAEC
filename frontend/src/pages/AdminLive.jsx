@@ -45,7 +45,8 @@ import {
   Zap,
   Edit,
   Trash2,
-  X
+  X,
+  Search
 } from "lucide-react";
 
 // Default tax options
@@ -112,6 +113,7 @@ export default function AdminLive() {
     item_name: "", store: "", price: "", tax_option: "8.25",
     custom_tax: "", apply_commission: true, commission: "3", customer_id: ""
   });
+  const [purchaseSearch, setPurchaseSearch] = useState("");
   
   // Client autocomplete state
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
@@ -1118,17 +1120,47 @@ export default function AdminLive() {
               <Card className="rounded-2xl h-[calc(100vh-160px)]">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg">Compras del Live ({purchases.length})</CardTitle>
+                  <div className="relative mt-2">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      placeholder="Buscar por cliente o producto..."
+                      value={purchaseSearch}
+                      onChange={(e) => setPurchaseSearch(e.target.value)}
+                      className="pl-9 h-9 rounded-lg text-sm"
+                      data-testid="purchase-search-input"
+                    />
+                  </div>
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
-                  <ScrollArea className="h-[calc(100vh-260px)]">
-                    {purchases.length === 0 ? (
-                      <div className="text-center py-12 text-gray-400">
-                        <ShoppingBag className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                        <p>Sin compras aún</p>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {purchases.map((purchase) => (
+                  <ScrollArea className="h-[calc(100vh-300px)]">
+                    {(() => {
+                      const filtered = purchaseSearch.trim()
+                        ? purchases.filter(p => 
+                            p.customer_id?.toLowerCase().includes(purchaseSearch.toLowerCase()) ||
+                            p.item_name?.toLowerCase().includes(purchaseSearch.toLowerCase()) ||
+                            activeClients.find(c => c.customer_id === p.customer_id)?.name?.toLowerCase().includes(purchaseSearch.toLowerCase())
+                          )
+                        : purchases;
+                      
+                      if (filtered.length === 0 && purchases.length > 0) {
+                        return (
+                          <div className="text-center py-8 text-gray-400">
+                            <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                            <p className="text-sm">No se encontraron resultados</p>
+                          </div>
+                        );
+                      }
+                      if (filtered.length === 0) {
+                        return (
+                          <div className="text-center py-12 text-gray-400">
+                            <ShoppingBag className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                            <p>Sin compras aun</p>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-3">
+                          {filtered.map((purchase) => (
                           <PurchaseItem
                             key={purchase.id}
                             purchase={purchase}
@@ -1145,7 +1177,8 @@ export default function AdminLive() {
                           />
                         ))}
                       </div>
-                    )}
+                      );
+                    })()}
                   </ScrollArea>
                 </CardContent>
               </Card>
