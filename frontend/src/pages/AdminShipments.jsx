@@ -1013,10 +1013,10 @@ export default function AdminShipments() {
               </div>
 
               {/* Status Stats */}
-              <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-4 gap-3 mb-6">
                 <Card className="rounded-xl">
-                  <CardContent className="p-4 text-center">
-                    <Clock className="h-6 w-6 text-yellow-600 mx-auto mb-2" />
+                  <CardContent className="p-3 text-center">
+                    <Clock className="h-5 w-5 text-yellow-600 mx-auto mb-1" />
                     <p className="text-2xl font-extrabold text-slate-800">
                       {filtered.filter(s => s.status === "preparing").length}
                     </p>
@@ -1024,8 +1024,8 @@ export default function AdminShipments() {
                   </CardContent>
                 </Card>
                 <Card className="rounded-xl">
-                  <CardContent className="p-4 text-center">
-                    <Truck className="h-6 w-6 text-blue-600 mx-auto mb-2" />
+                  <CardContent className="p-3 text-center">
+                    <Truck className="h-5 w-5 text-blue-600 mx-auto mb-1" />
                     <p className="text-2xl font-extrabold text-slate-800">
                       {filtered.filter(s => s.status === "in_transit").length}
                     </p>
@@ -1033,12 +1033,21 @@ export default function AdminShipments() {
                   </CardContent>
                 </Card>
                 <Card className="rounded-xl">
-                  <CardContent className="p-4 text-center">
-                    <CheckCircle className="h-6 w-6 text-green-600 mx-auto mb-2" />
+                  <CardContent className="p-3 text-center">
+                    <CheckCircle className="h-5 w-5 text-green-600 mx-auto mb-1" />
                     <p className="text-2xl font-extrabold text-slate-800">
                       {filtered.filter(s => s.status === "delivered").length}
                     </p>
                     <p className="text-xs text-gray-500">Entregados</p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl">
+                  <CardContent className="p-3 text-center">
+                    <Package className="h-5 w-5 text-orange-600 mx-auto mb-1" />
+                    <p className="text-2xl font-extrabold text-slate-800">
+                      {filtered.reduce((total, s) => total + Math.ceil((s.weight_pounds || 0) / 8), 0)}
+                    </p>
+                    <p className="text-xs text-gray-500">Paquetes</p>
                   </CardContent>
                 </Card>
               </div>
