@@ -232,9 +232,9 @@ export default function AdminDashboard() {
                 </div>
                 <div>
                   <p className="text-2xl font-extrabold text-slate-800">
-                    {summary?.pending_shipments || 0}
+                    ${summary?.total_shipping?.toFixed(0) || 0}
                   </p>
-                  <p className="text-xs text-gray-500">Env. Pend.</p>
+                  <p className="text-xs text-gray-500">Envios</p>
                 </div>
               </div>
             </CardContent>

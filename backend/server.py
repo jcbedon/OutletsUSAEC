@@ -3480,6 +3480,9 @@ async def get_reports_summary(current_user: dict = Depends(get_current_user)):
     client_count = await db.users.count_documents({"role": "client", "tenant_id": tid})
     live_count = await db.lives.count_documents({"tenant_id": tid})
     pending_shipments = await db.shipments.count_documents({"status": {"$ne": "delivered"}, "tenant_id": tid})
+    total_shipping = await db.shipments.aggregate([
+        {"$match": {"tenant_id": tid}}, {"$group": {"_id": None, "total": {"$sum": "$shipping_cost"}}}
+    ]).to_list(1)
     top_customers = await db.purchases.aggregate([
         {"$match": {"tenant_id": tid}},
         {"$group": {"_id": "$customer_id", "user_id": {"$first": "$user_id"}, "total_spent": {"$sum": "$total"}, "purchase_count": {"$sum": 1}}},
@@ -3493,7 +3496,9 @@ async def get_reports_summary(current_user: dict = Depends(get_current_user)):
         "total_sales": total_sales[0]["total"] if total_sales else 0,
         "total_commissions": total_commissions[0]["total"] if total_commissions else 0,
         "client_count": client_count, "live_count": live_count,
-        "pending_shipments": pending_shipments, "top_customers": top_customers
+        "pending_shipments": pending_shipments,
+        "total_shipping": total_shipping[0]["total"] if total_shipping else 0,
+        "top_customers": top_customers
     }
 
 @api_router.get("/admin/reports/business-stats")
