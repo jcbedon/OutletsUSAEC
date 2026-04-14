@@ -960,7 +960,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
 
                   {/* Totals and Create button */}
                   {selectedPurchases.length > 0 && (
-                    <div className="sticky bottom-0 bg-white pt-4 border-t">
+                    <div className="bg-white pt-4 border-t">
                       <div className="p-4 rounded-xl" style={{ background: 'rgba(30,58,95,0.05)' }}>
                         {(() => {
                           const subtotal = selectedTotals.subtotal + selectedTotals.commission;

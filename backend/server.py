@@ -3484,7 +3484,7 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
     total_commissions = await db.purchases.aggregate([
         {"$match": purchase_match}, {"$group": {"_id": None, "total": {"$sum": "$commission"}}}
     ]).to_list(1)
-    client_count = await db.users.count_documents({"role": "client", "tenant_id": tid})
+    client_count = await db.users.count_documents({"role": "client", "tenant_id": tid, **date_filter})
     live_count = await db.lives.count_documents({"tenant_id": tid, **date_filter})
     pending_shipments = await db.shipments.count_documents({"status": {"$ne": "delivered"}, "tenant_id": tid})
     total_shipping = await db.shipments.aggregate([
