@@ -3421,6 +3421,12 @@ async def annul_invoice(invoice_id: str, data: dict = None, current_user: dict =
             {"$set": {"invoice_id": None, "invoiced_at": None}}
         )
     
+    # Unlink any shipment tied to this invoice
+    await db.shipments.update_many(
+        {"invoice_id": invoice_id, "tenant_id": tid},
+        {"$set": {"invoice_id": None}}
+    )
+    
     # Log audit
     await db.audit_logs.insert_one({
         "id": str(uuid.uuid4()),
