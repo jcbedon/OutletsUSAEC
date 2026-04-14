@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Form as FastAPIForm
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Form as FastAPIForm, Response
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
+import object_store
 import uuid
 from datetime import datetime, timezone, timedelta
 import random
@@ -32,6 +33,14 @@ UPLOAD_DIR = BACKEND_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(title="OUTLETS USA EC - SaaS Live Shopping API")
+
+@app.on_event("startup")
+async def startup_event():
+    try:
+        object_store.init_storage()
+        logging.info("Object storage initialized successfully")
+    except Exception as e:
+        logging.warning(f"Object storage init failed (will retry on first upload): {e}")
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -1010,10 +1019,9 @@ async def upload_tenant_logo(file: UploadFile = File(...), current_user: dict = 
     tenant_id = current_user["tenant_id"]
     ext = file.filename.split(".")[-1] if "." in file.filename else "png"
     filename = f"{tenant_id}_logo.{ext}"
-    filepath = UPLOAD_DIR / filename
-    with open(filepath, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-    logo_url = f"/api/uploads/{filename}"
+    file_data = await file.read()
+    obj_path = object_store.upload_file(file_data, filename, "logos")
+    logo_url = f"/api/uploads/{obj_path}"
     await db.tenants.update_one({"id": tenant_id}, {"$set": {"logo_url": logo_url}})
     return {"logo_url": logo_url}
 
@@ -1499,12 +1507,9 @@ async def request_deposit_with_proof(
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
     proof_url = None
     if file and file.filename:
-        ext = file.filename.split(".")[-1] if "." in file.filename else "png"
-        filename = f"proof_{uuid.uuid4().hex[:8]}.{ext}"
-        filepath = UPLOAD_DIR / filename
-        with open(filepath, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-        proof_url = f"/api/uploads/{filename}"
+        file_data = await file.read()
+        obj_path = object_store.upload_file(file_data, file.filename, "proofs")
+        proof_url = f"/api/uploads/{obj_path}"
     transaction = WalletTransaction(tenant_id=tid, user_id=user_id, customer_id=wallet["customer_id"],
         type="deposit", amount=amount, balance_after=wallet["available"],
         description=description, status="pending")
@@ -1783,10 +1788,9 @@ async def admin_create_recharge(
         raise HTTPException(status_code=400, detail="Formato de archivo no soportado. Use: jpg, jpeg, png, gif, webp, pdf")
     
     filename = f"proof_{uuid.uuid4().hex[:8]}.{ext}"
-    file_path = UPLOAD_DIR / filename
-    with open(file_path, "wb") as f:
-        f.write(await proof.read())
-    proof_url = f"/api/uploads/{filename}"
+    file_data = await proof.read()
+    obj_path = object_store.upload_file(file_data, filename, "proofs")
+    proof_url = f"/api/uploads/{obj_path}"
     
     # Update wallet balance immediately
     new_balance = wallet["available"] + amount
@@ -1904,13 +1908,9 @@ async def mobile_upload_recharge_proof(upload_token: str, file: UploadFile = Fil
     # Save file
     ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
     filename = f"recharge_proof_{upload_token[:8]}_{uuid.uuid4().hex[:8]}.{ext}"
-    filepath = UPLOAD_DIR / filename
-    
-    with open(filepath, "wb") as f:
-        content = await file.read()
-        f.write(content)
-    
-    image_url = f"/api/uploads/{filename}"
+    content = await file.read()
+    obj_path = object_store.upload_file(content, filename, "proofs")
+    image_url = f"/api/uploads/{obj_path}"
     
     # Mark token as used and store image URL
     await db.upload_tokens.update_one(
@@ -2017,16 +2017,12 @@ async def upload_store_invoice_image(
     if not live:
         raise HTTPException(status_code=404, detail="Live no encontrado")
     
-    # Save file - use UPLOAD_DIR to ensure correct path
+    # Save file
     ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
     filename = f"store_invoice_{live_id}_{uuid.uuid4().hex[:8]}.{ext}"
-    filepath = UPLOAD_DIR / filename
-    
-    with open(filepath, "wb") as f:
-        content = await file.read()
-        f.write(content)
-    
-    image_url = f"/api/uploads/{filename}"
+    content = await file.read()
+    obj_path = object_store.upload_file(content, filename, "invoices")
+    image_url = f"/api/uploads/{obj_path}"
     
     # Update live with image URL and recalculate profit if amount exists
     update_data = {"store_invoice_image": image_url}
@@ -2091,16 +2087,12 @@ async def mobile_upload_store_invoice(upload_token: str, file: UploadFile = File
     if not live:
         raise HTTPException(status_code=404, detail="Live no encontrado")
     
-    # Save file - use UPLOAD_DIR to ensure correct path
+    # Save file
     ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
     filename = f"store_invoice_{live_id}_{uuid.uuid4().hex[:8]}.{ext}"
-    filepath = UPLOAD_DIR / filename
-    
-    with open(filepath, "wb") as f:
-        content = await file.read()
-        f.write(content)
-    
-    image_url = f"/api/uploads/{filename}"
+    content = await file.read()
+    obj_path = object_store.upload_file(content, filename, "invoices")
+    image_url = f"/api/uploads/{obj_path}"
     
     # Update live with image URL
     update_data = {"store_invoice_image": image_url}
@@ -2538,19 +2530,12 @@ async def upload_shipment_attachment(shipment_id: str, file: UploadFile = File(.
     if not shipment:
         raise HTTPException(status_code=404, detail="Envío no encontrado")
     
-    # Save file - use UPLOAD_DIR to ensure correct path
-    shipments_upload_dir = UPLOAD_DIR / "shipments"
-    shipments_upload_dir.mkdir(parents=True, exist_ok=True)
+    # Save file to object store
     file_ext = Path(file.filename).suffix
     filename = f"{shipment_id}_{uuid.uuid4().hex[:8]}{file_ext}"
-    file_path = shipments_upload_dir / filename
-    
-    with open(file_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
-    
-    # URL must include /api prefix for proper routing
-    file_url = f"/api/uploads/shipments/{filename}"
+    content = await file.read()
+    obj_path = object_store.upload_file(content, filename, "shipments")
+    file_url = f"/api/uploads/{obj_path}"
     
     # Add to shipment attachments
     current_attachments = shipment.get("attachments", [])
@@ -4389,8 +4374,30 @@ async def health_check():
 
 # ==================== APP SETUP ====================
 
+@api_router.get("/uploads/{file_path:path}")
+async def serve_upload(file_path: str):
+    """Serve uploaded files - try object store first, then local fallback"""
+    # Try object store directly (path already includes app prefix)
+    try:
+        data, content_type = object_store.get_object(file_path)
+        return Response(content=data, media_type=content_type)
+    except Exception:
+        pass
+    
+    # Local fallback for old files
+    local_path = UPLOAD_DIR / file_path
+    if local_path.exists():
+        content_type = "image/jpeg"
+        ext = file_path.rsplit(".", 1)[-1].lower() if "." in file_path else ""
+        if ext == "png": content_type = "image/png"
+        elif ext == "gif": content_type = "image/gif"
+        elif ext == "webp": content_type = "image/webp"
+        elif ext == "pdf": content_type = "application/pdf"
+        return Response(content=local_path.read_bytes(), media_type=content_type)
+    
+    raise HTTPException(status_code=404, detail="File not found")
+
 app.include_router(api_router)
-app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
