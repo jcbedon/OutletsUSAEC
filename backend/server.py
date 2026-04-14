@@ -3473,28 +3473,42 @@ async def get_live_report(live_id: str, current_user: dict = Depends(get_current
         "purchase_count": live.get("purchase_count", 0)}
 
 @api_router.get("/admin/reports/summary")
-async def get_reports_summary(current_user: dict = Depends(get_current_user)):
+async def get_reports_summary(period: str = "week", current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
+    
+    # Build date filter based on period
+    import math
+    date_filter = {}
+    if period == "week":
+        # Current week: Sunday 00:00 to now
+        now = datetime.now(timezone.utc)
+        days_since_sunday = now.weekday() + 1 if now.weekday() != 6 else 0
+        sunday = now - timedelta(days=days_since_sunday)
+        sunday = sunday.replace(hour=0, minute=0, second=0, microsecond=0)
+        date_filter = {"created_at": {"$gte": sunday.isoformat()}}
+    # "all" = no filter
+    
+    purchase_match = {"tenant_id": tid, **date_filter}
+    shipment_match = {"tenant_id": tid, **date_filter}
+    
     total_sales = await db.purchases.aggregate([
-        {"$match": {"tenant_id": tid}}, {"$group": {"_id": None, "total": {"$sum": "$price"}}}
+        {"$match": purchase_match}, {"$group": {"_id": None, "total": {"$sum": "$price"}}}
     ]).to_list(1)
     total_commissions = await db.purchases.aggregate([
-        {"$match": {"tenant_id": tid}}, {"$group": {"_id": None, "total": {"$sum": "$commission"}}}
+        {"$match": purchase_match}, {"$group": {"_id": None, "total": {"$sum": "$commission"}}}
     ]).to_list(1)
     client_count = await db.users.count_documents({"role": "client", "tenant_id": tid})
-    live_count = await db.lives.count_documents({"tenant_id": tid})
+    live_count = await db.lives.count_documents({"tenant_id": tid, **date_filter})
     pending_shipments = await db.shipments.count_documents({"status": {"$ne": "delivered"}, "tenant_id": tid})
     total_shipping = await db.shipments.aggregate([
-        {"$match": {"tenant_id": tid}}, {"$group": {"_id": None, "total": {"$sum": "$shipping_cost"}}}
+        {"$match": shipment_match}, {"$group": {"_id": None, "total": {"$sum": "$shipping_cost"}}}
     ]).to_list(1)
-    # Calculate total packages (8 lbs = 1 package per shipment)
-    all_weights = await db.shipments.find({"tenant_id": tid}, {"_id": 0, "weight_pounds": 1}).to_list(1000)
-    import math
+    all_weights = await db.shipments.find(shipment_match, {"_id": 0, "weight_pounds": 1}).to_list(1000)
     total_packages = sum(math.ceil((s.get("weight_pounds", 0) or 0) / 8) for s in all_weights if (s.get("weight_pounds", 0) or 0) > 0)
     top_customers = await db.purchases.aggregate([
-        {"$match": {"tenant_id": tid}},
+        {"$match": purchase_match},
         {"$group": {"_id": "$customer_id", "user_id": {"$first": "$user_id"}, "total_spent": {"$sum": "$total"}, "purchase_count": {"$sum": 1}}},
         {"$sort": {"total_spent": -1}}, {"$limit": 10}
     ]).to_list(10)

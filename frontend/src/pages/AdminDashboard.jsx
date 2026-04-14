@@ -34,15 +34,17 @@ export default function AdminDashboard() {
   const [summary, setSummary] = useState(null);
   const [activeLive, setActiveLive] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [dashPeriod, setDashPeriod] = useState("week");
 
   useEffect(() => {
     loadData();
   }, []);
 
-  const loadData = async () => {
+  const loadData = async (period) => {
     try {
+      const p = period || dashPeriod;
       const [summaryRes, activeLiveRes] = await Promise.all([
-        getReportsSummary(),
+        getReportsSummary(p),
         getActiveLive()
       ]);
       setSummary(summaryRes.data);
@@ -53,6 +55,12 @@ export default function AdminDashboard() {
       setLoading(false);
     }
   };
+
+  const handleDashPeriod = (p) => {
+    setDashPeriod(p);
+    loadData(p);
+  };
+
 
   const handleLogout = () => {
     logout();
@@ -176,7 +184,28 @@ export default function AdminDashboard() {
           </Card>
         )}
 
-        {/* Stats Grid */}
+        {/* Period Filter + Stats Grid */}
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-medium text-gray-500">
+            {dashPeriod === "week" ? "Esta semana" : "Todo el tiempo"}
+          </p>
+          <div className="flex bg-gray-100 rounded-lg p-0.5" data-testid="dash-period-toggle">
+            <button
+              onClick={() => handleDashPeriod("week")}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${dashPeriod === "week" ? 'bg-white shadow text-slate-800' : 'text-gray-500'}`}
+              data-testid="dash-period-week"
+            >
+              Semana
+            </button>
+            <button
+              onClick={() => handleDashPeriod("all")}
+              className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${dashPeriod === "all" ? 'bg-white shadow text-slate-800' : 'text-gray-500'}`}
+              data-testid="dash-period-all"
+            >
+              Total
+            </button>
+          </div>
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <Card className="rounded-xl" data-testid="stat-clients">
             <CardContent className="p-4">
