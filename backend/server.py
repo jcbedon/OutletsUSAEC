@@ -2254,7 +2254,7 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
 @api_router.get("/purchases/user/{user_id}")
 async def get_user_purchases(user_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
-    purchases = await db.purchases.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
+    purchases = await db.purchases.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(5000)
     # Return purchases with their original values (commission was set at purchase time)
     result = []
     for p in purchases:
