@@ -497,14 +497,6 @@ export default function ClientDashboard() {
               <span className="hidden sm:inline ml-1">Compras</span>
             </TabsTrigger>
             <TabsTrigger 
-              value="history"
-              className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
-              data-testid="tab-history"
-            >
-              <History className="h-4 w-4 mb-1" />
-              <span className="hidden sm:inline ml-1">Historial</span>
-            </TabsTrigger>
-            <TabsTrigger 
               value="shipments"
               className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
               data-testid="tab-shipments"
@@ -722,61 +714,6 @@ export default function ClientDashboard() {
                       );
                     });
                   })()}
-                </div>
-              )}
-            </ScrollArea>
-          </TabsContent>
-
-          {/* Transaction History Tab */}
-          <TabsContent value="history" className="mt-4">
-            <ScrollArea className="h-[400px]">
-              {transactions.length === 0 ? (
-                <Card className="rounded-2xl border-dashed border-2 border-gray-200">
-                  <CardContent className="p-8 text-center">
-                    <History className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500 font-medium">Sin movimientos</p>
-                    <p className="text-gray-400 text-sm mt-1">Tu historial aparecerá aquí</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="space-y-3">
-                  {transactions.map((tx) => (
-                    <Card key={tx.id} className="rounded-xl border-gray-100" data-testid="transaction-item">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                            tx.type === 'deposit' ? 'bg-green-100' : 'bg-red-100'
-                          }`}>
-                            {tx.type === 'deposit' ? (
-                              <Plus className={`h-5 w-5 text-green-600`} />
-                            ) : (
-                              <ShoppingBag className={`h-5 w-5 text-red-600`} />
-                            )}
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium text-slate-800">{tx.description}</p>
-                            <p className="text-xs text-gray-400">
-                              {new Date(tx.created_at).toLocaleDateString('es-ES', {
-                                day: 'numeric',
-                                month: 'short',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}
-                            </p>
-                          </div>
-                          <div className="text-right">
-                            <p className={`font-bold ${tx.amount > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {tx.amount > 0 ? '+' : ''}${Math.abs(tx.amount).toFixed(2)}
-                            </p>
-                            <p className="text-xs text-gray-400">
-                              Saldo: ${tx.balance_after.toFixed(2)}
-                            </p>
-                            {getTransactionShipmentBadge(tx)}
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
                 </div>
               )}
             </ScrollArea>
