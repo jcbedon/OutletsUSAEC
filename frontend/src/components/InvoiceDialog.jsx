@@ -1308,8 +1308,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                 );
               })()}
 
-              {/* Shipment Creation Prompt - Show after creating invoice */}
-              {showShipmentPrompt && currentInvoice.status !== "approved" && !currentInvoice.shipment && (
+              {/* Shipment Creation Prompt - Show when invoice has no shipment */}
+              {currentInvoice.status !== "approved" && !currentInvoice.shipment && (
                 <div className="p-4 rounded-xl bg-purple-50 border-2 border-purple-300 space-y-3">
                   <div className="flex items-start gap-3">
                     <Package className="h-6 w-6 text-purple-600 mt-0.5" />
