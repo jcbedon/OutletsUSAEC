@@ -3220,10 +3220,39 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
             {"$set": {"applied_deposits": applied_deposits, "deposits_applied": deposits_applied}}
         )
     
+    # Calculate real client balance (same formula as /admin/clients)
+    real_client_balance = 0
+    if client:
+        # Total recharges
+        recharges_agg = await db.wallet_transactions.aggregate([
+            {"$match": {"user_id": client["id"], "tenant_id": tid, "type": {"$in": ["deposit", "initial_balance", "referral_bonus"]}, "status": "approved", "is_deleted": {"$ne": True}}},
+            {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+        ]).to_list(1)
+        total_recharges = recharges_agg[0]["total"] if recharges_agg else 0
+        # Total purchases
+        purchases_agg = await db.purchases.aggregate([
+            {"$match": {"user_id": client["id"], "tenant_id": tid}},
+            {"$group": {"_id": None, "total": {"$sum": "$total"}}}
+        ]).to_list(1)
+        total_purchases = purchases_agg[0]["total"] if purchases_agg else 0
+        # Total shipping
+        shipping_agg = await db.shipments.aggregate([
+            {"$match": {"user_id": client["id"], "tenant_id": tid}},
+            {"$group": {"_id": None, "total": {"$sum": "$shipping_cost"}}}
+        ]).to_list(1)
+        total_shipping = shipping_agg[0]["total"] if shipping_agg else 0
+        # Saldo pendiente from invoices
+        saldo_pend_agg = await db.invoices.aggregate([
+            {"$match": {"tenant_id": tid, "customer_id": invoice["customer_id"], "is_annulled": {"$ne": True}, "saldo_pendiente": {"$gt": 0}}},
+            {"$group": {"_id": None, "total": {"$sum": "$saldo_pendiente"}}}
+        ]).to_list(1)
+        total_saldo_pend = saldo_pend_agg[0]["total"] if saldo_pend_agg else 0
+        real_client_balance = round(total_recharges - total_purchases - total_shipping - total_saldo_pend, 2)
+
     return {
         **invoice,
         "client": client,
-        "client_balance": client_wallet.get("available", 0) if client_wallet else 0,
+        "client_balance": real_client_balance,
         "applied_deposits": applied_deposits,
         "deposits_applied": deposits_applied,
         "purchases": purchases,

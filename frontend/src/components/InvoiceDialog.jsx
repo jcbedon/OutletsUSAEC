@@ -1298,7 +1298,14 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                         {depositsApplied > grandTotal && (
                           <div className="mt-2 p-2 rounded-lg bg-green-100 border border-green-300 text-center">
                             <p className="text-sm font-bold text-green-800">
-                              Saldo disponible a favor: ${(depositsApplied - grandTotal).toFixed(2)}
+                              Saldo a favor en esta factura: ${(depositsApplied - grandTotal).toFixed(2)}
+                            </p>
+                          </div>
+                        )}
+                        {currentInvoice.client_balance != null && (
+                          <div className={`mt-2 p-2 rounded-lg border text-center ${currentInvoice.client_balance >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                            <p className={`text-xs font-medium ${currentInvoice.client_balance >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                              Saldo global del cliente: {currentInvoice.client_balance < 0 ? '-' : ''}${Math.abs(currentInvoice.client_balance).toFixed(2)}
                             </p>
                           </div>
                         )}
