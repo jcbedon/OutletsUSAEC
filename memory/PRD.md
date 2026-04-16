@@ -227,6 +227,18 @@ Multi-tenant SaaS platform for TikTok Live Shopping businesses. Each business (t
 - [ ] Backend refactoring (split server.py into routers - currently ~4000+ lines)
 - [ ] InvoiceDialog.jsx refactoring (currently ~1200+ lines)
 
+### Live Shopping - Resumen por Cliente (Apr 15, 2026)
+- [x] **NEW: Total de prendas** - Badge con conteo total de prendas arriba de la lista
+- [x] **NEW: Resumen de clientes** - Lista colapsable con clientes que compraron en el Live
+  - Nombre, cantidad de productos, total por cliente
+  - Click para expandir y ver detalle de productos
+  - Click filtra la lista principal para mostrar solo productos de ese cliente
+  - Botón "Ver todo" para restaurar la vista completa
+- [x] **NEW: Check de revisión** - Checkbox por cliente para marcar como "revisado"
+  - Nombre tachado cuando está marcado
+  - Contador X/N revisados
+- [x] **FIX: Límite de 50 compras** en endpoint `getUserPurchases` removido (causaba Total Compras incorrecto en wallet del cliente)
+
 ## Recently Completed (Apr 14, 2026)
 
 ### Bug Fixes (Apr 14, 2026)

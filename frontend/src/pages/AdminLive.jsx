@@ -30,6 +30,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import StoreInvoiceSection from "@/components/StoreInvoiceSection";
 import PurchaseItem from "@/components/live/PurchaseItem";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   Radio, 
   Play, 
@@ -46,7 +47,10 @@ import {
   Edit,
   Trash2,
   X,
-  Search
+  Search,
+  ChevronDown,
+  ChevronRight,
+  Package
 } from "lucide-react";
 
 // Default tax options
@@ -114,6 +118,8 @@ export default function AdminLive() {
     custom_tax: "", apply_commission: true, commission: "3", customer_id: ""
   });
   const [purchaseSearch, setPurchaseSearch] = useState("");
+  const [expandedClient, setExpandedClient] = useState(null);
+  const [reviewedClients, setReviewedClients] = useState({});
   
   // Client autocomplete state
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
@@ -1119,28 +1125,109 @@ export default function AdminLive() {
             <div>
               <Card className="rounded-2xl h-[calc(100vh-160px)]">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">Compras del Live ({purchases.length})</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg" data-testid="live-purchases-title">Compras del Live ({purchases.length})</CardTitle>
+                    <Badge className="bg-blue-100 text-blue-800 font-bold" data-testid="live-total-items">
+                      <Package className="h-3 w-3 mr-1" />
+                      {purchases.length} prendas
+                    </Badge>
+                  </div>
+
+                  {/* Client summary - collapsible */}
+                  {purchases.length > 0 && (() => {
+                    const clientGroups = {};
+                    purchases.forEach(p => {
+                      const cid = p.customer_id || "SIN_ID";
+                      if (!clientGroups[cid]) {
+                        const cl = activeClients.find(c => c.customer_id === cid);
+                        clientGroups[cid] = { name: cl?.name || cid, count: 0, total: 0 };
+                      }
+                      clientGroups[cid].count++;
+                      clientGroups[cid].total += p.total || 0;
+                    });
+                    const sortedClients = Object.entries(clientGroups).sort((a, b) => b[1].count - a[1].count);
+                    const reviewedCount = sortedClients.filter(([cid]) => reviewedClients[cid]).length;
+
+                    return (
+                      <div className="mt-2 border rounded-lg overflow-hidden" data-testid="client-summary-section">
+                        <div className="bg-slate-50 px-3 py-1.5 flex items-center justify-between text-xs text-slate-600 border-b">
+                          <span className="font-semibold">{sortedClients.length} clientes</span>
+                          <span>{reviewedCount}/{sortedClients.length} revisados</span>
+                        </div>
+                        <div className="max-h-[180px] overflow-y-auto divide-y divide-slate-100">
+                          {sortedClients.map(([cid, info]) => {
+                            const isExpanded = expandedClient === cid;
+                            const isReviewed = !!reviewedClients[cid];
+                            return (
+                              <div key={cid} data-testid={`client-group-${cid}`}>
+                                <div
+                                  className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-slate-50 transition-colors text-xs ${isExpanded ? 'bg-blue-50' : ''}`}
+                                  onClick={() => {
+                                    setExpandedClient(isExpanded ? null : cid);
+                                    setPurchaseSearch("");
+                                  }}
+                                >
+                                  <Checkbox
+                                    checked={isReviewed}
+                                    onCheckedChange={(checked) => {
+                                      setReviewedClients(prev => ({ ...prev, [cid]: !!checked }));
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="h-3.5 w-3.5 data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600"
+                                    data-testid={`review-check-${cid}`}
+                                  />
+                                  {isExpanded ? <ChevronDown className="h-3 w-3 text-slate-400" /> : <ChevronRight className="h-3 w-3 text-slate-400" />}
+                                  <span className={`font-medium flex-1 truncate ${isReviewed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                                    {info.name}
+                                  </span>
+                                  <Badge variant="outline" className="h-5 text-[10px] px-1.5 font-bold">
+                                    {info.count}
+                                  </Badge>
+                                  <span className="text-slate-500 font-medium w-16 text-right">${info.total.toFixed(2)}</span>
+                                </div>
+                                {isExpanded && (
+                                  <div className="bg-blue-50/50 px-3 py-1 space-y-0.5 border-t border-blue-100">
+                                    {purchases.filter(p => p.customer_id === cid).map(p => (
+                                      <div key={p.id} className="flex justify-between text-[10px] text-slate-500 py-0.5">
+                                        <span className="truncate flex-1">{p.item_name}</span>
+                                        <span className="ml-2 font-medium">${(p.total || 0).toFixed(2)}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="relative mt-2">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <Input
                       placeholder="Buscar por cliente o producto..."
                       value={purchaseSearch}
-                      onChange={(e) => setPurchaseSearch(e.target.value)}
+                      onChange={(e) => { setPurchaseSearch(e.target.value); setExpandedClient(null); }}
                       className="pl-9 h-9 rounded-lg text-sm"
                       data-testid="purchase-search-input"
                     />
                   </div>
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
-                  <ScrollArea className="h-[calc(100vh-300px)]">
+                  <ScrollArea className="h-[calc(100vh-520px)]">
                     {(() => {
-                      const filtered = purchaseSearch.trim()
-                        ? purchases.filter(p => 
+                      let filtered = purchases;
+                      // If a client is selected from the summary, filter to that client
+                      if (expandedClient && !purchaseSearch.trim()) {
+                        filtered = purchases.filter(p => p.customer_id === expandedClient);
+                      } else if (purchaseSearch.trim()) {
+                        filtered = purchases.filter(p => 
                             p.customer_id?.toLowerCase().includes(purchaseSearch.toLowerCase()) ||
                             p.item_name?.toLowerCase().includes(purchaseSearch.toLowerCase()) ||
                             activeClients.find(c => c.customer_id === p.customer_id)?.name?.toLowerCase().includes(purchaseSearch.toLowerCase())
-                          )
-                        : purchases;
+                          );
+                      }
                       
                       if (filtered.length === 0 && purchases.length > 0) {
                         return (
@@ -1160,6 +1247,16 @@ export default function AdminLive() {
                       }
                       return (
                         <div className="space-y-3">
+                          {expandedClient && !purchaseSearch.trim() && (
+                            <div className="flex items-center justify-between mb-1">
+                              <p className="text-xs text-blue-600 font-medium" data-testid="filtered-client-label">
+                                Mostrando: {activeClients.find(c => c.customer_id === expandedClient)?.name || expandedClient} ({filtered.length})
+                              </p>
+                              <Button variant="ghost" size="sm" className="h-6 text-xs px-2" onClick={() => setExpandedClient(null)} data-testid="show-all-btn">
+                                Ver todo
+                              </Button>
+                            </div>
+                          )}
                           {filtered.map((purchase) => (
                           <PurchaseItem
                             key={purchase.id}
