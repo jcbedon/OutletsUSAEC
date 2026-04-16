@@ -1104,7 +1104,7 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         total_saldo_pendiente = saldo_pendiente_dict.get(user.get("customer_id"), 0)
         total_recharges = recharges_dict.get(uid, 0)
         total_purchases = purch["total"]
-        pending_balance = total_recharges - total_purchases - total_shipping - total_saldo_pendiente
+        pending_balance = total_recharges - total_purchases - total_shipping
         pending_to_invoice = pending_purchases_dict.get(uid, 0)
         result.append({
             **user, 
@@ -3247,7 +3247,7 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
             {"$group": {"_id": None, "total": {"$sum": "$saldo_pendiente"}}}
         ]).to_list(1)
         total_saldo_pend = saldo_pend_agg[0]["total"] if saldo_pend_agg else 0
-        real_client_balance = round(total_recharges - total_purchases - total_shipping - total_saldo_pend, 2)
+        real_client_balance = round(total_recharges - total_purchases - total_shipping, 2)
 
     return {
         **invoice,
