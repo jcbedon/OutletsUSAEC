@@ -1088,20 +1088,28 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
     ]).to_list(len(customer_ids_list) or 1)
     saldo_pendiente_dict = {s["_id"]: s["total_saldo"] for s in saldo_pendiente_agg}
     
+    # Aggregate approved, non-deleted recharges per user
+    recharges_agg = await db.wallet_transactions.aggregate([
+        {"$match": {"user_id": {"$in": user_ids}, "tenant_id": tid, "type": {"$in": ["deposit", "initial_balance", "referral_bonus"]}, "status": "approved", "is_deleted": {"$ne": True}}},
+        {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}}
+    ]).to_list(len(user_ids))
+    recharges_dict = {r["_id"]: r["total"] for r in recharges_agg}
+    
     result = []
     for user in users:
         uid = user["id"]
         wallet = wallets_dict.get(uid)
-        wallet_balance = wallet["available"] if wallet else 0
         purch = purchases_dict.get(uid, {"total": 0, "count": 0})
         total_shipping = shipments_dict.get(uid, 0)
         total_saldo_pendiente = saldo_pendiente_dict.get(user.get("customer_id"), 0)
-        pending_balance = wallet_balance - total_shipping - total_saldo_pendiente
+        total_recharges = recharges_dict.get(uid, 0)
+        total_purchases = purch["total"]
+        pending_balance = total_recharges - total_purchases - total_shipping - total_saldo_pendiente
         pending_to_invoice = pending_purchases_dict.get(uid, 0)
         result.append({
             **user, 
-            "wallet_balance": round(wallet_balance, 2),
-            "total_purchases": round(purch["total"], 2),
+            "wallet_balance": round(total_recharges, 2),
+            "total_purchases": round(total_purchases, 2),
             "total_shipping": round(total_shipping, 2),
             "total_saldo_pendiente": round(total_saldo_pendiente, 2),
             "pending_balance": round(pending_balance, 2),
