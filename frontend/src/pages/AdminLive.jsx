@@ -1140,10 +1140,12 @@ export default function AdminLive() {
                       const cid = p.customer_id || "SIN_ID";
                       if (!clientGroups[cid]) {
                         const cl = activeClients.find(c => c.customer_id === cid);
-                        clientGroups[cid] = { name: cl?.name || cid, count: 0, total: 0 };
+                        clientGroups[cid] = { name: cl?.name || cid, count: 0, total: 0, price: 0, commission: 0 };
                       }
                       clientGroups[cid].count++;
                       clientGroups[cid].total += p.total || 0;
+                      clientGroups[cid].price += p.price || 0;
+                      clientGroups[cid].commission += p.commission || 0;
                     });
                     const sortedClients = Object.entries(clientGroups).sort((a, b) => b[1].count - a[1].count);
                     const reviewedCount = sortedClients.filter(([cid]) => reviewedClients[cid]).length;
@@ -1183,14 +1185,16 @@ export default function AdminLive() {
                                   <Badge variant="outline" className="h-5 text-[10px] px-1.5 font-bold">
                                     {info.count}
                                   </Badge>
-                                  <span className="text-slate-500 font-medium w-16 text-right">${info.total.toFixed(2)}</span>
+                                  <span className="text-slate-500 text-[10px] w-20 text-right">${info.price.toFixed(2)}</span>
+                                  <span className="text-emerald-600 text-[10px] w-14 text-right">+${info.commission.toFixed(2)}</span>
                                 </div>
                                 {isExpanded && (
                                   <div className="bg-blue-50/50 px-3 py-1 space-y-0.5 border-t border-blue-100">
                                     {purchases.filter(p => p.customer_id === cid).map(p => (
-                                      <div key={p.id} className="flex justify-between text-[10px] text-slate-500 py-0.5">
+                                      <div key={p.id} className="flex items-center text-[10px] text-slate-500 py-0.5">
                                         <span className="truncate flex-1">{p.item_name}</span>
-                                        <span className="ml-2 font-medium">${(p.total || 0).toFixed(2)}</span>
+                                        <span className="w-16 text-right">${(p.price || 0).toFixed(2)}</span>
+                                        <span className="w-14 text-right text-emerald-600">+${(p.commission || 0).toFixed(2)}</span>
                                       </div>
                                     ))}
                                   </div>
