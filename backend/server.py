@@ -2681,7 +2681,7 @@ async def get_client_available_deposits(customer_id: str, current_user: dict = D
     
     # Get amounts consumed by PENDING invoices only (approved = paid = deposits freed)
     invoices = await db.invoices.find(
-        {"customer_id": customer_id.upper(), "tenant_id": tid, "is_annulled": {"$ne": True}, "status": "pending"},
+        {"customer_id": customer_id.upper(), "tenant_id": tid, "is_annulled": {"$ne": True}},
         {"_id": 0, "applied_deposits": 1}
     ).to_list(1000)
     
@@ -2817,7 +2817,7 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     # Get amounts consumed by other PENDING (unpaid) invoices only
     # Approved invoices are already paid, so their deposits are freed
     other_invoices = await db.invoices.find(
-        {"customer_id": customer_id, "tenant_id": tid, "is_annulled": {"$ne": True}, "status": "pending"},
+        {"customer_id": customer_id, "tenant_id": tid, "is_annulled": {"$ne": True}},
         {"_id": 0, "applied_deposits": 1}
     ).to_list(1000)
     
@@ -3175,7 +3175,7 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
         # Get amounts consumed by OTHER PENDING invoices only
         # Approved invoices are paid, their deposits are freed
         other_invoices = await db.invoices.find(
-            {"customer_id": invoice["customer_id"], "tenant_id": tid, "id": {"$ne": invoice_id}, "is_annulled": {"$ne": True}, "status": "pending"},
+            {"customer_id": invoice["customer_id"], "tenant_id": tid, "id": {"$ne": invoice_id}, "is_annulled": {"$ne": True}},
             {"_id": 0, "applied_deposits": 1}
         ).to_list(1000)
         
