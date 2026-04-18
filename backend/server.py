@@ -2709,27 +2709,31 @@ async def get_client_pending_balance(customer_id: str, current_user: dict = Depe
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
-    # Get all non-annulled invoices for this client
+    # Get all non-annulled PENDING invoices for this client (approved = paid = no debt)
     invoices = await db.invoices.find(
-        {"customer_id": customer_id.upper(), "tenant_id": tid, "is_annulled": {"$ne": True}},
+        {"customer_id": customer_id.upper(), "tenant_id": tid, "is_annulled": {"$ne": True}, "status": "pending"},
         {"_id": 0, "id": 1, "invoice_number": 1, "subtotal": 1, "total_tax": 1, 
          "total_commission": 1, "total": 1, "applied_deposits": 1, "deposits_applied": 1,
-         "saldo_pendiente": 1, "shipping_cost": 1, "status": 1}
+         "saldo_pendiente": 1, "shipping_cost": 1, "status": 1, "purchase_ids": 1}
     ).to_list(1000)
     
     total_pending = 0
     pending_details = []
     
     for inv in invoices:
-        # Calculate total for this invoice WITHOUT saldo_pendiente
-        # (saldo_pendiente is debt carried from previous invoices, not new debt from this invoice)
+        # Calculate total for this invoice
         inv_subtotal = inv.get("subtotal", 0) + inv.get("total_commission", 0) + inv.get("total_tax", 0)
         ship_cost = inv.get("shipping_cost", 0)
         
-        # Check if shipment exists for this invoice
+        # Check if shipment exists for this invoice (by invoice_id or purchase_ids)
         shipment = await db.shipments.find_one(
             {"invoice_id": inv["id"], "tenant_id": tid}, {"_id": 0, "shipping_cost": 1}
         )
+        if not shipment and inv.get("purchase_ids"):
+            shipment = await db.shipments.find_one(
+                {"tenant_id": tid, "customer_id": customer_id.upper(), "purchase_ids": {"$in": inv["purchase_ids"]}},
+                {"_id": 0, "shipping_cost": 1}
+            )
         if shipment:
             ship_cost = shipment.get("shipping_cost", 0)
         

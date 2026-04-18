@@ -929,7 +929,9 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                       <div className="flex items-center justify-between mb-2">
                         <div>
                           <p className="text-sm font-semibold text-orange-800">Saldo Pendiente</p>
-                          <p className="text-xs text-orange-600">Deuda de facturas anteriores sin pagar</p>
+                          <p className="text-xs text-orange-600">
+                            {autoPendingBalance > 0 ? 'Calculado de facturas anteriores' : 'Deuda de facturas anteriores sin pagar'}
+                          </p>
                         </div>
                         <div className="w-32">
                           <Input
@@ -939,9 +941,10 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                             placeholder="0.00"
                             value={saldoPendiente}
                             onChange={(e) => setSaldoPendiente(e.target.value)}
-                            className="h-9 text-right font-bold text-orange-700 rounded-lg"
+                            className={`h-9 text-right font-bold rounded-lg ${autoPendingBalance > 0 ? 'text-orange-700 bg-orange-100 cursor-not-allowed' : 'text-orange-700'}`}
                             data-testid="saldo-pendiente-input"
                             onWheel={(e) => e.target.blur()}
+                            disabled={autoPendingBalance > 0}
                           />
                         </div>
                       </div>
