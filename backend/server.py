@@ -3161,9 +3161,64 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
             sort=[("created_at", -1)]  # Get the most recent one
         )
     
-    # Get applied deposits for THIS invoice (saved at creation time)
-    applied_deposits = invoice.get("applied_deposits", [])
-    deposits_applied = invoice.get("deposits_applied", 0)
+    # Recalculate ALL invoices for this client in chronological order (one pass, no circular dependency)
+    if client and not invoice.get("is_annulled"):
+        all_deposits = await db.wallet_transactions.find(
+            {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
+            {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
+        ).sort("created_at", 1).to_list(1000)
+        
+        all_client_invoices = await db.invoices.find(
+            {"customer_id": invoice["customer_id"], "tenant_id": tid, "is_annulled": {"$ne": True}},
+            {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "created_at": 1}
+        ).sort("created_at", 1).to_list(1000)
+        
+        # Also get shipping costs per invoice
+        inv_ids = [i["id"] for i in all_client_invoices]
+        inv_shipments = await db.shipments.find(
+            {"invoice_id": {"$in": inv_ids}, "tenant_id": tid},
+            {"_id": 0, "invoice_id": 1, "shipping_cost": 1}
+        ).to_list(1000)
+        ship_by_inv = {s["invoice_id"]: s.get("shipping_cost", 0) for s in inv_shipments}
+        
+        # Track how much of each deposit has been consumed globally
+        global_consumed = {dep.get("id", ""): 0 for dep in all_deposits}
+        
+        # Process each invoice in chronological order
+        for inv_doc in all_client_invoices:
+            inv_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + ship_by_inv.get(inv_doc["id"], 0)
+            
+            new_applied = []
+            remaining = inv_total
+            for dep in all_deposits:
+                if remaining <= 0:
+                    break
+                dep_id = dep.get("id", "")
+                available = round(dep["amount"] - global_consumed.get(dep_id, 0), 2)
+                if available <= 0:
+                    continue
+                apply = round(min(available, remaining), 2)
+                new_applied.append({
+                    "deposit_id": dep_id,
+                    "amount_applied": apply,
+                    "created_at": dep.get("created_at", ""),
+                    "description": dep.get("description", "")
+                })
+                global_consumed[dep_id] = global_consumed.get(dep_id, 0) + apply
+                remaining = round(remaining - apply, 2)
+            
+            new_total_applied = round(sum(ad["amount_applied"] for ad in new_applied), 2)
+            
+            # Save updated deposits for this invoice
+            await db.invoices.update_one(
+                {"id": inv_doc["id"], "tenant_id": tid},
+                {"$set": {"applied_deposits": new_applied, "deposits_applied": new_total_applied}}
+            )
+            
+            # Update local vars if this is the invoice being viewed
+            if inv_doc["id"] == invoice_id:
+                applied_deposits = new_applied
+                deposits_applied = new_total_applied
     
     # Calculate real client balance (same formula as /admin/clients)
     real_client_balance = 0
