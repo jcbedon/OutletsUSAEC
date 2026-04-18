@@ -1448,7 +1448,15 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-right">
-                          <p className={`font-extrabold text-xl ${inv.is_annulled ? 'line-through text-red-400' : ''}`} style={{ color: inv.is_annulled ? undefined : '#1E3A5F' }}>${inv.total.toFixed(2)}</p>
+                          <p className={`font-extrabold text-xl ${inv.is_annulled ? 'line-through text-red-400' : ''}`} style={{ color: inv.is_annulled ? undefined : '#1E3A5F' }}>
+                            ${((inv.total || 0) + (inv.saldo_pendiente || 0) + (inv.shipping_cost || 0)).toFixed(2)}
+                          </p>
+                          {(inv.deposits_applied || 0) > 0 && !inv.is_annulled && (
+                            <p className="text-xs text-green-600">Abonos: -${(inv.deposits_applied || 0).toFixed(2)}</p>
+                          )}
+                          {(inv.total_a_pagar != null && inv.total_a_pagar > 0 && !inv.is_annulled) && (
+                            <p className="text-xs font-bold text-red-600">A pagar: ${inv.total_a_pagar.toFixed(2)}</p>
+                          )}
                           {inv.is_annulled ? (
                             <Badge className="bg-red-100 text-red-700">Anulada</Badge>
                           ) : (
