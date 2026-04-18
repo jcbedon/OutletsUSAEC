@@ -84,18 +84,23 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
     }
   }, [open, client, existingInvoice]);
 
+  const [isFirstInvoice, setIsFirstInvoice] = useState(true);
+
   const loadPendingBalance = async () => {
     try {
       const [balRes, depRes] = await Promise.all([
         getClientPendingBalance(client.customer_id),
         getClientAvailableDeposits(client.customer_id)
       ]);
+      const isFirst = balRes.data.is_first_invoice !== false;
+      setIsFirstInvoice(isFirst);
       setAutoPendingBalance(balRes.data.total_pending || 0);
       setPendingDetails(balRes.data.details || []);
       setSaldoPendiente(balRes.data.total_pending > 0 ? balRes.data.total_pending.toFixed(2) : "");
       setAvailableDeposits(depRes.data || []);
     } catch {
       setAutoPendingBalance(0);
+      setIsFirstInvoice(true);
       setSaldoPendiente("");
       setAvailableDeposits([]);
     }
@@ -930,7 +935,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                         <div>
                           <p className="text-sm font-semibold text-orange-800">Saldo Pendiente</p>
                           <p className="text-xs text-orange-600">
-                            {autoPendingBalance > 0 ? 'Calculado de facturas anteriores' : 'Deuda de facturas anteriores sin pagar'}
+                            {!isFirstInvoice ? 'Total a pagar de factura anterior' : 'Deuda anterior (editable)'}
                           </p>
                         </div>
                         <div className="w-32">
@@ -941,10 +946,10 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                             placeholder="0.00"
                             value={saldoPendiente}
                             onChange={(e) => setSaldoPendiente(e.target.value)}
-                            className={`h-9 text-right font-bold rounded-lg ${autoPendingBalance > 0 ? 'text-orange-700 bg-orange-100 cursor-not-allowed' : 'text-orange-700'}`}
+                            className={`h-9 text-right font-bold rounded-lg ${!isFirstInvoice ? 'text-orange-700 bg-orange-100 cursor-not-allowed' : 'text-orange-700'}`}
                             data-testid="saldo-pendiente-input"
                             onWheel={(e) => e.target.blur()}
-                            disabled={autoPendingBalance > 0}
+                            disabled={!isFirstInvoice}
                           />
                         </div>
                       </div>
@@ -952,8 +957,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                         <div className="text-xs text-orange-600 space-y-0.5 border-t border-orange-200 pt-2 mt-1">
                           {pendingDetails.map((d, i) => (
                             <div key={i} className="flex justify-between">
-                              <span>{d.invoice_number}</span>
-                              <span>${d.remaining.toFixed(2)}</span>
+                              <span>{d.invoice_number}: Total a pagar</span>
+                              <span>${(d.total_a_pagar || d.remaining || 0).toFixed(2)}</span>
                             </div>
                           ))}
                         </div>

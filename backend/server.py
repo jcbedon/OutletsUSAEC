@@ -1643,9 +1643,6 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
         details={"amount": transaction["amount"], "customer_id": transaction["customer_id"], "new_balance": new_balance}
     )
     
-    # Recalculate invoice deposits for this client
-    await recalculate_client_invoices(tid, transaction["customer_id"])
-    
     return {"message": "Depósito aprobado", "new_balance": new_balance}
 
 @api_router.post("/wallet/reject-deposit/{transaction_id}")
@@ -1929,9 +1926,6 @@ async def admin_create_recharge(
             "proof_url": proof_url
         }
     )
-    
-    # Recalculate invoice deposits for this client
-    await recalculate_client_invoices(tid, user["customer_id"])
     
     return {
         "message": "Recarga creada exitosamente",
@@ -2782,56 +2776,58 @@ async def get_client_available_deposits(customer_id: str, current_user: dict = D
 
 @api_router.get("/invoices/client-pending-balance/{customer_id}")
 async def get_client_pending_balance(customer_id: str, current_user: dict = Depends(get_current_user)):
-    """Calculate pending balance from previous unpaid invoices for a client"""
+    """Get the 'Total a Pagar' from the most recent invoice as saldo pendiente for the next invoice"""
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
-    # Get all non-annulled invoices for this client (pending AND approved)
-    # "approved" means admin reviewed, NOT that client paid the remaining balance
-    invoices = await db.invoices.find(
+    # Find the most recent non-annulled invoice for this client
+    last_invoice = await db.invoices.find_one(
         {"customer_id": customer_id.upper(), "tenant_id": tid, "is_annulled": {"$ne": True}},
-        {"_id": 0, "id": 1, "invoice_number": 1, "subtotal": 1, "total_tax": 1, 
-         "total_commission": 1, "total": 1, "applied_deposits": 1, "deposits_applied": 1,
-         "saldo_pendiente": 1, "shipping_cost": 1, "status": 1, "purchase_ids": 1}
-    ).to_list(1000)
+        {"_id": 0, "id": 1, "invoice_number": 1, "total_a_pagar": 1, "total": 1, 
+         "deposits_applied": 1, "saldo_pendiente": 1, "shipping_cost": 1, "purchase_ids": 1,
+         "subtotal": 1, "total_tax": 1, "total_commission": 1},
+        sort=[("created_at", -1)]
+    )
     
-    total_pending = 0
-    pending_details = []
+    if not last_invoice:
+        return {"total_pending": 0, "details": [], "is_first_invoice": True}
     
-    for inv in invoices:
-        # Calculate total for this invoice
-        inv_subtotal = inv.get("subtotal", 0) + inv.get("total_commission", 0) + inv.get("total_tax", 0)
-        ship_cost = inv.get("shipping_cost", 0)
-        
-        # Check if shipment exists for this invoice (by invoice_id or purchase_ids)
+    # Use stored total_a_pagar if available, otherwise calculate it
+    total_a_pagar = last_invoice.get("total_a_pagar")
+    if total_a_pagar is None:
+        # Legacy invoice without total_a_pagar: calculate it
+        inv_subtotal = last_invoice.get("subtotal", 0) + last_invoice.get("total_commission", 0) + last_invoice.get("total_tax", 0)
+        ship_cost = last_invoice.get("shipping_cost", 0)
+        # Check shipment
         shipment = await db.shipments.find_one(
-            {"invoice_id": inv["id"], "tenant_id": tid}, {"_id": 0, "shipping_cost": 1}
+            {"invoice_id": last_invoice["id"], "tenant_id": tid}, {"_id": 0, "shipping_cost": 1}
         )
-        if not shipment and inv.get("purchase_ids"):
+        if not shipment and last_invoice.get("purchase_ids"):
             shipment = await db.shipments.find_one(
-                {"tenant_id": tid, "customer_id": customer_id.upper(), "purchase_ids": {"$in": inv["purchase_ids"]}},
+                {"tenant_id": tid, "customer_id": customer_id.upper(), "purchase_ids": {"$in": last_invoice["purchase_ids"]}},
                 {"_id": 0, "shipping_cost": 1}
             )
         if shipment:
             ship_cost = shipment.get("shipping_cost", 0)
-        
-        grand_total = inv_subtotal + ship_cost
-        deposits = inv.get("deposits_applied", 0)
-        remaining = max(0, grand_total - deposits)
-        
-        if remaining > 0:
-            pending_details.append({
-                "invoice_number": inv.get("invoice_number", ""),
-                "total": round(grand_total, 2),
-                "deposits": round(deposits, 2),
-                "remaining": round(remaining, 2)
-            })
-            total_pending += remaining
+        saldo_pend = last_invoice.get("saldo_pendiente", 0)
+        grand_total = inv_subtotal + ship_cost + saldo_pend
+        deposits = last_invoice.get("deposits_applied", 0)
+        total_a_pagar = round(max(0, grand_total - deposits), 2)
+    
+    total_a_pagar = round(total_a_pagar, 2)
+    
+    details = []
+    if total_a_pagar > 0:
+        details.append({
+            "invoice_number": last_invoice.get("invoice_number", ""),
+            "total_a_pagar": total_a_pagar
+        })
     
     return {
-        "total_pending": round(total_pending, 2),
-        "details": pending_details
+        "total_pending": total_a_pagar,
+        "details": details,
+        "is_first_invoice": False
     }
 
 @api_router.post("/invoices")
@@ -2939,6 +2935,11 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     invoice_dict["applied_deposits"] = applied_deposits
     invoice_dict["deposits_applied"] = total_deposits_applied
     invoice_dict["saldo_pendiente"] = saldo_pendiente
+    
+    # Calculate and store total_a_pagar (Total - Abonos)
+    grand_total = total + saldo_pendiente  # total already includes subtotal+tax+commission
+    total_a_pagar = round(max(0, grand_total - total_deposits_applied), 2)
+    invoice_dict["total_a_pagar"] = total_a_pagar
     
     await db.invoices.insert_one(invoice_dict)
     
@@ -3261,64 +3262,9 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
             if unlinked:
                 shipment = unlinked
     
-    # Recalculate ALL invoices for this client in chronological order (one pass, no circular dependency)
-    if client and not invoice.get("is_annulled"):
-        all_deposits = await db.wallet_transactions.find(
-            {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
-            {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
-        ).sort("created_at", 1).to_list(1000)
-        
-        all_client_invoices = await db.invoices.find(
-            {"customer_id": invoice["customer_id"], "tenant_id": tid, "is_annulled": {"$ne": True}},
-            {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "created_at": 1}
-        ).sort("created_at", 1).to_list(1000)
-        
-        # Also get shipping costs per invoice
-        inv_ids = [i["id"] for i in all_client_invoices]
-        inv_shipments = await db.shipments.find(
-            {"invoice_id": {"$in": inv_ids}, "tenant_id": tid},
-            {"_id": 0, "invoice_id": 1, "shipping_cost": 1}
-        ).to_list(1000)
-        ship_by_inv = {s["invoice_id"]: s.get("shipping_cost", 0) for s in inv_shipments}
-        
-        # Track how much of each deposit has been consumed globally
-        global_consumed = {dep.get("id", ""): 0 for dep in all_deposits}
-        
-        # Process each invoice in chronological order
-        for inv_doc in all_client_invoices:
-            inv_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + ship_by_inv.get(inv_doc["id"], 0)
-            
-            new_applied = []
-            remaining = inv_total
-            for dep in all_deposits:
-                if remaining <= 0:
-                    break
-                dep_id = dep.get("id", "")
-                available = round(dep["amount"] - global_consumed.get(dep_id, 0), 2)
-                if available <= 0:
-                    continue
-                apply = round(min(available, remaining), 2)
-                new_applied.append({
-                    "deposit_id": dep_id,
-                    "amount_applied": apply,
-                    "created_at": dep.get("created_at", ""),
-                    "description": dep.get("description", "")
-                })
-                global_consumed[dep_id] = global_consumed.get(dep_id, 0) + apply
-                remaining = round(remaining - apply, 2)
-            
-            new_total_applied = round(sum(ad["amount_applied"] for ad in new_applied), 2)
-            
-            # Save updated deposits for this invoice
-            await db.invoices.update_one(
-                {"id": inv_doc["id"], "tenant_id": tid},
-                {"$set": {"applied_deposits": new_applied, "deposits_applied": new_total_applied}}
-            )
-            
-            # Update local vars if this is the invoice being viewed
-            if inv_doc["id"] == invoice_id:
-                applied_deposits = new_applied
-                deposits_applied = new_total_applied
+    # Read stored deposit data (fixed at creation time, never recalculated)
+    applied_deposits = invoice.get("applied_deposits", [])
+    deposits_applied = invoice.get("deposits_applied", 0)
     
     # Calculate real client balance (same formula as /admin/clients)
     real_client_balance = 0
