@@ -1167,6 +1167,14 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
     ]).to_list(len(user_ids))
     recharges_dict = {r["_id"]: r["total"] for r in recharges_agg}
     
+    # Get total_a_pagar from the most recent invoice per customer
+    last_invoice_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": {"$in": customer_ids_list}, "is_annulled": {"$ne": True}}},
+        {"$sort": {"created_at": -1}},
+        {"$group": {"_id": "$customer_id", "total_a_pagar": {"$first": "$total_a_pagar"}}}
+    ]).to_list(len(customer_ids_list) or 1)
+    last_invoice_dict = {li["_id"]: li.get("total_a_pagar", 0) or 0 for li in last_invoice_agg}
+    
     result = []
     for user in users:
         uid = user["id"]
@@ -1176,7 +1184,8 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         total_saldo_pendiente = saldo_pendiente_dict.get(user.get("customer_id"), 0)
         total_recharges = recharges_dict.get(uid, 0)
         total_purchases = purch["total"]
-        pending_balance = total_recharges - total_purchases - total_shipping
+        # pending_balance = total_a_pagar from last invoice (what client actually owes)
+        last_total_a_pagar = last_invoice_dict.get(user.get("customer_id"), 0)
         pending_to_invoice = pending_purchases_dict.get(uid, 0)
         result.append({
             **user, 
@@ -1184,10 +1193,10 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "total_purchases": round(total_purchases, 2),
             "total_shipping": round(total_shipping, 2),
             "total_saldo_pendiente": round(total_saldo_pendiente, 2),
-            "pending_balance": round(pending_balance, 2),
+            "pending_balance": round(-last_total_a_pagar, 2) if last_total_a_pagar > 0 else 0,
             "purchase_count": purch["count"],
             "is_active": user.get("is_active", True),
-            "pending_to_invoice": pending_to_invoice  # Compras pendientes de facturar
+            "pending_to_invoice": pending_to_invoice
         })
     return result
 
