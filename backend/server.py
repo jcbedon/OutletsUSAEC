@@ -3150,7 +3150,6 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     
     # If no shipment by invoice_id, try to find one that contains the same purchases
     if not shipment and invoice.get("purchase_ids"):
-        # Find shipment that contains any of the invoice's purchases
         shipment = await db.shipments.find_one(
             {
                 "tenant_id": tid,
@@ -3158,8 +3157,26 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
                 "purchase_ids": {"$in": invoice["purchase_ids"]}
             },
             {"_id": 0},
-            sort=[("created_at", -1)]  # Get the most recent one
+            sort=[("created_at", -1)]
         )
+    
+    # If still no shipment, check if client has exactly one invoice and one unlinked shipment
+    if not shipment and invoice.get("customer_id"):
+        inv_count = await db.invoices.count_documents(
+            {"customer_id": invoice["customer_id"], "tenant_id": tid, "is_annulled": {"$ne": True}}
+        )
+        if inv_count == 1:
+            unlinked = await db.shipments.find_one(
+                {
+                    "tenant_id": tid,
+                    "customer_id": invoice.get("customer_id"),
+                    "$or": [{"invoice_id": None}, {"invoice_id": {"$exists": False}}, {"invoice_id": ""}]
+                },
+                {"_id": 0},
+                sort=[("created_at", -1)]
+            )
+            if unlinked:
+                shipment = unlinked
     
     # Recalculate ALL invoices for this client in chronological order (one pass, no circular dependency)
     if client and not invoice.get("is_annulled"):
