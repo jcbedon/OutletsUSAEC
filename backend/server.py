@@ -2709,9 +2709,10 @@ async def get_client_pending_balance(customer_id: str, current_user: dict = Depe
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
-    # Get all non-annulled PENDING invoices for this client (approved = paid = no debt)
+    # Get all non-annulled invoices for this client (pending AND approved)
+    # "approved" means admin reviewed, NOT that client paid the remaining balance
     invoices = await db.invoices.find(
-        {"customer_id": customer_id.upper(), "tenant_id": tid, "is_annulled": {"$ne": True}, "status": "pending"},
+        {"customer_id": customer_id.upper(), "tenant_id": tid, "is_annulled": {"$ne": True}},
         {"_id": 0, "id": 1, "invoice_number": 1, "subtotal": 1, "total_tax": 1, 
          "total_commission": 1, "total": 1, "applied_deposits": 1, "deposits_applied": 1,
          "saldo_pendiente": 1, "shipping_cost": 1, "status": 1, "purchase_ids": 1}
