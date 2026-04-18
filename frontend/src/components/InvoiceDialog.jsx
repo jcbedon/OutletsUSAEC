@@ -1206,7 +1206,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                 const weightPounds = currentInvoice.shipment?.weight_pounds || currentInvoice.weight_pounds || 0;
                 const totalArticulos = currentInvoice.purchases?.length || 0;
                 const totalEtiqueta = currentInvoice.subtotal || 0;
-                const displaySubtotal = (currentInvoice.subtotal || 0) + (currentInvoice.total_commission || 0);
+                const totalCommission = currentInvoice.total_commission || 0;
+                const displaySubtotal = totalEtiqueta + totalCommission;
                 const taxes = currentInvoice.total_tax || 0;
                 const saldoPend = parseFloat(editSaldoPendiente) || 0;
                 const grandTotal = displaySubtotal + taxes + shippingCost + saldoPend;
@@ -1237,8 +1238,14 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                       <div className="w-80 p-4 rounded-xl bg-gray-50 space-y-2" data-testid="invoice-financial-summary">
                         <div className="flex justify-between text-sm">
                           <span className="text-gray-600">Subtotal:</span>
-                          <span className="font-medium">${displaySubtotal.toFixed(2)}</span>
+                          <span className="font-medium">${totalEtiqueta.toFixed(2)}</span>
                         </div>
+                        {totalCommission > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Comisiones:</span>
+                            <span className="font-medium">${totalCommission.toFixed(2)}</span>
+                          </div>
+                        )}
                         {taxes > 0 && (
                           <div className="flex justify-between text-sm">
                             <span className="text-gray-600">Taxes:</span>
