@@ -1310,13 +1310,6 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                             </p>
                           </div>
                         )}
-                        {currentInvoice.client_balance != null && (
-                          <div className={`mt-2 p-2 rounded-lg border text-center ${currentInvoice.client_balance >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                            <p className={`text-xs font-medium ${currentInvoice.client_balance >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                              Saldo global del cliente: {currentInvoice.client_balance < 0 ? '-' : ''}${Math.abs(currentInvoice.client_balance).toFixed(2)}
-                            </p>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </>
