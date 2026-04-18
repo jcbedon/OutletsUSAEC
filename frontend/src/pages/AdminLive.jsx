@@ -120,6 +120,7 @@ export default function AdminLive() {
   const [purchaseSearch, setPurchaseSearch] = useState("");
   const [expandedClient, setExpandedClient] = useState(null);
   const [reviewedClients, setReviewedClients] = useState({});
+  const [clientGroupSearch, setClientGroupSearch] = useState("");
   
   // Client autocomplete state
   const [clientSearchOpen, setClientSearchOpen] = useState(false);
@@ -1127,10 +1128,19 @@ export default function AdminLive() {
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg" data-testid="live-purchases-title">Compras del Live ({purchases.length})</CardTitle>
-                    <Badge className="bg-blue-100 text-blue-800 font-bold" data-testid="live-total-items">
-                      <Package className="h-3 w-3 mr-1" />
-                      {purchases.length} prendas
-                    </Badge>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        placeholder="Buscar cliente..."
+                        value={clientGroupSearch}
+                        onChange={(e) => setClientGroupSearch(e.target.value)}
+                        className="h-7 w-28 text-xs rounded-md px-2"
+                        data-testid="client-group-search"
+                      />
+                      <Badge className="bg-blue-100 text-blue-800 font-bold" data-testid="live-total-items">
+                        <Package className="h-3 w-3 mr-1" />
+                        {purchases.length} prendas
+                      </Badge>
+                    </div>
                   </div>
 
                   {/* Client summary - collapsible */}
@@ -1148,6 +1158,12 @@ export default function AdminLive() {
                       clientGroups[cid].commission += p.commission || 0;
                     });
                     const sortedClients = Object.entries(clientGroups).sort((a, b) => b[1].count - a[1].count);
+                    const filteredGroupClients = clientGroupSearch.trim()
+                      ? sortedClients.filter(([cid, info]) =>
+                          cid.toLowerCase().includes(clientGroupSearch.toLowerCase()) ||
+                          info.name.toLowerCase().includes(clientGroupSearch.toLowerCase())
+                        )
+                      : sortedClients;
                     const reviewedCount = sortedClients.filter(([cid]) => reviewedClients[cid]).length;
 
                     return (
@@ -1157,7 +1173,7 @@ export default function AdminLive() {
                           <span>{reviewedCount}/{sortedClients.length} revisados</span>
                         </div>
                         <div className="max-h-[180px] overflow-y-auto divide-y divide-slate-100">
-                          {sortedClients.map(([cid, info]) => {
+                          {filteredGroupClients.map(([cid, info]) => {
                             const isExpanded = expandedClient === cid;
                             const isReviewed = !!reviewedClients[cid];
                             return (
@@ -1179,6 +1195,7 @@ export default function AdminLive() {
                                     data-testid={`review-check-${cid}`}
                                   />
                                   {isExpanded ? <ChevronDown className="h-3 w-3 text-slate-400" /> : <ChevronRight className="h-3 w-3 text-slate-400" />}
+                                  <span className="text-[10px] text-blue-600 font-bold shrink-0">{cid}</span>
                                   <span className={`font-medium flex-1 truncate ${isReviewed ? 'line-through text-slate-400' : 'text-slate-700'}`}>
                                     {info.name}
                                   </span>
