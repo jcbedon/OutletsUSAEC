@@ -3612,7 +3612,7 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
     total_commissions = await db.purchases.aggregate([
         {"$match": purchase_match}, {"$group": {"_id": None, "total": {"$sum": "$commission"}}}
     ]).to_list(1)
-    client_count = await db.users.count_documents({"role": "client", "tenant_id": tid, **date_filter})
+    client_count = await db.users.count_documents({"role": "client", "tenant_id": tid})
     live_count = await db.lives.count_documents({"tenant_id": tid, **date_filter})
     pending_shipments = await db.shipments.count_documents({"status": {"$ne": "delivered"}, "tenant_id": tid})
     total_shipping = await db.shipments.aggregate([
@@ -3620,6 +3620,14 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
     ]).to_list(1)
     all_weights = await db.shipments.find(shipment_match, {"_id": 0, "weight_pounds": 1}).to_list(1000)
     total_packages = sum(math.ceil((s.get("weight_pounds", 0) or 0) / 8) for s in all_weights if (s.get("weight_pounds", 0) or 0) > 0)
+    
+    # Unique buyers in this period
+    buyers_agg = await db.purchases.aggregate([
+        {"$match": purchase_match},
+        {"$group": {"_id": "$customer_id"}}
+    ]).to_list(1000)
+    buyers_count = len(buyers_agg)
+    
     top_customers = await db.purchases.aggregate([
         {"$match": purchase_match},
         {"$group": {"_id": "$customer_id", "user_id": {"$first": "$user_id"}, "total_spent": {"$sum": "$total"}, "purchase_count": {"$sum": 1}}},
@@ -3636,6 +3644,7 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
         "pending_shipments": pending_shipments,
         "total_shipping": total_shipping[0]["total"] if total_shipping else 0,
         "total_packages": total_packages,
+        "buyers_count": buyers_count,
         "top_customers": top_customers
     }
 

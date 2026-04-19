@@ -21,7 +21,8 @@ import {
   UserCog,
   ClipboardList,
   FileText,
-  Search
+  Search,
+  ShoppingBag
 } from "lucide-react";
 import { uploadTenantLogo } from "@/lib/api";
 
@@ -280,6 +281,22 @@ export default function AdminDashboard() {
                     {summary?.total_packages || 0}
                   </p>
                   <p className="text-xs text-gray-500">Paquetes</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-xl" data-testid="stat-buyers">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-teal-100 rounded-xl flex items-center justify-center">
+                  <ShoppingBag className="h-5 w-5 text-teal-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-extrabold text-slate-800">
+                    {summary?.buyers_count || 0}
+                  </p>
+                  <p className="text-xs text-gray-500">Compraron</p>
                 </div>
               </div>
             </CardContent>
