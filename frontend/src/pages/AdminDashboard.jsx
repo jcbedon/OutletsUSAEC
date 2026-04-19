@@ -207,100 +207,23 @@ export default function AdminDashboard() {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-          <Card className="rounded-xl" data-testid="stat-clients">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(30,58,95,0.1)' }}>
-                  <Users className="h-5 w-5" style={{ color: '#1E3A5F' }} />
-                </div>
-                <div>
-                  <p className="text-2xl font-extrabold text-slate-800">{summary?.client_count || 0}</p>
-                  <p className="text-xs text-gray-500">Clientes</p>
-                </div>
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-6">
+          {[
+            { key: "clients", icon: Users, value: summary?.client_count || 0, label: "Clientes", bg: "bg-slate-50", iconBg: "rgba(30,58,95,0.1)", iconColor: "#1E3A5F", prefix: "" },
+            { key: "sales", icon: DollarSign, value: `$${summary?.total_sales?.toFixed(0) || 0}`, label: "Ventas", bg: "bg-green-50", iconBg: "rgba(46,204,113,0.1)", iconColor: "#2ECC71", prefix: "" },
+            { key: "commissions", icon: TrendingUp, value: `$${summary?.total_commissions?.toFixed(0) || 0}`, label: "Comisiones", bg: "bg-yellow-50", iconBg: "rgba(234,179,8,0.1)", iconColor: "#ca8a04", prefix: "" },
+            { key: "shipments", icon: Truck, value: `$${summary?.total_shipping?.toFixed(0) || 0}`, label: "Envios", bg: "bg-purple-50", iconBg: "rgba(147,51,234,0.1)", iconColor: "#9333ea", prefix: "" },
+            { key: "packages", icon: Package, value: summary?.total_packages || 0, label: "Paquetes", bg: "bg-orange-50", iconBg: "rgba(249,115,22,0.1)", iconColor: "#ea580c", prefix: "" },
+            { key: "buyers", icon: ShoppingBag, value: summary?.buyers_count || 0, label: "Compraron", bg: "bg-teal-50", iconBg: "rgba(20,184,166,0.1)", iconColor: "#0d9488", prefix: "" },
+          ].map((stat) => (
+            <div key={stat.key} className={`${stat.bg} rounded-xl p-3 text-center`} data-testid={`stat-${stat.key}`}>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center mx-auto mb-1.5" style={{ background: stat.iconBg }}>
+                <stat.icon className="h-4 w-4" style={{ color: stat.iconColor }} />
               </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl" data-testid="stat-sales">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(46,204,113,0.1)' }}>
-                  <DollarSign className="h-5 w-5" style={{ color: '#2ECC71' }} />
-                </div>
-                <div>
-                  <p className="text-2xl font-extrabold text-slate-800">
-                    ${summary?.total_sales?.toFixed(0) || 0}
-                  </p>
-                  <p className="text-xs text-gray-500">Ventas</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl" data-testid="stat-commissions">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-yellow-100 rounded-xl flex items-center justify-center">
-                  <TrendingUp className="h-5 w-5 text-yellow-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-extrabold text-slate-800">
-                    ${summary?.total_commissions?.toFixed(0) || 0}
-                  </p>
-                  <p className="text-xs text-gray-500">Comisiones</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl" data-testid="stat-shipments">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
-                  <Package className="h-5 w-5 text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-extrabold text-slate-800">
-                    ${summary?.total_shipping?.toFixed(0) || 0}
-                  </p>
-                  <p className="text-xs text-gray-500">Envios</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl" data-testid="stat-packages">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
-                  <Package className="h-5 w-5 text-orange-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-extrabold text-slate-800">
-                    {summary?.total_packages || 0}
-                  </p>
-                  <p className="text-xs text-gray-500">Paquetes</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-xl" data-testid="stat-buyers">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-teal-100 rounded-xl flex items-center justify-center">
-                  <ShoppingBag className="h-5 w-5 text-teal-600" />
-                </div>
-                <div>
-                  <p className="text-2xl font-extrabold text-slate-800">
-                    {summary?.buyers_count || 0}
-                  </p>
-                  <p className="text-xs text-gray-500">Compraron</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              <p className="text-lg font-extrabold text-slate-800 leading-tight">{stat.value}</p>
+              <p className="text-[10px] text-gray-500 mt-0.5">{stat.label}</p>
+            </div>
+          ))}
         </div>
 
         {/* Menu Grid */}
