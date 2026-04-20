@@ -3619,7 +3619,7 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
     shipment_match = {"tenant_id": tid, **date_filter}
     
     total_sales = await db.purchases.aggregate([
-        {"$match": purchase_match}, {"$group": {"_id": None, "total": {"$sum": "$price"}}}
+        {"$match": purchase_match}, {"$group": {"_id": None, "total": {"$sum": "$total"}}}
     ]).to_list(1)
     total_commissions = await db.purchases.aggregate([
         {"$match": purchase_match}, {"$group": {"_id": None, "total": {"$sum": "$commission"}}}
