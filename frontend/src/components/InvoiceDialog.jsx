@@ -85,6 +85,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
   }, [open, client, existingInvoice]);
 
   const [isFirstInvoice, setIsFirstInvoice] = useState(true);
+  const [saldoAFavor, setSaldoAFavor] = useState(0);
 
   const loadPendingBalance = async () => {
     try {
@@ -97,11 +98,13 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       setAutoPendingBalance(balRes.data.total_pending || 0);
       setPendingDetails(balRes.data.details || []);
       setSaldoPendiente(balRes.data.total_pending > 0 ? balRes.data.total_pending.toFixed(2) : "");
+      setSaldoAFavor(balRes.data.saldo_a_favor || 0);
       setAvailableDeposits(depRes.data || []);
     } catch {
       setAutoPendingBalance(0);
       setIsFirstInvoice(true);
       setSaldoPendiente("");
+      setSaldoAFavor(0);
       setAvailableDeposits([]);
     }
   };
@@ -157,7 +160,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       const res = await createInvoice({
         customer_id: client.customer_id,
         purchase_ids: selectedPurchases,
-        saldo_pendiente: parseFloat(saldoPendiente) || 0
+        saldo_pendiente: parseFloat(saldoPendiente) || 0,
+        saldo_a_favor: saldoAFavor || 0
       });
       toast.success(`Factura ${res.data.invoice_number} creada`);
       
@@ -975,7 +979,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                           const saldo = parseFloat(saldoPendiente) || 0;
                           const grandTotal = subtotal + saldo;
                           const totalAbonos = availableDeposits.reduce((s, d) => s + d.amount, 0);
-                          const totalAPagar = Math.max(0, grandTotal - totalAbonos);
+                          const totalCredits = totalAbonos + (saldoAFavor || 0);
+                          const totalAPagar = Math.max(0, grandTotal - totalCredits);
 
                           return (
                             <>
@@ -997,6 +1002,16 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                               </div>
 
                               {/* Abonos (recargas disponibles) */}
+                              {saldoAFavor > 0 && (
+                                <div className="space-y-1 mb-3 p-3 rounded-lg bg-blue-50 border border-blue-200" data-testid="saldo-favor-anterior">
+                                  <p className="text-xs font-semibold text-blue-800 mb-1">Saldo a Favor (factura anterior)</p>
+                                  <div className="flex justify-between text-sm font-bold text-blue-700">
+                                    <span>Crédito:</span>
+                                    <span>-${saldoAFavor.toFixed(2)}</span>
+                                  </div>
+                                </div>
+                              )}
+
                               {availableDeposits.length > 0 && (
                                 <div className="space-y-1 mb-3 p-3 rounded-lg bg-green-50 border border-green-200" data-testid="create-abonos-section">
                                   <p className="text-xs font-semibold text-green-800 mb-1">Abonos (Recargas del cliente)</p>
@@ -1015,17 +1030,17 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
 
                               {/* Total a pagar o Saldo a favor */}
                               <div className="flex justify-between items-center mb-4 p-2 rounded-lg" style={{ background: totalAPagar > 0 ? 'rgba(220,38,38,0.05)' : 'rgba(22,163,74,0.05)' }}>
-                                <span className="font-extrabold text-lg">{totalAPagar > 0 ? 'Total a pagar:' : 'Total a pagar:'}</span>
+                                <span className="font-extrabold text-lg">Total a pagar:</span>
                                 <span className="font-extrabold text-2xl" style={{ color: totalAPagar > 0 ? '#DC2626' : '#16A34A' }}>
                                   ${totalAPagar.toFixed(2)}
                                 </span>
                               </div>
-                              {totalAbonos > grandTotal && (
+                              {totalCredits > grandTotal && (
                                 <div className="p-3 rounded-lg bg-green-100 border border-green-300 mb-4 text-center" data-testid="saldo-favor-msg">
                                   <p className="text-sm font-bold text-green-800">
-                                    Saldo disponible a favor: ${(totalAbonos - grandTotal).toFixed(2)}
+                                    Saldo a favor para próxima factura: ${(totalCredits - grandTotal).toFixed(2)}
                                   </p>
-                                  <p className="text-xs text-green-600">Este saldo queda disponible para futuras facturas</p>
+                                  <p className="text-xs text-green-600">Este saldo se aplicará automáticamente</p>
                                 </div>
                               )}
                             </>
@@ -1213,7 +1228,11 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                 const grandTotal = displaySubtotal + taxes + shippingCost + saldoPend;
                 const appliedDeposits = currentInvoice.applied_deposits || [];
                 const depositsApplied = currentInvoice.deposits_applied || 0;
-                const totalAPagar = Math.max(0, grandTotal - depositsApplied);
+                const saldoAFavorAnterior = currentInvoice.saldo_a_favor_anterior || 0;
+                const totalCredits = depositsApplied + saldoAFavorAnterior;
+                const totalAPagar = Math.max(0, grandTotal - totalCredits);
+                const saldoAFavorResult = totalCredits > grandTotal ? round2(totalCredits - grandTotal) : 0;
+                function round2(v) { return Math.round(v * 100) / 100; }
 
                 return (
                   <>
@@ -1301,6 +1320,13 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                             ))}
                           </div>
                         )}
+                        {/* Saldo a favor from previous invoice */}
+                        {saldoAFavorAnterior > 0 && (
+                          <div className="flex justify-between text-sm pt-1">
+                            <span className="text-blue-700">Saldo a Favor (anterior):</span>
+                            <span className="font-medium text-blue-700">-${saldoAFavorAnterior.toFixed(2)}</span>
+                          </div>
+                        )}
                         {/* Total a pagar */}
                         <div className="border-t-2 border-gray-400 pt-2 mt-2">
                           <div className="flex justify-between">
@@ -1310,10 +1336,10 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                             </span>
                           </div>
                         </div>
-                        {depositsApplied > grandTotal && (
+                        {saldoAFavorResult > 0 && (
                           <div className="mt-2 p-2 rounded-lg bg-green-100 border border-green-300 text-center">
                             <p className="text-sm font-bold text-green-800">
-                              Saldo a favor en esta factura: ${(depositsApplied - grandTotal).toFixed(2)}
+                              Saldo a favor para próxima factura: ${saldoAFavorResult.toFixed(2)}
                             </p>
                           </div>
                         )}

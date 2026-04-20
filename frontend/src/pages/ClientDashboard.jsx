@@ -285,18 +285,20 @@ export default function ClientDashboard() {
           <CardContent className="p-6">
             {(() => {
               const pendingDebt = wallet?.pending_debt || 0;
+              const saldoFavor = wallet?.saldo_a_favor || 0;
               const hasDebt = pendingDebt > 0;
+              const hasFavor = saldoFavor > 0;
               
               return (
                 <>
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      <p className="text-white/70 text-sm font-medium">Saldo Pendiente</p>
-                      <p className={`text-4xl font-extrabold mt-1 ${hasDebt ? 'text-red-400' : 'text-green-400'}`} data-testid="wallet-balance">
-                        {hasDebt ? '-' : ''}${pendingDebt.toFixed(2)}
+                      <p className="text-white/70 text-sm font-medium">{hasFavor ? 'Saldo a Favor' : 'Saldo Pendiente'}</p>
+                      <p className={`text-4xl font-extrabold mt-1 ${hasFavor ? 'text-green-400' : hasDebt ? 'text-red-400' : 'text-green-400'}`} data-testid="wallet-balance">
+                        {hasFavor ? '+' : hasDebt ? '-' : ''}${hasFavor ? saldoFavor.toFixed(2) : pendingDebt.toFixed(2)}
                       </p>
                       <p className="text-white/60 text-xs mt-1">
-                        {hasDebt ? '(Debes este monto)' : '(Sin deuda pendiente)'}
+                        {hasFavor ? '(Tienes este saldo a tu favor)' : hasDebt ? '(Debes este monto)' : '(Sin deuda pendiente)'}
                       </p>
                     </div>
                     <div className="text-right">

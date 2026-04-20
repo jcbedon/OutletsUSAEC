@@ -1173,9 +1173,9 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
     last_invoice_agg = await db.invoices.aggregate([
         {"$match": {"tenant_id": tid, "customer_id": {"$in": customer_ids_list}, "is_annulled": {"$ne": True}}},
         {"$sort": {"created_at": -1}},
-        {"$group": {"_id": "$customer_id", "total_a_pagar": {"$first": "$total_a_pagar"}}}
+        {"$group": {"_id": "$customer_id", "total_a_pagar": {"$first": "$total_a_pagar"}, "saldo_a_favor": {"$first": "$saldo_a_favor"}}}
     ]).to_list(len(customer_ids_list) or 1)
-    last_invoice_dict = {li["_id"]: li.get("total_a_pagar", 0) or 0 for li in last_invoice_agg}
+    last_invoice_dict = {li["_id"]: {"total_a_pagar": li.get("total_a_pagar", 0) or 0, "saldo_a_favor": li.get("saldo_a_favor", 0) or 0} for li in last_invoice_agg}
     
     result = []
     for user in users:
@@ -1186,8 +1186,16 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         total_saldo_pendiente = saldo_pendiente_dict.get(user.get("customer_id"), 0)
         total_recharges = recharges_dict.get(uid, 0)
         total_purchases = purch["total"]
-        # pending_balance = total_a_pagar from last invoice (what client actually owes)
-        last_total_a_pagar = last_invoice_dict.get(user.get("customer_id"), 0)
+        last_inv = last_invoice_dict.get(user.get("customer_id"), {"total_a_pagar": 0, "saldo_a_favor": 0})
+        last_total_a_pagar = last_inv["total_a_pagar"]
+        last_saldo_a_favor = last_inv["saldo_a_favor"]
+        # pending_balance: negative = owes money, positive = has credit
+        if last_saldo_a_favor > 0:
+            pending_balance = round(last_saldo_a_favor, 2)
+        elif last_total_a_pagar > 0:
+            pending_balance = round(-last_total_a_pagar, 2)
+        else:
+            pending_balance = 0
         pending_to_invoice = pending_purchases_dict.get(uid, 0)
         result.append({
             **user, 
@@ -1195,7 +1203,7 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "total_purchases": round(total_purchases, 2),
             "total_shipping": round(total_shipping, 2),
             "total_saldo_pendiente": round(total_saldo_pendiente, 2),
-            "pending_balance": round(-last_total_a_pagar, 2) if last_total_a_pagar > 0 else 0,
+            "pending_balance": pending_balance,
             "purchase_count": purch["count"],
             "is_active": user.get("is_active", True),
             "pending_to_invoice": pending_to_invoice
@@ -1570,18 +1578,20 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
         ]).to_list(1)
         saldo_pend = agg[0]["total"] if agg else 0
     
-    # Get total_a_pagar from the last invoice
+    # Get total_a_pagar and saldo_a_favor from the last invoice
     last_total_a_pagar = 0
+    last_saldo_a_favor = 0
     if customer_id:
         last_inv = await db.invoices.find_one(
             {"tenant_id": tid, "customer_id": customer_id, "is_annulled": {"$ne": True}},
-            {"_id": 0, "total_a_pagar": 1},
+            {"_id": 0, "total_a_pagar": 1, "saldo_a_favor": 1},
             sort=[("created_at", -1)]
         )
         if last_inv:
             last_total_a_pagar = last_inv.get("total_a_pagar", 0) or 0
+            last_saldo_a_favor = last_inv.get("saldo_a_favor", 0) or 0
     
-    return {**wallet, "total_saldo_pendiente": round(saldo_pend, 2), "pending_debt": round(last_total_a_pagar, 2)}
+    return {**wallet, "total_saldo_pendiente": round(saldo_pend, 2), "pending_debt": round(last_total_a_pagar, 2), "saldo_a_favor": round(last_saldo_a_favor, 2)}
 
 @api_router.post("/wallet/deposit-request")
 async def request_deposit(deposit: WalletDepositRequest, current_user: dict = Depends(get_current_user)):
@@ -2814,7 +2824,10 @@ async def get_client_pending_balance(customer_id: str, current_user: dict = Depe
     )
     
     if not last_invoice:
-        return {"total_pending": 0, "details": [], "is_first_invoice": True}
+        return {"total_pending": 0, "saldo_a_favor": 0, "details": [], "is_first_invoice": True}
+    
+    # Check for saldo_a_favor first
+    saldo_a_favor = last_invoice.get("saldo_a_favor", 0) or 0
     
     # Use stored total_a_pagar if available, otherwise calculate it
     total_a_pagar = last_invoice.get("total_a_pagar")
@@ -2822,7 +2835,6 @@ async def get_client_pending_balance(customer_id: str, current_user: dict = Depe
         # Legacy invoice without total_a_pagar: calculate it
         inv_subtotal = last_invoice.get("subtotal", 0) + last_invoice.get("total_commission", 0) + last_invoice.get("total_tax", 0)
         ship_cost = last_invoice.get("shipping_cost", 0)
-        # Check shipment
         shipment = await db.shipments.find_one(
             {"invoice_id": last_invoice["id"], "tenant_id": tid}, {"_id": 0, "shipping_cost": 1}
         )
@@ -2836,19 +2848,25 @@ async def get_client_pending_balance(customer_id: str, current_user: dict = Depe
         saldo_pend = last_invoice.get("saldo_pendiente", 0)
         grand_total = inv_subtotal + ship_cost + saldo_pend
         deposits = last_invoice.get("deposits_applied", 0)
-        total_a_pagar = round(max(0, grand_total - deposits), 2)
+        if deposits >= grand_total:
+            total_a_pagar = 0
+            saldo_a_favor = round(deposits - grand_total, 2)
+        else:
+            total_a_pagar = round(grand_total - deposits, 2)
     
-    total_a_pagar = round(total_a_pagar, 2)
+    total_a_pagar = round(total_a_pagar or 0, 2)
+    saldo_a_favor = round(saldo_a_favor or 0, 2)
     
     details = []
+    inv_num = last_invoice.get("invoice_number", "")
     if total_a_pagar > 0:
-        details.append({
-            "invoice_number": last_invoice.get("invoice_number", ""),
-            "total_a_pagar": total_a_pagar
-        })
+        details.append({"invoice_number": inv_num, "total_a_pagar": total_a_pagar, "type": "deuda"})
+    elif saldo_a_favor > 0:
+        details.append({"invoice_number": inv_num, "saldo_a_favor": saldo_a_favor, "type": "favor"})
     
     return {
         "total_pending": total_a_pagar,
+        "saldo_a_favor": saldo_a_favor,
         "details": details,
         "is_first_invoice": False
     }
@@ -2863,6 +2881,7 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     purchase_ids = data.get("purchase_ids", [])
     notes = data.get("notes", "")
     saldo_pendiente = round(float(data.get("saldo_pendiente", 0)), 2)
+    saldo_a_favor_anterior = round(float(data.get("saldo_a_favor", 0)), 2)
     
     if not customer_id or not purchase_ids:
         raise HTTPException(status_code=400, detail="customer_id y purchase_ids son requeridos")
@@ -2958,11 +2977,21 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     invoice_dict["applied_deposits"] = applied_deposits
     invoice_dict["deposits_applied"] = total_deposits_applied
     invoice_dict["saldo_pendiente"] = saldo_pendiente
+    invoice_dict["saldo_a_favor_anterior"] = saldo_a_favor_anterior
     
-    # Calculate and store total_a_pagar (Total - Abonos)
-    grand_total = total + saldo_pendiente  # total already includes subtotal+tax+commission
-    total_a_pagar = round(max(0, grand_total - total_deposits_applied), 2)
+    # Calculate and store total_a_pagar and saldo_a_favor
+    # Grand total = purchases + saldo pendiente (debt from before)
+    # Credits = deposits + saldo a favor from previous invoice
+    grand_total = total + saldo_pendiente
+    total_credits = total_deposits_applied + saldo_a_favor_anterior
+    if total_credits >= grand_total:
+        total_a_pagar = 0
+        saldo_a_favor = round(total_credits - grand_total, 2)
+    else:
+        total_a_pagar = round(grand_total - total_credits, 2)
+        saldo_a_favor = 0
     invoice_dict["total_a_pagar"] = total_a_pagar
+    invoice_dict["saldo_a_favor"] = saldo_a_favor
     
     await db.invoices.insert_one(invoice_dict)
     

@@ -561,11 +561,11 @@ https://outletsusaec.shop/`;
                             </div>
                           </div>
                           <div className="text-right">
-                            <div className={`px-3 py-2 rounded-xl ${client.pending_balance < 0 ? 'bg-red-50' : 'bg-green-50'}`}>
-                              <p className="text-xs text-gray-500">Total a Pagar</p>
-                              <p className={`text-xl font-bold ${client.pending_balance < 0 ? 'text-red-600' : 'text-green-600'}`}
+                            <div className={`px-3 py-2 rounded-xl ${client.pending_balance > 0 ? 'bg-green-50' : client.pending_balance < 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
+                              <p className="text-xs text-gray-500">{client.pending_balance > 0 ? 'Saldo a Favor' : 'Total a Pagar'}</p>
+                              <p className={`text-xl font-bold ${client.pending_balance > 0 ? 'text-green-600' : client.pending_balance < 0 ? 'text-red-600' : 'text-gray-600'}`}
                                 data-testid={`pending-balance-${client.customer_id}`}>
-                                {client.pending_balance < 0 ? '' : ''}${Math.abs(client.pending_balance || 0).toFixed(2)}
+                                {client.pending_balance > 0 ? '+' : ''}${Math.abs(client.pending_balance || 0).toFixed(2)}
                               </p>
                             </div>
                           </div>
