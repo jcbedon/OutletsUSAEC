@@ -1320,6 +1320,12 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                                 <span className="font-medium text-green-700">-${dep.amount_applied.toFixed(2)}</span>
                               </div>
                             ))}
+                            {appliedDeposits.length > 1 && (
+                              <div className="flex justify-between text-sm border-t border-green-200 pt-1 mt-1">
+                                <span className="font-bold text-green-800">Total Abonos:</span>
+                                <span className="font-bold text-green-800">-${depositsApplied.toFixed(2)}</span>
+                              </div>
+                            )}
                           </div>
                         )}
                         {/* Saldo a favor from previous invoice */}
@@ -1489,8 +1495,14 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                           {(inv.deposits_applied || 0) > 0 && !inv.is_annulled && (
                             <p className="text-xs text-green-600">Abonos: -${(inv.deposits_applied || 0).toFixed(2)}</p>
                           )}
+                          {(inv.saldo_a_favor_anterior || 0) > 0 && !inv.is_annulled && (
+                            <p className="text-xs text-blue-600">Saldo ant: -${(inv.saldo_a_favor_anterior || 0).toFixed(2)}</p>
+                          )}
                           {(inv.total_a_pagar != null && inv.total_a_pagar > 0 && !inv.is_annulled) && (
                             <p className="text-xs font-bold text-red-600">A pagar: ${inv.total_a_pagar.toFixed(2)}</p>
+                          )}
+                          {(inv.saldo_a_favor || 0) > 0 && !inv.is_annulled && (
+                            <p className="text-xs font-bold text-green-700">A favor: +${inv.saldo_a_favor.toFixed(2)}</p>
                           )}
                           {inv.is_annulled ? (
                             <Badge className="bg-red-100 text-red-700">Anulada</Badge>
