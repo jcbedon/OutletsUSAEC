@@ -812,6 +812,28 @@ async def get_user(user_id: str, current_user: dict = Depends(get_current_user))
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     return user
 
+
+@api_router.post("/admin/recalculate-invoices/{customer_id}")
+async def admin_recalculate_invoices(customer_id: str, current_user: dict = Depends(get_current_user)):
+    """Force recalculate all invoices for a client (deposits by date, full amounts)."""
+    if current_user["role"] not in ["admin"]:
+        raise HTTPException(status_code=403, detail="Solo admin")
+    tid = current_user["tenant_id"]
+    await recalculate_client_invoices(tid, customer_id.upper())
+    return {"message": f"Facturas de {customer_id.upper()} recalculadas"}
+
+@api_router.post("/admin/recalculate-all-invoices")
+async def admin_recalculate_all(current_user: dict = Depends(get_current_user)):
+    """Force recalculate invoices for ALL clients."""
+    if current_user["role"] not in ["admin"]:
+        raise HTTPException(status_code=403, detail="Solo admin")
+    tid = current_user["tenant_id"]
+    client_ids = await db.invoices.distinct("customer_id", {"tenant_id": tid, "is_annulled": {"$ne": True}})
+    for cid in client_ids:
+        await recalculate_client_invoices(tid, cid)
+    return {"message": f"{len(client_ids)} clientes recalculados"}
+
+
 # ==================== SUPERADMIN ENDPOINTS ====================
 
 @api_router.post("/superadmin/seed")
