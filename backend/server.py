@@ -489,7 +489,7 @@ async def check_employee_permission(user_id: str, permission: str) -> bool:
 
 
 async def recalculate_client_invoices(tenant_id: str, customer_id: str):
-    """ALL deposits go to the LAST invoice only. Previous invoices have NO deposits."""
+    """Assign each deposit to the invoice that was the LATEST at the time the deposit was approved."""
     client = await db.users.find_one({"customer_id": customer_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1})
     if not client:
         return
@@ -500,63 +500,62 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     
     all_invoices = await db.invoices.find(
         {"customer_id": customer_id, "tenant_id": tenant_id, "is_annulled": {"$ne": True}},
-        {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1, "shipping_cost": 1}
+        {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1, "shipping_cost": 1, "created_at": 1}
     ).sort("created_at", 1).to_list(1000)
     
     if not all_invoices:
         return
     
-    last_invoice = all_invoices[-1]
+    # Group deposits by which invoice was the latest at the time of the deposit
+    deposits_by_invoice = {inv["id"]: [] for inv in all_invoices}
     
-    # ALL deposits go to the last invoice
-    new_applied = []
     for dep in all_deposits:
-        new_applied.append({
+        dep_date = dep.get("created_at", "")
+        # Find the latest invoice created BEFORE or AT the deposit date
+        target_invoice = None
+        for inv in all_invoices:
+            if inv["created_at"] <= dep_date:
+                target_invoice = inv
+            else:
+                break
+        # If no invoice existed before the deposit, assign to the first invoice
+        if target_invoice is None:
+            target_invoice = all_invoices[0]
+        
+        deposits_by_invoice[target_invoice["id"]].append({
             "deposit_id": dep.get("id", ""),
             "amount_applied": dep["amount"],
             "created_at": dep.get("created_at", ""),
             "description": dep.get("description", "")
         })
     
-    inv_total = last_invoice.get("total", 0) + last_invoice.get("saldo_pendiente", 0) + last_invoice.get("shipping_cost", 0)
-    saldo_ant = last_invoice.get("saldo_a_favor_anterior", 0) or 0
-    new_total_deposits = round(sum(ad["amount_applied"] for ad in new_applied), 2)
-    total_credits = new_total_deposits + saldo_ant
-    
-    if total_credits >= inv_total:
-        total_a_pagar = 0
-        saldo_a_favor = round(total_credits - inv_total, 2)
-    else:
-        total_a_pagar = round(inv_total - total_credits, 2)
-        saldo_a_favor = 0
-    
-    await db.invoices.update_one(
-        {"id": last_invoice["id"], "tenant_id": tenant_id},
-        {"$set": {
-            "applied_deposits": new_applied,
-            "deposits_applied": new_total_deposits,
-            "total_a_pagar": total_a_pagar,
-            "saldo_a_favor": saldo_a_favor
-        }}
-    )
-    
-    # Clear deposits from all older invoices and recalculate their totals
-    for inv_doc in all_invoices[:-1]:
-        old_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + inv_doc.get("shipping_cost", 0)
-        old_saldo_ant = inv_doc.get("saldo_a_favor_anterior", 0) or 0
-        if old_saldo_ant >= old_total:
-            old_a_pagar = 0
-            old_a_favor = round(old_saldo_ant - old_total, 2)
+    # Update each invoice with its corresponding deposits
+    carry_saldo_a_favor = 0
+    for inv_doc in all_invoices:
+        inv_deposits = deposits_by_invoice.get(inv_doc["id"], [])
+        total_deposits = round(sum(ad["amount_applied"] for ad in inv_deposits), 2)
+        
+        inv_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + inv_doc.get("shipping_cost", 0)
+        saldo_ant = carry_saldo_a_favor
+        total_credits = total_deposits + saldo_ant
+        
+        if total_credits >= inv_total:
+            total_a_pagar = 0
+            saldo_a_favor = round(total_credits - inv_total, 2)
         else:
-            old_a_pagar = round(old_total - old_saldo_ant, 2)
-            old_a_favor = 0
+            total_a_pagar = round(inv_total - total_credits, 2)
+            saldo_a_favor = 0
+        
+        carry_saldo_a_favor = saldo_a_favor
+        
         await db.invoices.update_one(
             {"id": inv_doc["id"], "tenant_id": tenant_id},
             {"$set": {
-                "applied_deposits": [],
-                "deposits_applied": 0,
-                "total_a_pagar": old_a_pagar,
-                "saldo_a_favor": old_a_favor
+                "applied_deposits": inv_deposits,
+                "deposits_applied": total_deposits,
+                "saldo_a_favor_anterior": saldo_ant,
+                "total_a_pagar": total_a_pagar,
+                "saldo_a_favor": saldo_a_favor
             }}
         )
 
@@ -2792,8 +2791,21 @@ async def get_client_available_deposits(customer_id: str, current_user: dict = D
         {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
     ).sort("created_at", 1).to_list(1000)
     
-    # ALL deposits are available for the next invoice (they always go to the latest one)
-    return all_deposits
+    # Only return deposits approved AFTER the last invoice was created
+    last_invoice = await db.invoices.find_one(
+        {"customer_id": customer_id.upper(), "tenant_id": tid, "is_annulled": {"$ne": True}},
+        {"_id": 0, "created_at": 1},
+        sort=[("created_at", -1)]
+    )
+    
+    if last_invoice:
+        # Only deposits made after last invoice
+        available = [d for d in all_deposits if d.get("created_at", "") > last_invoice["created_at"]]
+    else:
+        # No invoices yet - all deposits available
+        available = all_deposits
+    
+    return available
 
 @api_router.get("/invoices/client-pending-balance/{customer_id}")
 async def get_client_pending_balance(customer_id: str, current_user: dict = Depends(get_current_user)):
@@ -2916,28 +2928,41 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     
     invoice_dict = invoice.model_dump()
     
-    # ===== Assign ALL deposits to this invoice (the latest) =====
-    # Get all approved, non-deleted deposits for this client
+    # ===== Assign deposits that belong to THIS invoice (by date) =====
     all_deposits = await db.wallet_transactions.find(
         {"user_id": client["id"], "tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
         {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
     ).sort("created_at", 1).to_list(1000)
     
-    # ALL deposits go to this invoice (full amounts, complete)
+    # This is the new latest invoice - get creation timestamp
+    invoice_created_at = invoice_dict["created_at"]
+    
+    # Get all other invoices to know their dates
+    other_invoices = await db.invoices.find(
+        {"customer_id": customer_id, "tenant_id": tid, "is_annulled": {"$ne": True}},
+        {"_id": 0, "id": 1, "created_at": 1}
+    ).sort("created_at", 1).to_list(1000)
+    all_inv_dates = [inv["created_at"] for inv in other_invoices] + [invoice_created_at]
+    all_inv_dates.sort()
+    
+    # Deposits that belong to this invoice: approved AFTER the previous invoice (or all if first)
+    prev_invoice_date = None
+    for i, d in enumerate(all_inv_dates):
+        if d == invoice_created_at and i > 0:
+            prev_invoice_date = all_inv_dates[i - 1]
+            break
+    
     applied_deposits = []
     for dep in all_deposits:
+        dep_date = dep.get("created_at", "")
+        if prev_invoice_date and dep_date <= prev_invoice_date:
+            continue  # This deposit belongs to an older invoice
         applied_deposits.append({
             "deposit_id": dep.get("id", ""),
             "amount_applied": dep["amount"],
             "created_at": dep.get("created_at", ""),
             "description": dep.get("description", "")
         })
-    
-    # Clear deposits from all older invoices for this client
-    await db.invoices.update_many(
-        {"customer_id": customer_id, "tenant_id": tid, "is_annulled": {"$ne": True}},
-        {"$set": {"applied_deposits": [], "deposits_applied": 0}}
-    )
     
     # Calculate invoice total
     invoice_total = total + saldo_pendiente
