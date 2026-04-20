@@ -1,10 +1,13 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/App";
 import { useNavigate, Link } from "react-router-dom";
-import { getReportsSummary, getActiveLive } from "@/lib/api";
+import { getReportsSummary, getActiveLive, getBuyersReport } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { 
   Radio, 
   Users, 
@@ -36,6 +39,8 @@ export default function AdminDashboard() {
   const [activeLive, setActiveLive] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dashPeriod, setDashPeriod] = useState("week");
+  const [buyersOpen, setBuyersOpen] = useState(false);
+  const [buyersData, setBuyersData] = useState([]);
 
   useEffect(() => {
     loadData();
@@ -60,6 +65,14 @@ export default function AdminDashboard() {
   const handleDashPeriod = (p) => {
     setDashPeriod(p);
     loadData(p);
+  };
+
+  const openBuyersReport = async () => {
+    setBuyersOpen(true);
+    try {
+      const res = await getBuyersReport(dashPeriod);
+      setBuyersData(res.data || []);
+    } catch { setBuyersData([]); }
   };
 
 
@@ -214,9 +227,9 @@ export default function AdminDashboard() {
             { key: "commissions", icon: TrendingUp, value: `$${summary?.total_commissions?.toFixed(0) || 0}`, label: "Comisiones", bg: "bg-yellow-50", iconBg: "rgba(234,179,8,0.1)", iconColor: "#ca8a04", prefix: "" },
             { key: "shipments", icon: Truck, value: `$${summary?.total_shipping?.toFixed(0) || 0}`, label: "Envios", bg: "bg-purple-50", iconBg: "rgba(147,51,234,0.1)", iconColor: "#9333ea", prefix: "" },
             { key: "packages", icon: Package, value: summary?.total_packages || 0, label: "Paquetes", bg: "bg-orange-50", iconBg: "rgba(249,115,22,0.1)", iconColor: "#ea580c", prefix: "" },
-            { key: "buyers", icon: ShoppingBag, value: summary?.buyers_count || 0, label: "Compraron", bg: "bg-teal-50", iconBg: "rgba(20,184,166,0.1)", iconColor: "#0d9488", prefix: "" },
+            { key: "buyers", icon: ShoppingBag, value: summary?.buyers_count || 0, label: "Compraron", bg: "bg-teal-50", iconBg: "rgba(20,184,166,0.1)", iconColor: "#0d9488", prefix: "", onClick: openBuyersReport },
           ].map((stat) => (
-            <div key={stat.key} className={`${stat.bg} rounded-xl p-3 text-center`} data-testid={`stat-${stat.key}`}>
+            <div key={stat.key} className={`${stat.bg} rounded-xl p-3 text-center ${stat.onClick ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-teal-300 transition-all' : ''}`} data-testid={`stat-${stat.key}`} onClick={stat.onClick}>
               <div className="w-8 h-8 rounded-lg flex items-center justify-center mx-auto mb-1.5" style={{ background: stat.iconBg }}>
                 <stat.icon className="h-4 w-4" style={{ color: stat.iconColor }} />
               </div>
@@ -287,6 +300,64 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* Buyers Report Dialog */}
+      <Dialog open={buyersOpen} onOpenChange={setBuyersOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">Reporte de Compradores ({dashPeriod === "week" ? "Semana" : "Total"})</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh] pr-2">
+            {buyersData.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">
+                <ShoppingBag className="h-10 w-10 mx-auto mb-2 opacity-50" />
+                <p className="text-sm">Sin compradores en este periodo</p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {buyersData.map((week) => (
+                  <div key={week.week_key}>
+                    <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-200">
+                      <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">Semana: {week.week_label}</p>
+                      <div className="flex gap-2 text-[10px] text-slate-400">
+                        <span>{week.total_buyers} clientes</span>
+                        <span>•</span>
+                        <span>{week.total_purchases} compras</span>
+                        <span>•</span>
+                        <span className="font-semibold text-slate-600">${week.total_amount.toFixed(2)}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {week.clients.map((client) => (
+                        <div key={client.customer_id} className="bg-slate-50 rounded-lg p-2.5">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-[10px] px-1.5 font-bold">{client.customer_id}</Badge>
+                              <span className="text-sm font-semibold text-slate-800">{client.name}</span>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm font-bold text-slate-800">${client.total.toFixed(2)}</p>
+                              <p className="text-[10px] text-slate-400">{client.count} items</p>
+                            </div>
+                          </div>
+                          <div className="space-y-0.5">
+                            {client.stores.map((store) => (
+                              <div key={store.store} className="flex justify-between text-xs text-slate-500 pl-2">
+                                <span>{store.store}</span>
+                                <span>{store.count} items • <span className="font-medium text-slate-700">${store.total.toFixed(2)}</span></span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

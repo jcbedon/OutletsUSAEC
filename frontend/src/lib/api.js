@@ -114,6 +114,7 @@ export const updateClient = (userId, data) => api.put(`/admin/clients/${userId}`
 export const getClientInfo = (customerId) => api.get(`/admin/clients/${customerId}/info`);
 export const getLiveReport = (liveId) => api.get(`/admin/reports/live/${liveId}`);
 export const getReportsSummary = (period = "week") => api.get(`/admin/reports/summary?period=${period}`);
+export const getBuyersReport = (period = "week") => api.get(`/admin/reports/buyers?period=${period}`);
 export const getBusinessStats = (period = "all") => api.get(`/admin/reports/business-stats?period=${period}`);
 export const getClientsPurchasesReport = () => api.get("/admin/reports/clients-purchases");
 export const getAllPurchasesReport = () => api.get("/admin/reports/all-purchases");

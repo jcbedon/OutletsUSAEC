@@ -3660,6 +3660,100 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
         "top_customers": top_customers
     }
 
+@api_router.get("/admin/reports/buyers")
+async def get_buyers_report(period: str = "week", current_user: dict = Depends(get_current_user)):
+    """Get detailed buyers report grouped by week (Sunday to Sunday end of day)"""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    import math
+    
+    # Date filter
+    date_filter = {}
+    if period == "week":
+        now = datetime.now(timezone.utc)
+        days_since_sunday = now.weekday() + 1 if now.weekday() != 6 else 0
+        week_start = now - timedelta(days=days_since_sunday)
+        week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+        date_filter = {"created_at": {"$gte": week_start.isoformat(), "$lte": week_end.isoformat()}}
+    
+    purchase_match = {"tenant_id": tid, **date_filter}
+    
+    # Get all purchases in period
+    purchases = await db.purchases.find(purchase_match, {"_id": 0}).sort("created_at", -1).to_list(10000)
+    
+    # Get client names
+    client_ids = list(set(p.get("customer_id") for p in purchases if p.get("customer_id")))
+    clients = await db.users.find(
+        {"customer_id": {"$in": client_ids}, "tenant_id": tid},
+        {"_id": 0, "customer_id": 1, "name": 1}
+    ).to_list(1000)
+    client_names = {c["customer_id"]: c["name"] for c in clients}
+    
+    # Group by week (Sunday to Sunday EOD)
+    def get_week_key(date_str):
+        d = datetime.fromisoformat(date_str.replace("Z", "+00:00")) if isinstance(date_str, str) else date_str
+        days_since_sun = d.weekday() + 1 if d.weekday() != 6 else 0
+        sunday = d - timedelta(days=days_since_sun)
+        return sunday.strftime("%Y-%m-%d")
+    
+    def get_week_label(date_str):
+        d = datetime.fromisoformat(date_str.replace("Z", "+00:00")) if isinstance(date_str, str) else date_str
+        days_since_sun = d.weekday() + 1 if d.weekday() != 6 else 0
+        sunday = d - timedelta(days=days_since_sun)
+        saturday = sunday + timedelta(days=6)
+        return f"{sunday.strftime('%d %b')} - {saturday.strftime('%d %b')}"
+    
+    weeks = {}
+    for p in purchases:
+        wk = get_week_key(p["created_at"])
+        if wk not in weeks:
+            weeks[wk] = {"label": get_week_label(p["created_at"]), "clients": {}}
+        
+        cid = p.get("customer_id", "SIN_ID")
+        store = p.get("store", "Sin tienda")
+        
+        if cid not in weeks[wk]["clients"]:
+            weeks[wk]["clients"][cid] = {"name": client_names.get(cid, cid), "stores": {}, "total": 0, "count": 0}
+        
+        if store not in weeks[wk]["clients"][cid]["stores"]:
+            weeks[wk]["clients"][cid]["stores"][store] = {"total": 0, "count": 0}
+        
+        amount = p.get("total", p.get("price", 0))
+        weeks[wk]["clients"][cid]["stores"][store]["total"] += amount
+        weeks[wk]["clients"][cid]["stores"][store]["count"] += 1
+        weeks[wk]["clients"][cid]["total"] += amount
+        weeks[wk]["clients"][cid]["count"] += 1
+    
+    # Format response
+    result = []
+    for wk in sorted(weeks.keys(), reverse=True):
+        w = weeks[wk]
+        clients_list = []
+        for cid, cdata in sorted(w["clients"].items(), key=lambda x: x[1]["total"], reverse=True):
+            stores_list = [{"store": s, "total": round(sd["total"], 2), "count": sd["count"]} 
+                          for s, sd in sorted(cdata["stores"].items(), key=lambda x: x[1]["total"], reverse=True)]
+            clients_list.append({
+                "customer_id": cid,
+                "name": cdata["name"],
+                "total": round(cdata["total"], 2),
+                "count": cdata["count"],
+                "stores": stores_list
+            })
+        result.append({
+            "week_key": wk,
+            "week_label": w["label"],
+            "clients": clients_list,
+            "total_buyers": len(clients_list),
+            "total_purchases": sum(c["count"] for c in clients_list),
+            "total_amount": round(sum(c["total"] for c in clients_list), 2)
+        })
+    
+    return result
+
+
+
 @api_router.get("/admin/reports/business-stats")
 async def get_business_stats(period: str = "all", current_user: dict = Depends(get_current_user)):
     """Get detailed business statistics with optional date filter"""
