@@ -562,16 +562,11 @@ https://outletsusaec.shop/`;
                           </div>
                           <div className="text-right">
                             <div className={`px-3 py-2 rounded-xl ${client.pending_balance < 0 ? 'bg-red-50' : 'bg-green-50'}`}>
-                              <p className="text-xs text-gray-500">Saldo Pendiente</p>
+                              <p className="text-xs text-gray-500">Total a Pagar</p>
                               <p className={`text-xl font-bold ${client.pending_balance < 0 ? 'text-red-600' : 'text-green-600'}`}
                                 data-testid={`pending-balance-${client.customer_id}`}>
-                                {client.pending_balance < 0 ? '-' : '+'}${Math.abs(client.pending_balance || 0).toFixed(2)}
+                                {client.pending_balance < 0 ? '' : ''}${Math.abs(client.pending_balance || 0).toFixed(2)}
                               </p>
-                              {(client.total_purchases > 0 || client.total_shipping > 0 || client.total_saldo_pendiente > 0) && (
-                                <p className="text-xs text-gray-400 mt-1">
-                                  Compras: ${client.total_purchases?.toFixed(2)} | Envio: ${client.total_shipping?.toFixed(2)}{client.total_saldo_pendiente > 0 ? ` | Ant: $${client.total_saldo_pendiente?.toFixed(2)}` : ''}
-                                </p>
-                              )}
                             </div>
                           </div>
                         </div>
