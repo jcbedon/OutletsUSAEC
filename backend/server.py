@@ -489,7 +489,7 @@ async def check_employee_permission(user_id: str, permission: str) -> bool:
 
 
 async def recalculate_client_invoices(tenant_id: str, customer_id: str):
-    """Recalculate deposit allocation for ALL invoices of a client in chronological order."""
+    """Apply all unused deposits ONLY to the LAST (most recent) invoice. Previous invoices stay untouched."""
     client = await db.users.find_one({"customer_id": customer_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1})
     if not client:
         return
@@ -500,75 +500,56 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     
     all_invoices = await db.invoices.find(
         {"customer_id": customer_id, "tenant_id": tenant_id, "is_annulled": {"$ne": True}},
-        {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1, "created_at": 1, "purchase_ids": 1, "shipping_cost": 1}
+        {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1, "shipping_cost": 1, "applied_deposits": 1}
     ).sort("created_at", 1).to_list(1000)
     
     if not all_invoices:
         return
-    if not all_deposits:
-        # No deposits - clear all applied deposits
-        for inv_doc in all_invoices:
-            grand_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + inv_doc.get("shipping_cost", 0)
-            saldo_ant = inv_doc.get("saldo_a_favor_anterior", 0) or 0
-            total_a_pagar = round(max(0, grand_total - saldo_ant), 2)
-            saldo_a_favor = round(max(0, saldo_ant - grand_total), 2) if saldo_ant > grand_total else 0
-            await db.invoices.update_one(
-                {"id": inv_doc["id"], "tenant_id": tenant_id},
-                {"$set": {"applied_deposits": [], "deposits_applied": 0, "total_a_pagar": total_a_pagar, "saldo_a_favor": saldo_a_favor}}
-            )
-        return
     
-    # Track which deposits have been used (each deposit goes to ONE invoice only, full amount)
+    # Get deposit IDs used by ALL invoices EXCEPT the last one (older invoices are locked)
+    last_invoice = all_invoices[-1]
     used_deposit_ids = set()
-    carry_forward_saldo_a_favor = 0  # Saldo a favor that carries from one invoice to the next
+    for inv_doc in all_invoices[:-1]:
+        for ad in inv_doc.get("applied_deposits", []):
+            dep_id = ad.get("deposit_id")
+            if dep_id:
+                used_deposit_ids.add(dep_id)
     
-    for inv_doc in all_invoices:
-        inv_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + inv_doc.get("shipping_cost", 0)
-        
-        # Apply carried saldo_a_favor from previous invoice
-        saldo_ant = carry_forward_saldo_a_favor
-        
-        new_applied = []
-        remaining = inv_total
-        for dep in all_deposits:
-            if remaining <= 0:
-                break
-            dep_id = dep.get("id", "")
-            if dep_id in used_deposit_ids:
-                continue
-            # Assign full deposit amount to this invoice
-            new_applied.append({
-                "deposit_id": dep_id,
-                "amount_applied": dep["amount"],
-                "created_at": dep.get("created_at", ""),
-                "description": dep.get("description", "")
-            })
-            used_deposit_ids.add(dep_id)
-            remaining = round(remaining - dep["amount"], 2)
-        
-        new_total_deposits = round(sum(ad["amount_applied"] for ad in new_applied), 2)
-        total_credits = new_total_deposits + saldo_ant
-        
-        if total_credits >= inv_total:
-            total_a_pagar = 0
-            saldo_a_favor = round(total_credits - inv_total, 2)
-        else:
-            total_a_pagar = round(inv_total - total_credits, 2)
-            saldo_a_favor = 0
-        
-        # Carry forward saldo_a_favor to next invoice
-        carry_forward_saldo_a_favor = saldo_a_favor
-        
-        await db.invoices.update_one(
-            {"id": inv_doc["id"], "tenant_id": tenant_id},
-            {"$set": {
-                "applied_deposits": new_applied,
-                "deposits_applied": new_total_deposits,
-                "saldo_a_favor_anterior": saldo_ant,
-                "total_a_pagar": total_a_pagar,
-                "saldo_a_favor": saldo_a_favor
-            }}
-        )
+    # Assign all available (unused) deposits to the LAST invoice only
+    inv_total = last_invoice.get("total", 0) + last_invoice.get("saldo_pendiente", 0) + last_invoice.get("shipping_cost", 0)
+    saldo_ant = last_invoice.get("saldo_a_favor_anterior", 0) or 0
+    
+    new_applied = []
+    for dep in all_deposits:
+        dep_id = dep.get("id", "")
+        if dep_id in used_deposit_ids:
+            continue
+        new_applied.append({
+            "deposit_id": dep_id,
+            "amount_applied": dep["amount"],
+            "created_at": dep.get("created_at", ""),
+            "description": dep.get("description", "")
+        })
+    
+    new_total_deposits = round(sum(ad["amount_applied"] for ad in new_applied), 2)
+    total_credits = new_total_deposits + saldo_ant
+    
+    if total_credits >= inv_total:
+        total_a_pagar = 0
+        saldo_a_favor = round(total_credits - inv_total, 2)
+    else:
+        total_a_pagar = round(inv_total - total_credits, 2)
+        saldo_a_favor = 0
+    
+    await db.invoices.update_one(
+        {"id": last_invoice["id"], "tenant_id": tenant_id},
+        {"$set": {
+            "applied_deposits": new_applied,
+            "deposits_applied": new_total_deposits,
+            "total_a_pagar": total_a_pagar,
+            "saldo_a_favor": saldo_a_favor
+        }}
+    )
 
 
 # ==================== AUTH ENDPOINTS ====================
