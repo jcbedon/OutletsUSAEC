@@ -2841,7 +2841,7 @@ async def get_client_pending_balance(customer_id: str, current_user: dict = Depe
         {"customer_id": customer_id.upper(), "tenant_id": tid, "is_annulled": {"$ne": True}},
         {"_id": 0, "id": 1, "invoice_number": 1, "total_a_pagar": 1, "total": 1, 
          "deposits_applied": 1, "saldo_pendiente": 1, "shipping_cost": 1, "purchase_ids": 1,
-         "subtotal": 1, "total_tax": 1, "total_commission": 1},
+         "subtotal": 1, "total_tax": 1, "total_commission": 1, "saldo_a_favor": 1},
         sort=[("created_at", -1)]
     )
     
