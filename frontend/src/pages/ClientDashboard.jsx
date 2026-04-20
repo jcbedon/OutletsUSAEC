@@ -502,25 +502,27 @@ export default function ClientDashboard() {
               ) : (
                 <div className="space-y-4">
                   {(() => {
-                    // Group invoices by week (Sunday to Sunday)
+                    // Group invoices by week (Tuesday to Monday)
                     const getWeekLabel = (dateStr) => {
                       const d = new Date(dateStr);
-                      const day = d.getDay();
-                      const sunday = new Date(d);
-                      sunday.setDate(d.getDate() - day);
-                      sunday.setHours(0, 0, 0, 0);
-                      const saturday = new Date(sunday);
-                      saturday.setDate(sunday.getDate() + 6);
+                      const dayOfWeek = d.getDay();
+                      const daysSinceTue = (dayOfWeek + 5) % 7;
+                      const tuesday = new Date(d);
+                      tuesday.setDate(d.getDate() - daysSinceTue);
+                      tuesday.setHours(0, 0, 0, 0);
+                      const monday = new Date(tuesday);
+                      monday.setDate(tuesday.getDate() + 6);
                       const fmt = (dt) => dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
-                      return `${fmt(sunday)} - ${fmt(saturday)}`;
+                      return `${fmt(tuesday)} - ${fmt(monday)}`;
                     };
                     const getWeekKey = (dateStr) => {
                       const d = new Date(dateStr);
-                      const day = d.getDay();
-                      const sunday = new Date(d);
-                      sunday.setDate(d.getDate() - day);
-                      sunday.setHours(0, 0, 0, 0);
-                      return sunday.toISOString().slice(0, 10);
+                      const dayOfWeek = d.getDay();
+                      const daysSinceTue = (dayOfWeek + 5) % 7;
+                      const tuesday = new Date(d);
+                      tuesday.setDate(d.getDate() - daysSinceTue);
+                      tuesday.setHours(0, 0, 0, 0);
+                      return tuesday.toISOString().slice(0, 10);
                     };
 
                     const grouped = {};
@@ -651,22 +653,24 @@ export default function ClientDashboard() {
                 
                 const getWeekKey = (dateStr) => {
                   const d = new Date(dateStr);
-                  const day = d.getDay();
-                  const sunday = new Date(d);
-                  sunday.setDate(d.getDate() - day);
-                  sunday.setHours(0, 0, 0, 0);
-                  return sunday.toISOString().slice(0, 10);
+                  const dayOfWeek = d.getDay();
+                  const daysSinceTue = (dayOfWeek + 5) % 7;
+                  const tuesday = new Date(d);
+                  tuesday.setDate(d.getDate() - daysSinceTue);
+                  tuesday.setHours(0, 0, 0, 0);
+                  return tuesday.toISOString().slice(0, 10);
                 };
                 const getWeekLabel = (dateStr) => {
                   const d = new Date(dateStr);
-                  const day = d.getDay();
-                  const sunday = new Date(d);
-                  sunday.setDate(d.getDate() - day);
-                  sunday.setHours(0, 0, 0, 0);
-                  const saturday = new Date(sunday);
-                  saturday.setDate(sunday.getDate() + 6);
+                  const dayOfWeek = d.getDay();
+                  const daysSinceTue = (dayOfWeek + 5) % 7;
+                  const tuesday = new Date(d);
+                  tuesday.setDate(d.getDate() - daysSinceTue);
+                  tuesday.setHours(0, 0, 0, 0);
+                  const monday = new Date(tuesday);
+                  monday.setDate(tuesday.getDate() + 6);
                   const fmt = (dt) => dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
-                  return `${fmt(sunday)} - ${fmt(saturday)}`;
+                  return `${fmt(tuesday)} - ${fmt(monday)}`;
                 };
 
                 const grouped = {};

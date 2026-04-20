@@ -3716,19 +3716,19 @@ async def get_buyers_report(period: str = "week", current_user: dict = Depends(g
     ).to_list(1000)
     client_names = {c["customer_id"]: c["name"] for c in clients}
     
-    # Group by week (Sunday to Sunday EOD)
+    # Group by week (Tuesday to Monday)
     def get_week_key(date_str):
         d = datetime.fromisoformat(date_str.replace("Z", "+00:00")) if isinstance(date_str, str) else date_str
-        days_since_sun = d.weekday() + 1 if d.weekday() != 6 else 0
-        sunday = d - timedelta(days=days_since_sun)
-        return sunday.strftime("%Y-%m-%d")
+        days_since_tue = (d.weekday() - 1) % 7
+        tuesday = d - timedelta(days=days_since_tue)
+        return tuesday.strftime("%Y-%m-%d")
     
     def get_week_label(date_str):
         d = datetime.fromisoformat(date_str.replace("Z", "+00:00")) if isinstance(date_str, str) else date_str
-        days_since_sun = d.weekday() + 1 if d.weekday() != 6 else 0
-        sunday = d - timedelta(days=days_since_sun)
-        saturday = sunday + timedelta(days=6)
-        return f"{sunday.strftime('%d %b')} - {saturday.strftime('%d %b')}"
+        days_since_tue = (d.weekday() - 1) % 7
+        tuesday = d - timedelta(days=days_since_tue)
+        monday = tuesday + timedelta(days=6)
+        return f"{tuesday.strftime('%d %b')} - {monday.strftime('%d %b')}"
     
     weeks = {}
     for p in purchases:

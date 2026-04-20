@@ -308,22 +308,24 @@ export default function AdminInvoices() {
             // Week grouping helpers
             const getWeekKey = (dateStr) => {
               const d = new Date(dateStr);
-              const day = d.getDay();
-              const sunday = new Date(d);
-              sunday.setDate(d.getDate() - day);
-              sunday.setHours(0, 0, 0, 0);
-              return sunday.toISOString().slice(0, 10);
+              const dayOfWeek = d.getDay(); // 0=Sun,1=Mon,2=Tue...
+              const daysSinceTue = (dayOfWeek + 5) % 7; // days since Tuesday
+              const tuesday = new Date(d);
+              tuesday.setDate(d.getDate() - daysSinceTue);
+              tuesday.setHours(0, 0, 0, 0);
+              return tuesday.toISOString().slice(0, 10);
             };
             const getWeekLabel = (dateStr) => {
               const d = new Date(dateStr);
-              const day = d.getDay();
-              const sunday = new Date(d);
-              sunday.setDate(d.getDate() - day);
-              sunday.setHours(0, 0, 0, 0);
-              const satEnd = new Date(sunday);
-              satEnd.setDate(sunday.getDate() + 6);
+              const dayOfWeek = d.getDay();
+              const daysSinceTue = (dayOfWeek + 5) % 7;
+              const tuesday = new Date(d);
+              tuesday.setDate(d.getDate() - daysSinceTue);
+              tuesday.setHours(0, 0, 0, 0);
+              const monday = new Date(tuesday);
+              monday.setDate(tuesday.getDate() + 6);
               const fmt = (dt) => dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
-              return `${fmt(sunday)} - ${fmt(satEnd)}`;
+              return `${fmt(tuesday)} - ${fmt(monday)}`;
             };
             const nowKey = getWeekKey(new Date().toISOString());
 
