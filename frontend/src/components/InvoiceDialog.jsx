@@ -1017,7 +1017,9 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                                   <p className="text-xs font-semibold text-green-800 mb-1">Abonos (Recargas del cliente)</p>
                                   {availableDeposits.map((dep, idx) => (
                                     <div key={dep.id} className="flex justify-between text-sm">
-                                      <span className="text-green-700">Abono {idx + 1}:</span>
+                                      <span className="text-green-700">
+                                        Abono {idx + 1}{dep.original_amount && dep.original_amount !== dep.amount ? ` (recarga $${dep.original_amount.toFixed(2)})` : ''}:
+                                      </span>
                                       <span className="font-bold text-green-700">-${dep.amount.toFixed(2)}</span>
                                     </div>
                                   ))}
