@@ -24,6 +24,7 @@ import {
   Plus,
   ArrowLeft,
   ChevronRight,
+  ChevronDown,
   Upload
 } from "lucide-react";
 
@@ -53,6 +54,8 @@ export default function AdminInvoices() {
   const [selectedClientForInvoice, setSelectedClientForInvoice] = useState(null);
   const [existingInvoiceToView, setExistingInvoiceToView] = useState(null);
   const [tenantInfo, setTenantInfo] = useState(null);
+  const [selectedWeek, setSelectedWeek] = useState("all");
+  const [expandedWeeks, setExpandedWeeks] = useState({});
   
   const defaultTenantInfo = {
     business_name: user?.tenant_name || "Personal Shopper",
@@ -301,9 +304,93 @@ export default function AdminInvoices() {
         </div>
       ) : (
         <div className="space-y-3">
-          <p className="text-sm text-gray-500">{invoices.length} factura(s) encontrada(s)</p>
-          
-          {invoices.map((invoice) => (
+          {(() => {
+            // Week grouping helpers
+            const getWeekKey = (dateStr) => {
+              const d = new Date(dateStr);
+              const day = d.getDay();
+              const sunday = new Date(d);
+              sunday.setDate(d.getDate() - day);
+              sunday.setHours(0, 0, 0, 0);
+              return sunday.toISOString().slice(0, 10);
+            };
+            const getWeekLabel = (dateStr) => {
+              const d = new Date(dateStr);
+              const day = d.getDay();
+              const sunday = new Date(d);
+              sunday.setDate(d.getDate() - day);
+              sunday.setHours(0, 0, 0, 0);
+              const satEnd = new Date(sunday);
+              satEnd.setDate(sunday.getDate() + 6);
+              const fmt = (dt) => dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+              return `${fmt(sunday)} - ${fmt(satEnd)}`;
+            };
+            const nowKey = getWeekKey(new Date().toISOString());
+
+            // Group invoices by week
+            const grouped = {};
+            invoices.forEach((inv) => {
+              const key = getWeekKey(inv.created_at);
+              if (!grouped[key]) grouped[key] = { label: getWeekLabel(inv.created_at), invoices: [], total: 0 };
+              grouped[key].invoices.push(inv);
+              if (!inv.is_annulled) grouped[key].total += inv.total || 0;
+            });
+
+            const weeks = Object.entries(grouped).sort((a, b) => b[0].localeCompare(a[0]));
+
+            // Filter by selected week
+            const filteredWeeks = selectedWeek === "all" ? weeks : weeks.filter(([k]) => k === selectedWeek);
+
+            return (
+              <>
+                {/* Week filter pills */}
+                <div className="flex gap-1.5 overflow-x-auto pb-2">
+                  <button
+                    onClick={() => setSelectedWeek("all")}
+                    className={`shrink-0 px-3 py-1 text-xs font-medium rounded-full transition-all ${selectedWeek === "all" ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    data-testid="week-filter-all"
+                  >
+                    Todas ({invoices.length})
+                  </button>
+                  {weeks.map(([key, { label, invoices: wInvs }]) => (
+                    <button
+                      key={key}
+                      onClick={() => setSelectedWeek(selectedWeek === key ? "all" : key)}
+                      className={`shrink-0 px-3 py-1 text-xs font-medium rounded-full transition-all ${selectedWeek === key ? 'bg-slate-800 text-white' : key === nowKey ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                      data-testid={`week-filter-${key}`}
+                    >
+                      {key === nowKey ? 'Esta semana' : label} ({wInvs.length})
+                    </button>
+                  ))}
+                </div>
+
+                <p className="text-sm text-gray-500">
+                  {selectedWeek === "all" ? `${invoices.length} factura(s)` : `${filteredWeeks[0]?.[1]?.invoices.length || 0} factura(s) en semana`}
+                </p>
+
+                {/* Grouped invoices */}
+                {filteredWeeks.map(([key, { label, invoices: wInvs, total }]) => {
+                  const isCurrent = key === nowKey;
+                  const isExpanded = expandedWeeks[key] !== false; // expanded by default
+
+                  return (
+                    <div key={key}>
+                      <button
+                        onClick={() => setExpandedWeeks(prev => ({ ...prev, [key]: !isExpanded }))}
+                        className="w-full flex items-center justify-between py-2 px-1 text-left hover:bg-slate-50 rounded-lg transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          {isExpanded ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
+                          <span className={`text-xs font-bold uppercase tracking-wider ${isCurrent ? 'text-blue-700' : 'text-slate-500'}`}>
+                            {isCurrent ? 'Semana actual' : 'Semana'}: {label}
+                          </span>
+                          <Badge variant="outline" className="text-[10px] h-4 px-1.5">{wInvs.length}</Badge>
+                        </div>
+                        <span className="text-xs font-bold text-slate-600">${total.toFixed(2)}</span>
+                      </button>
+                      {isExpanded && (
+                        <div className="space-y-2 mb-4">
+                          {wInvs.map((invoice) => (
             <div
               key={invoice.id}
               className={`p-4 rounded-xl border transition-all cursor-pointer ${
@@ -387,6 +474,14 @@ export default function AdminInvoices() {
               </div>
             </div>
           ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            );
+          })()}
         </div>
       )}
 
