@@ -3655,15 +3655,18 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
     total_sales = await db.invoices.aggregate([
         {"$match": invoice_match}, {"$group": {"_id": None, "total": {"$sum": "$total"}}}
     ]).to_list(1)
-    total_commissions = await db.purchases.aggregate([
-        {"$match": purchase_match}, {"$group": {"_id": None, "total": {"$sum": "$commission"}}}
+    # Commissions from invoices
+    total_commissions = await db.invoices.aggregate([
+        {"$match": invoice_match}, {"$group": {"_id": None, "total": {"$sum": "$total_commission"}}}
     ]).to_list(1)
     client_count = await db.users.count_documents({"role": "client", "tenant_id": tid})
     live_count = await db.lives.count_documents({"tenant_id": tid, **date_filter})
     pending_shipments = await db.shipments.count_documents({"status": {"$ne": "delivered"}, "tenant_id": tid})
-    total_shipping = await db.shipments.aggregate([
-        {"$match": shipment_match}, {"$group": {"_id": None, "total": {"$sum": "$shipping_cost"}}}
+    # Shipping from invoices (shipping_cost stored on invoice)
+    total_shipping = await db.invoices.aggregate([
+        {"$match": invoice_match}, {"$group": {"_id": None, "total": {"$sum": "$shipping_cost"}}}
     ]).to_list(1)
+    # Packages from shipments linked to invoices in period
     all_shipments = await db.shipments.find(shipment_match, {"_id": 0, "weight_pounds": 1, "package_count": 1}).to_list(1000)
     total_packages = sum(s.get("package_count", 0) or math.ceil((s.get("weight_pounds", 0) or 0) / 8) for s in all_shipments if (s.get("package_count", 0) or 0) > 0 or (s.get("weight_pounds", 0) or 0) > 0)
     
