@@ -41,6 +41,8 @@ export default function AdminDashboard() {
   const [dashPeriod, setDashPeriod] = useState("week");
   const [buyersOpen, setBuyersOpen] = useState(false);
   const [buyersData, setBuyersData] = useState([]);
+  const [buyersFilter, setBuyersFilter] = useState("");
+  const [expandedBuyerWeek, setExpandedBuyerWeek] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -69,6 +71,8 @@ export default function AdminDashboard() {
 
   const openBuyersReport = async () => {
     setBuyersOpen(true);
+    setBuyersFilter("");
+    setExpandedBuyerWeek(null);
     try {
       const res = await getBuyersReport(dashPeriod);
       setBuyersData(res.data || []);
@@ -305,54 +309,77 @@ export default function AdminDashboard() {
       <Dialog open={buyersOpen} onOpenChange={setBuyersOpen}>
         <DialogContent className="max-w-lg max-h-[80vh]">
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold">Reporte de Compradores ({dashPeriod === "week" ? "Semana" : "Total"})</DialogTitle>
+            <DialogTitle className="text-lg font-bold">Compradores ({dashPeriod === "week" ? "Semana" : "Total"})</DialogTitle>
           </DialogHeader>
-          <ScrollArea className="max-h-[60vh] pr-2">
+          <div className="relative mb-2">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <input
+              placeholder="Buscar por código o nombre..."
+              value={buyersFilter}
+              onChange={(e) => setBuyersFilter(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-sm border rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-300"
+              data-testid="buyers-filter"
+            />
+          </div>
+          <ScrollArea className="max-h-[55vh] pr-2">
             {buyersData.length === 0 ? (
               <div className="text-center py-8 text-gray-400">
                 <ShoppingBag className="h-10 w-10 mx-auto mb-2 opacity-50" />
                 <p className="text-sm">Sin compradores en este periodo</p>
               </div>
             ) : (
-              <div className="space-y-5">
-                {buyersData.map((week) => (
-                  <div key={week.week_key}>
-                    <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-200">
-                      <p className="text-xs font-bold text-slate-600 uppercase tracking-wider">Semana: {week.week_label}</p>
-                      <div className="flex gap-2 text-[10px] text-slate-400">
-                        <span>{week.total_buyers} clientes</span>
-                        <span>•</span>
-                        <span>{week.total_purchases} compras</span>
-                        <span>•</span>
-                        <span className="font-semibold text-slate-600">${week.total_amount.toFixed(2)}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      {week.clients.map((client) => (
-                        <div key={client.customer_id} className="bg-slate-50 rounded-lg p-2.5">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="text-[10px] px-1.5 font-bold">{client.customer_id}</Badge>
-                              <span className="text-sm font-semibold text-slate-800">{client.name}</span>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm font-bold text-slate-800">${client.total.toFixed(2)}</p>
-                              <p className="text-[10px] text-slate-400">{client.count} items</p>
-                            </div>
-                          </div>
-                          <div className="space-y-0.5">
-                            {client.stores.map((store) => (
-                              <div key={store.store} className="flex justify-between text-xs text-slate-500 pl-2">
-                                <span>{store.store}</span>
-                                <span>{store.count} items • <span className="font-medium text-slate-700">${store.total.toFixed(2)}</span></span>
-                              </div>
-                            ))}
-                          </div>
+              <div className="space-y-1.5">
+                {buyersData.map((week) => {
+                  const filteredClients = buyersFilter.trim()
+                    ? week.clients.filter(c =>
+                        c.customer_id.toLowerCase().includes(buyersFilter.toLowerCase()) ||
+                        c.name.toLowerCase().includes(buyersFilter.toLowerCase())
+                      )
+                    : week.clients;
+                  if (filteredClients.length === 0) return null;
+                  const isOpen = expandedBuyerWeek === week.week_key || buyersFilter.trim().length > 0;
+                  const weekTotal = filteredClients.reduce((s, c) => s + c.total, 0);
+                  const weekCount = filteredClients.reduce((s, c) => s + c.count, 0);
+                  return (
+                    <div key={week.week_key} className="border rounded-lg overflow-hidden">
+                      <button
+                        onClick={() => setExpandedBuyerWeek(isOpen && !buyersFilter.trim() ? null : week.week_key)}
+                        className="w-full flex items-center justify-between px-3 py-2 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
+                      >
+                        <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">{week.week_label}</span>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                          <Badge variant="outline" className="h-4 text-[10px] px-1">{filteredClients.length}</Badge>
+                          <span>{weekCount} compras</span>
+                          <span className="font-bold text-slate-700">${weekTotal.toFixed(2)}</span>
                         </div>
-                      ))}
+                      </button>
+                      {isOpen && (
+                        <div className="divide-y divide-slate-100">
+                          {filteredClients.map((client) => (
+                            <div key={client.customer_id} className="px-3 py-2">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-bold text-blue-600">{client.customer_id}</span>
+                                  <span className="text-xs font-medium text-slate-800">{client.name}</span>
+                                  <Badge className="h-4 text-[9px] px-1 bg-slate-200 text-slate-600">{client.count} compras</Badge>
+                                </div>
+                                <span className="text-xs font-bold text-slate-800">${client.total.toFixed(2)}</span>
+                              </div>
+                              <div className="mt-1 space-y-0.5">
+                                {client.stores.map((store) => (
+                                  <div key={store.store} className="flex justify-between text-[10px] text-slate-400 pl-3">
+                                    <span>{store.store}</span>
+                                    <span>{store.count} • ${store.total.toFixed(2)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </ScrollArea>
