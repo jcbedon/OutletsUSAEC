@@ -490,15 +490,9 @@ async def check_employee_permission(user_id: str, permission: str) -> bool:
 
 async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     """Recalculate deposit allocation for ALL invoices of a client in chronological order."""
-    all_deposits = await db.wallet_transactions.find(
-        {"tenant_id": tenant_id, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
-        {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
-    ).to_list(1000)
-    # Filter by user_id from customer
     client = await db.users.find_one({"customer_id": customer_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1})
     if not client:
         return
-    all_deposits = [d for d in all_deposits if True]  # already filtered by tenant
     all_deposits = await db.wallet_transactions.find(
         {"user_id": client["id"], "tenant_id": tenant_id, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
         {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
@@ -506,33 +500,31 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     
     all_invoices = await db.invoices.find(
         {"customer_id": customer_id, "tenant_id": tenant_id, "is_annulled": {"$ne": True}},
-        {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "created_at": 1, "purchase_ids": 1}
+        {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1, "created_at": 1, "purchase_ids": 1, "shipping_cost": 1}
     ).sort("created_at", 1).to_list(1000)
     
-    if not all_invoices or not all_deposits:
+    if not all_invoices:
+        return
+    if not all_deposits:
+        # No deposits - clear all applied deposits
+        for inv_doc in all_invoices:
+            grand_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + inv_doc.get("shipping_cost", 0)
+            saldo_ant = inv_doc.get("saldo_a_favor_anterior", 0) or 0
+            total_a_pagar = round(max(0, grand_total - saldo_ant), 2)
+            saldo_a_favor = round(max(0, saldo_ant - grand_total), 2) if saldo_ant > grand_total else 0
+            await db.invoices.update_one(
+                {"id": inv_doc["id"], "tenant_id": tenant_id},
+                {"$set": {"applied_deposits": [], "deposits_applied": 0, "total_a_pagar": total_a_pagar, "saldo_a_favor": saldo_a_favor}}
+            )
         return
     
-    # Get shipping costs per invoice
-    inv_ids = [i["id"] for i in all_invoices]
-    inv_shipments = await db.shipments.find(
-        {"invoice_id": {"$in": inv_ids}, "tenant_id": tenant_id},
-        {"_id": 0, "invoice_id": 1, "shipping_cost": 1}
-    ).to_list(1000)
-    # Also find shipments by purchase_ids
-    for inv_doc in all_invoices:
-        if inv_doc["id"] not in [s["invoice_id"] for s in inv_shipments]:
-            ship = await db.shipments.find_one(
-                {"tenant_id": tenant_id, "customer_id": customer_id, "purchase_ids": {"$in": inv_doc.get("purchase_ids", [])}},
-                {"_id": 0, "invoice_id": 1, "shipping_cost": 1}
-            ) if inv_doc.get("purchase_ids") else None
-            if ship:
-                inv_shipments.append({**ship, "invoice_id": inv_doc["id"]})
-    ship_by_inv = {s["invoice_id"]: s.get("shipping_cost", 0) for s in inv_shipments}
-    
+    # Track consumed deposits globally across all invoices
     global_consumed = {dep.get("id", ""): 0 for dep in all_deposits}
     
     for inv_doc in all_invoices:
-        inv_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + ship_by_inv.get(inv_doc["id"], 0)
+        inv_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + inv_doc.get("shipping_cost", 0)
+        saldo_ant = inv_doc.get("saldo_a_favor_anterior", 0) or 0
+        
         new_applied = []
         remaining = inv_total
         for dep in all_deposits:
@@ -552,10 +544,24 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
             global_consumed[dep_id] = global_consumed.get(dep_id, 0) + apply
             remaining = round(remaining - apply, 2)
         
-        new_total = round(sum(ad["amount_applied"] for ad in new_applied), 2)
+        new_total_deposits = round(sum(ad["amount_applied"] for ad in new_applied), 2)
+        total_credits = new_total_deposits + saldo_ant
+        
+        if total_credits >= inv_total:
+            total_a_pagar = 0
+            saldo_a_favor = round(total_credits - inv_total, 2)
+        else:
+            total_a_pagar = round(inv_total - total_credits, 2)
+            saldo_a_favor = 0
+        
         await db.invoices.update_one(
             {"id": inv_doc["id"], "tenant_id": tenant_id},
-            {"$set": {"applied_deposits": new_applied, "deposits_applied": new_total}}
+            {"$set": {
+                "applied_deposits": new_applied,
+                "deposits_applied": new_total_deposits,
+                "total_a_pagar": total_a_pagar,
+                "saldo_a_favor": saldo_a_favor
+            }}
         )
 
 
@@ -1675,6 +1681,9 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
         details={"amount": transaction["amount"], "customer_id": transaction["customer_id"], "new_balance": new_balance}
     )
     
+    # Recalculate invoice deposits for this client
+    await recalculate_client_invoices(tid, transaction["customer_id"])
+    
     return {"message": "Depósito aprobado", "new_balance": new_balance}
 
 @api_router.post("/wallet/reject-deposit/{transaction_id}")
@@ -1958,6 +1967,9 @@ async def admin_create_recharge(
             "proof_url": proof_url
         }
     )
+    
+    # Recalculate invoice deposits for this client
+    await recalculate_client_invoices(tid, user["customer_id"])
     
     return {
         "message": "Recarga creada exitosamente",
