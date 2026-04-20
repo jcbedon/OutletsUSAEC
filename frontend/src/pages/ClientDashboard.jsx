@@ -284,54 +284,25 @@ export default function ClientDashboard() {
         <Card className="text-white rounded-3xl shadow-2xl overflow-hidden" data-testid="wallet-card" style={{ background: 'linear-gradient(135deg, #1E3A5F, #2a4f7f)' }}>
           <CardContent className="p-6">
             {(() => {
-              const totalPurchases = purchases.reduce((sum, p) => sum + (p.total_price || (p.price + (p.tax || 0) + (p.commission || 0))), 0);
-              const totalShipping = shipments.reduce((sum, s) => sum + (s.shipping_cost || 0), 0);
-              const totalRecharges = transactions
-                .filter(t => (t.type === 'deposit' || t.type === 'initial_balance' || t.type === 'referral_bonus') && t.status === 'approved' && !t.is_deleted)
-                .reduce((sum, t) => sum + t.amount, 0);
-              const saldoAnterior = wallet?.total_saldo_pendiente || 0;
-              const totalDebt = totalPurchases + totalShipping;
-              const balance = totalRecharges - totalDebt;
-              const needsRecharge = balance < 0;
+              const pendingDebt = wallet?.pending_debt || 0;
+              const hasDebt = pendingDebt > 0;
               
               return (
                 <>
                   <div className="flex justify-between items-start mb-4">
                     <div>
-                      <p className="text-white/70 text-sm font-medium">Tu Saldo</p>
-                      <p className={`text-4xl font-extrabold mt-1 ${needsRecharge ? 'text-red-400' : 'text-green-400'}`} data-testid="wallet-balance">
-                        {needsRecharge ? '-' : ''}${Math.abs(balance).toFixed(2)}
+                      <p className="text-white/70 text-sm font-medium">Saldo Pendiente</p>
+                      <p className={`text-4xl font-extrabold mt-1 ${hasDebt ? 'text-red-400' : 'text-green-400'}`} data-testid="wallet-balance">
+                        {hasDebt ? '-' : ''}${pendingDebt.toFixed(2)}
                       </p>
                       <p className="text-white/60 text-xs mt-1">
-                        {needsRecharge ? '(Debes recargar este monto)' : '(Saldo a favor)'}
+                        {hasDebt ? '(Debes este monto)' : '(Sin deuda pendiente)'}
                       </p>
                     </div>
                     <div className="text-right">
                       <Badge className="bg-white/20 text-white border-0 font-bold text-lg px-3 py-1">
                         #{user?.customer_id}
                       </Badge>
-                    </div>
-                  </div>
-
-                  {/* Desglose detallado */}
-                  <div className="bg-white/10 rounded-xl p-3 mb-4 space-y-2">
-                    <div className="flex justify-between items-center text-sm">
-                      <p className="text-white/70">Total Compras:</p>
-                      <p className="font-medium text-red-300">${totalPurchases.toFixed(2)}</p>
-                    </div>
-                    <div className="flex justify-between items-center text-sm">
-                      <p className="text-white/70">Total Envios:</p>
-                      <p className="font-medium text-red-300">${totalShipping.toFixed(2)}</p>
-                    </div>
-                    <div className="flex justify-between items-center text-sm border-t border-white/20 pt-2">
-                      <p className="text-white/70">Total Recargas:</p>
-                      <p className="font-medium text-green-300">${totalRecharges.toFixed(2)}</p>
-                    </div>
-                    <div className="flex justify-between items-center text-sm border-t border-white/20 pt-2">
-                      <p className="text-white/80 font-medium">Balance:</p>
-                      <p className={`font-bold text-lg ${needsRecharge ? 'text-red-400' : 'text-green-400'}`}>
-                        {needsRecharge ? '-' : '+'}${Math.abs(balance).toFixed(2)}
-                      </p>
                     </div>
                   </div>
                 </>

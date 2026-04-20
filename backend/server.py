@@ -1568,7 +1568,18 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
         ]).to_list(1)
         saldo_pend = agg[0]["total"] if agg else 0
     
-    return {**wallet, "total_saldo_pendiente": round(saldo_pend, 2)}
+    # Get total_a_pagar from the last invoice
+    last_total_a_pagar = 0
+    if customer_id:
+        last_inv = await db.invoices.find_one(
+            {"tenant_id": tid, "customer_id": customer_id, "is_annulled": {"$ne": True}},
+            {"_id": 0, "total_a_pagar": 1},
+            sort=[("created_at", -1)]
+        )
+        if last_inv:
+            last_total_a_pagar = last_inv.get("total_a_pagar", 0) or 0
+    
+    return {**wallet, "total_saldo_pendiente": round(saldo_pend, 2), "pending_debt": round(last_total_a_pagar, 2)}
 
 @api_router.post("/wallet/deposit-request")
 async def request_deposit(deposit: WalletDepositRequest, current_user: dict = Depends(get_current_user)):
