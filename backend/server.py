@@ -515,7 +515,7 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
             if dep_id:
                 used_deposit_ids.add(dep_id)
     
-    # Assign all available (unused) deposits to the LAST invoice only
+    # Assign ALL available (unused) deposits to the LAST invoice
     inv_total = last_invoice.get("total", 0) + last_invoice.get("saldo_pendiente", 0) + last_invoice.get("shipping_cost", 0)
     saldo_ant = last_invoice.get("saldo_a_favor_anterior", 0) or 0
     
@@ -2944,23 +2944,19 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     # Calculate invoice total to know how much we need
     invoice_total = total + saldo_pendiente
     
-    # Assign deposits: each deposit goes FULL to this invoice (not split)
+    # Assign ALL available deposits to this invoice (full amounts, no splitting)
+    # Even if they exceed the total - the excess becomes saldo_a_favor
     applied_deposits = []
-    remaining_to_cover = invoice_total
     for dep in all_deposits:
-        if remaining_to_cover <= 0:
-            break
         dep_id = dep.get("id", "")
         if dep_id in used_deposit_ids:
             continue
-        # Assign full amount
         applied_deposits.append({
             "deposit_id": dep_id,
             "amount_applied": dep["amount"],
             "created_at": dep.get("created_at", ""),
             "description": dep.get("description", "")
         })
-        remaining_to_cover = round(remaining_to_cover - dep["amount"], 2)
     
     total_deposits_applied = round(sum(ad["amount_applied"] for ad in applied_deposits), 2)
     invoice_dict["applied_deposits"] = applied_deposits
