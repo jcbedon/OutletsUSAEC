@@ -462,6 +462,14 @@ export default function ClientDashboard() {
               <span className="hidden sm:inline ml-1">Compras</span>
             </TabsTrigger>
             <TabsTrigger 
+              value="purchase-history"
+              className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
+              data-testid="tab-purchase-history"
+            >
+              <History className="h-4 w-4 mb-1" />
+              <span className="hidden sm:inline ml-1">Historial</span>
+            </TabsTrigger>
+            <TabsTrigger 
               value="shipments"
               className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
               data-testid="tab-shipments"
@@ -578,83 +586,118 @@ export default function ClientDashboard() {
             </ScrollArea>
           </TabsContent>
 
-          {/* Purchases Tab */}
+          {/* Purchases Tab - Only pending (not invoiced) */}
           <TabsContent value="purchases" className="mt-4">
             <ScrollArea className="h-[400px]">
-              {purchases.length === 0 ? (
-                <Card className="rounded-2xl border-dashed border-2 border-gray-200">
-                  <CardContent className="p-8 text-center">
-                    <ShoppingBag className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500 font-medium">Sin compras aun</p>
-                    <p className="text-gray-400 text-sm mt-1">Tus compras apareceran aqui</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="space-y-3">
-                  {(() => {
-                    const getWeekKey = (dateStr) => {
-                      const d = new Date(dateStr);
-                      const day = d.getDay();
-                      const sunday = new Date(d);
-                      sunday.setDate(d.getDate() - day);
-                      sunday.setHours(0, 0, 0, 0);
-                      return sunday.toISOString().slice(0, 10);
-                    };
-                    const getWeekLabel = (dateStr) => {
-                      const d = new Date(dateStr);
-                      const day = d.getDay();
-                      const sunday = new Date(d);
-                      sunday.setDate(d.getDate() - day);
-                      sunday.setHours(0, 0, 0, 0);
-                      const saturday = new Date(sunday);
-                      saturday.setDate(sunday.getDate() + 6);
-                      const fmt = (dt) => dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
-                      return `${fmt(sunday)} - ${fmt(saturday)}`;
-                    };
+              {(() => {
+                const pendingPurchases = purchases.filter(p => !p.invoice_id);
+                if (pendingPurchases.length === 0) {
+                  return (
+                    <Card className="rounded-2xl border-dashed border-2 border-gray-200">
+                      <CardContent className="p-8 text-center">
+                        <ShoppingBag className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500 font-medium">Sin compras pendientes</p>
+                        <p className="text-gray-400 text-sm mt-1">Todas tus compras ya fueron facturadas</p>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+                return (
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-orange-600 px-1">Pendientes de facturar ({pendingPurchases.length})</p>
+                    {pendingPurchases.map((purchase) => (
+                      <Card key={purchase.id} className="rounded-xl border-gray-100" data-testid="purchase-item">
+                        <CardContent className="p-3">
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1">
+                              <p className="font-bold text-slate-800 text-sm">{purchase.item_name}</p>
+                              <p className="text-xs text-gray-500">{purchase.store}</p>
+                              <p className="text-xs text-gray-400 mt-0.5">
+                                {new Date(purchase.created_at).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-red-600">${purchase.price.toFixed(2)}</p>
+                              <p className="text-xs text-gray-400">+${(purchase.commission || 0).toFixed(2)} com.</p>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                );
+              })()}
+            </ScrollArea>
+          </TabsContent>
 
-                    // Current week key
-                    const now = new Date();
-                    const currentWeekKey = getWeekKey(now.toISOString());
+          {/* Purchase History Tab - Invoiced purchases */}
+          <TabsContent value="purchase-history" className="mt-4">
+            <ScrollArea className="h-[400px]">
+              {(() => {
+                const invoicedPurchases = purchases.filter(p => p.invoice_id);
+                if (invoicedPurchases.length === 0) {
+                  return (
+                    <Card className="rounded-2xl border-dashed border-2 border-gray-200">
+                      <CardContent className="p-8 text-center">
+                        <History className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-gray-500 font-medium">Sin historial</p>
+                        <p className="text-gray-400 text-sm mt-1">Las compras facturadas apareceran aqui</p>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+                
+                const getWeekKey = (dateStr) => {
+                  const d = new Date(dateStr);
+                  const day = d.getDay();
+                  const sunday = new Date(d);
+                  sunday.setDate(d.getDate() - day);
+                  sunday.setHours(0, 0, 0, 0);
+                  return sunday.toISOString().slice(0, 10);
+                };
+                const getWeekLabel = (dateStr) => {
+                  const d = new Date(dateStr);
+                  const day = d.getDay();
+                  const sunday = new Date(d);
+                  sunday.setDate(d.getDate() - day);
+                  sunday.setHours(0, 0, 0, 0);
+                  const saturday = new Date(sunday);
+                  saturday.setDate(sunday.getDate() + 6);
+                  const fmt = (dt) => dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+                  return `${fmt(sunday)} - ${fmt(saturday)}`;
+                };
 
-                    // Group by week
-                    const grouped = {};
-                    purchases.forEach((p) => {
-                      const key = getWeekKey(p.created_at);
-                      if (!grouped[key]) grouped[key] = { label: getWeekLabel(p.created_at), items: [] };
-                      grouped[key].items.push(p);
-                    });
+                const grouped = {};
+                invoicedPurchases.forEach((p) => {
+                  const key = getWeekKey(p.created_at);
+                  if (!grouped[key]) grouped[key] = { label: getWeekLabel(p.created_at), items: [] };
+                  grouped[key].items.push(p);
+                });
 
-                    const weeks = Object.entries(grouped).sort((a, b) => b[0].localeCompare(a[0]));
+                const weeks = Object.entries(grouped).sort((a, b) => b[0].localeCompare(a[0]));
 
-                    return weeks.map(([key, { label, items }]) => {
-                      const isCurrent = key === currentWeekKey;
-                      const isExpanded = isCurrent || expandedWeek === key;
+                return (
+                  <div className="space-y-3">
+                    {weeks.map(([key, { label, items }]) => {
                       const weekTotal = items.reduce((s, p) => s + p.price + (p.commission || 0), 0);
-
+                      const isExpanded = expandedWeek === key;
                       return (
                         <div key={key}>
-                          {isCurrent ? (
-                            <p className="text-xs font-bold text-green-700 uppercase tracking-wider mb-2 px-1 flex items-center gap-1">
-                              Semana actual: {label}
-                              <Badge className="bg-green-100 text-green-700 text-xs ml-1">{items.length}</Badge>
-                            </p>
-                          ) : (
-                            <button
-                              onClick={() => setExpandedWeek(expandedWeek === key ? null : key)}
-                              className="w-full flex items-center justify-between text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-1 hover:text-gray-700 transition-colors"
-                            >
-                              <span className="flex items-center gap-1">
-                                {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                                Semana: {label}
-                                <Badge variant="outline" className="text-xs ml-1">{items.length}</Badge>
-                              </span>
-                              <span className="text-gray-400">${weekTotal.toFixed(2)}</span>
-                            </button>
-                          )}
+                          <button
+                            onClick={() => setExpandedWeek(isExpanded ? null : key)}
+                            className="w-full flex items-center justify-between text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 px-1 hover:text-gray-700 transition-colors"
+                          >
+                            <span className="flex items-center gap-1">
+                              {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                              Semana: {label}
+                              <Badge variant="outline" className="text-xs ml-1">{items.length}</Badge>
+                            </span>
+                            <span className="text-gray-400">${weekTotal.toFixed(2)}</span>
+                          </button>
                           {isExpanded && (
                             <div className="space-y-2 mb-3">
                               {items.map((purchase) => (
-                                <Card key={purchase.id} className="rounded-xl border-gray-100" data-testid="purchase-item">
+                                <Card key={purchase.id} className="rounded-xl border-gray-100" data-testid="history-purchase-item">
                                   <CardContent className="p-3">
                                     <div className="flex justify-between items-start">
                                       <div className="flex-1">
@@ -665,9 +708,9 @@ export default function ClientDashboard() {
                                         </p>
                                       </div>
                                       <div className="text-right">
-                                        <p className="font-bold text-red-600">${purchase.price.toFixed(2)}</p>
+                                        <p className="font-bold">${purchase.price.toFixed(2)}</p>
                                         <p className="text-xs text-gray-400">+${(purchase.commission || 0).toFixed(2)} com.</p>
-                                        {getStatusBadge(getShipmentStatusForPurchase(purchase.id))}
+                                        <Badge className="bg-green-100 text-green-700 text-[10px] mt-1">Facturada</Badge>
                                       </div>
                                     </div>
                                   </CardContent>
@@ -677,10 +720,10 @@ export default function ClientDashboard() {
                           )}
                         </div>
                       );
-                    });
-                  })()}
-                </div>
-              )}
+                    })}
+                  </div>
+                );
+              })()}
             </ScrollArea>
           </TabsContent>
 
