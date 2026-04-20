@@ -3638,12 +3638,13 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
     import math
     date_filter = {}
     if period == "week":
-        # Week = Sunday 00:00 to next Sunday 23:59:59 (includes both Sundays)
+        # Week = Tuesday 00:00 to Monday 23:59:59
         now = datetime.now(timezone.utc)
-        days_since_sunday = now.weekday() + 1 if now.weekday() != 6 else 0
-        week_start = now - timedelta(days=days_since_sunday)
+        # Calculate days since last Tuesday (Tuesday = weekday 1)
+        days_since_tuesday = (now.weekday() - 1) % 7
+        week_start = now - timedelta(days=days_since_tuesday)
         week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_end = week_start + timedelta(days=7, hours=23, minutes=59, seconds=59)
+        week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
         date_filter = {"created_at": {"$gte": week_start.isoformat(), "$lte": week_end.isoformat()}}
     # "all" = no filter
     
@@ -3709,11 +3710,12 @@ async def get_buyers_report(period: str = "week", current_user: dict = Depends(g
     # Date filter
     date_filter = {}
     if period == "week":
+        # Week = Tuesday 00:00 to Monday 23:59:59
         now = datetime.now(timezone.utc)
-        days_since_sunday = now.weekday() + 1 if now.weekday() != 6 else 0
-        week_start = now - timedelta(days=days_since_sunday)
+        days_since_tuesday = (now.weekday() - 1) % 7
+        week_start = now - timedelta(days=days_since_tuesday)
         week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_end = week_start + timedelta(days=7, hours=23, minutes=59, seconds=59)
+        week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
         date_filter = {"created_at": {"$gte": week_start.isoformat(), "$lte": week_end.isoformat()}}
     
     purchase_match = {"tenant_id": tid, **date_filter}
