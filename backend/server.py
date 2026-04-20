@@ -520,10 +520,13 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     
     # Track which deposits have been used (each deposit goes to ONE invoice only, full amount)
     used_deposit_ids = set()
+    carry_forward_saldo_a_favor = 0  # Saldo a favor that carries from one invoice to the next
     
     for inv_doc in all_invoices:
         inv_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + inv_doc.get("shipping_cost", 0)
-        saldo_ant = inv_doc.get("saldo_a_favor_anterior", 0) or 0
+        
+        # Apply carried saldo_a_favor from previous invoice
+        saldo_ant = carry_forward_saldo_a_favor
         
         new_applied = []
         remaining = inv_total
@@ -534,15 +537,14 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
             if dep_id in used_deposit_ids:
                 continue
             # Assign full deposit amount to this invoice
-            apply = dep["amount"]
             new_applied.append({
                 "deposit_id": dep_id,
-                "amount_applied": apply,
+                "amount_applied": dep["amount"],
                 "created_at": dep.get("created_at", ""),
                 "description": dep.get("description", "")
             })
             used_deposit_ids.add(dep_id)
-            remaining = round(remaining - apply, 2)
+            remaining = round(remaining - dep["amount"], 2)
         
         new_total_deposits = round(sum(ad["amount_applied"] for ad in new_applied), 2)
         total_credits = new_total_deposits + saldo_ant
@@ -554,11 +556,15 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
             total_a_pagar = round(inv_total - total_credits, 2)
             saldo_a_favor = 0
         
+        # Carry forward saldo_a_favor to next invoice
+        carry_forward_saldo_a_favor = saldo_a_favor
+        
         await db.invoices.update_one(
             {"id": inv_doc["id"], "tenant_id": tenant_id},
             {"$set": {
                 "applied_deposits": new_applied,
                 "deposits_applied": new_total_deposits,
+                "saldo_a_favor_anterior": saldo_ant,
                 "total_a_pagar": total_a_pagar,
                 "saldo_a_favor": saldo_a_favor
             }}
