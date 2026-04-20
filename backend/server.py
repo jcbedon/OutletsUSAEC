@@ -192,7 +192,8 @@ class Shipment(BaseModel):
     shipping_type: str
     shipping_cost: float
     weight_pounds: float = 0
-    address: str = ""  # Optional - can be empty
+    package_count: int = 0
+    address: str = ""
     country: str = ""  # Optional
     phone: str = ""    # Optional
     additional_info: Optional[str] = None
@@ -309,11 +310,12 @@ class ShipmentCreate(BaseModel):
     shipping_type: str
     shipping_cost: float
     weight_pounds: float = 0
-    address: Optional[str] = ""  # Optional - can be empty
-    country: Optional[str] = ""  # Optional
-    phone: Optional[str] = ""    # Optional
+    package_count: int = 0
+    address: Optional[str] = ""
+    country: Optional[str] = ""
+    phone: Optional[str] = ""
     additional_info: Optional[str] = None
-    invoice_id: Optional[str] = None  # Link shipment to invoice
+    invoice_id: Optional[str] = None
 
 class WalletDepositRequest(BaseModel):
     user_id: str
@@ -2556,6 +2558,7 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
     shipment = Shipment(tenant_id=tid, user_id=shipment_data.user_id, customer_id=user["customer_id"],
         purchase_ids=shipment_data.purchase_ids, shipping_type=shipment_data.shipping_type,
         shipping_cost=shipment_data.shipping_cost, weight_pounds=shipment_data.weight_pounds,
+        package_count=shipment_data.package_count,
         address=shipment_data.address, country=shipment_data.country, phone=shipment_data.phone, 
         additional_info=shipment_data.additional_info, invoice_id=shipment_data.invoice_id)
     await db.shipments.insert_one(shipment.model_dump())
@@ -3629,8 +3632,8 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
     total_shipping = await db.shipments.aggregate([
         {"$match": shipment_match}, {"$group": {"_id": None, "total": {"$sum": "$shipping_cost"}}}
     ]).to_list(1)
-    all_weights = await db.shipments.find(shipment_match, {"_id": 0, "weight_pounds": 1}).to_list(1000)
-    total_packages = sum(math.ceil((s.get("weight_pounds", 0) or 0) / 8) for s in all_weights if (s.get("weight_pounds", 0) or 0) > 0)
+    all_shipments = await db.shipments.find(shipment_match, {"_id": 0, "weight_pounds": 1, "package_count": 1}).to_list(1000)
+    total_packages = sum(s.get("package_count", 0) or math.ceil((s.get("weight_pounds", 0) or 0) / 8) for s in all_shipments if (s.get("package_count", 0) or 0) > 0 or (s.get("weight_pounds", 0) or 0) > 0)
     
     # Unique buyers in this period
     buyers_agg = await db.purchases.aggregate([

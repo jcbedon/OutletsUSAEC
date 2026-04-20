@@ -117,6 +117,7 @@ export default function AdminShipments() {
     shipping_type: "",
     shipping_cost: "",
     weight_pounds: "",
+    package_count: "",
     address: "",
     country: "",
     phone: "",
@@ -262,6 +263,7 @@ export default function AdminShipments() {
         shipping_type: shipmentForm.shipping_type,
         shipping_cost: cost,
         weight_pounds: weight,
+        package_count: parseInt(shipmentForm.package_count) || 0,
         address: shipmentForm.address,
         country: shipmentForm.country,
         phone: shipmentForm.phone,
@@ -298,6 +300,7 @@ export default function AdminShipments() {
         shipping_type: "",
         shipping_cost: "",
         weight_pounds: "",
+        package_count: "",
         address: "",
         country: "",
         phone: "",
@@ -809,6 +812,22 @@ export default function AdminShipments() {
                         onWheel={(e) => e.target.blur()}
                         className="h-12 rounded-xl mt-1"
                         data-testid="shipping-weight-input"
+                      />
+                    </div>
+
+                    {/* Package Count */}
+                    <div>
+                      <Label>Número de Paquetes</Label>
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        placeholder="Ej: 2"
+                        value={shipmentForm.package_count}
+                        onChange={(e) => setShipmentForm({ ...shipmentForm, package_count: e.target.value })}
+                        onWheel={(e) => e.target.blur()}
+                        className="h-12 rounded-xl mt-1"
+                        data-testid="shipping-package-count-input"
                       />
                     </div>
 
