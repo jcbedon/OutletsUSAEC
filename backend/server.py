@@ -2550,6 +2550,33 @@ async def update_purchase(purchase_id: str, data: PurchaseUpdate, current_user: 
     
     if updates:
         await db.purchases.update_one({"id": purchase_id, "tenant_id": tid}, {"$set": updates})
+
+    # If this purchase belongs to a pending, non-annulled invoice, recompute invoice totals
+    linked_invoice_id = purchase.get("invoice_id")
+    if linked_invoice_id:
+        linked_invoice = await db.invoices.find_one(
+            {"id": linked_invoice_id, "tenant_id": tid, "is_annulled": {"$ne": True}},
+            {"_id": 0, "status": 1, "purchase_ids": 1}
+        )
+        if linked_invoice and linked_invoice.get("status") == "pending":
+            inv_purchases = await db.purchases.find(
+                {"id": {"$in": linked_invoice.get("purchase_ids", [])}, "tenant_id": tid},
+                {"_id": 0}
+            ).to_list(len(linked_invoice.get("purchase_ids", [])))
+            new_subtotal = round(sum(p["price"] for p in inv_purchases), 2)
+            new_total_tax = round(sum(p.get("tax", 0) for p in inv_purchases), 2)
+            new_total_commission = round(sum(p.get("commission", 0) for p in inv_purchases), 2)
+            new_total = round(sum(p["total"] for p in inv_purchases), 2)
+            await db.invoices.update_one(
+                {"id": linked_invoice_id, "tenant_id": tid},
+                {"$set": {
+                    "subtotal": new_subtotal,
+                    "total_tax": new_total_tax,
+                    "total_commission": new_total_commission,
+                    "total": new_total
+                }}
+            )
+
     updated = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0})
     return updated
 

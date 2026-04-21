@@ -207,7 +207,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
 
   const handleSavePurchaseEdit = async (purchaseId, e) => {
     if (e) e.stopPropagation();
-    const orig = pendingPurchases.find(p => p.id === purchaseId);
+    const orig = pendingPurchases.find(p => p.id === purchaseId) ||
+                 currentInvoice?.purchases?.find(p => p.id === purchaseId);
     if (!orig) return;
     try {
       setSavingEdit(true);
@@ -239,7 +240,13 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       await updatePurchase(purchaseId, data);
       toast.success("Artículo actualizado. Cambios aplicados también en LIVE.");
       setEditingPurchaseId(null);
-      await loadPendingPurchases();
+      if (viewMode === "view" && currentInvoice?.id) {
+        const invoiceRes = await getInvoiceDetail(currentInvoice.id);
+        setCurrentInvoice(invoiceRes.data);
+        loadInvoices();
+      } else {
+        await loadPendingPurchases();
+      }
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al editar artículo");
     } finally {
@@ -1444,30 +1451,165 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                     </tr>
                   </thead>
                   <tbody>
-                    {currentInvoice.purchases?.map((p, idx) => (
-                      <tr key={p.id} className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} group hover:bg-red-50 transition-colors`}>
-                        <td className="p-3 text-sm text-center text-gray-600">1</td>
-                        <td className="p-3 text-sm font-medium">{p.item_name}</td>
-                        <td className="p-3 text-sm text-right">${p.price.toFixed(2)}</td>
-                        <td className="p-3 text-sm text-gray-600">{p.store}</td>
-                        <td className="p-3 text-sm text-right">${(p.commission || 0).toFixed(2)}</td>
-                        <td className="p-3 text-sm text-right font-bold">${(p.price + (p.commission || 0)).toFixed(2)}</td>
-                        <td className="p-3 text-center">
-                          {currentInvoice.purchases.length > 1 && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-600 transition-all"
-                              onClick={() => handleRemoveItem(p.id)}
-                              disabled={loading}
-                              title="Quitar de la factura"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                    {currentInvoice.purchases?.map((p, idx) => {
+                      const isEditing = editingPurchaseId === p.id;
+                      const canEdit = currentInvoice.status === "pending" && !currentInvoice.is_annulled;
+                      if (isEditing) {
+                        const price = parseFloat(editPurchaseForm.price) || 0;
+                        const taxRate = getEffectiveTaxRate(editPurchaseForm.tax_option, editPurchaseForm.custom_tax);
+                        const taxAmount = price * taxRate;
+                        const commission = editPurchaseForm.apply_commission ? (parseFloat(editPurchaseForm.commission) || 0) : 0;
+                        const totalPreview = price + taxAmount + commission;
+                        const taxLabel = editPurchaseForm.tax_option === "other"
+                          ? `${editPurchaseForm.custom_tax || 0}%`
+                          : editPurchaseForm.tax_option === "0" ? "Sin Tax" : `${editPurchaseForm.tax_option}%`;
+                        return (
+                          <tr key={p.id} className="bg-blue-50">
+                            <td colSpan={7} className="p-3">
+                              <div className="space-y-2" data-testid={`edit-invoice-purchase-${p.id}`}>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-semibold text-blue-700 uppercase">Editando artículo</span>
+                                  <span className="text-xs text-gray-500">Preview Total: <span className="font-bold text-blue-700">${totalPreview.toFixed(2)}</span> ({taxLabel})</span>
+                                </div>
+                                <Input
+                                  value={editPurchaseForm.item_name}
+                                  onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, item_name: e.target.value })}
+                                  placeholder="Producto"
+                                  className="h-9 rounded-lg text-sm"
+                                  data-testid="edit-invoice-item-name"
+                                />
+                                <div className="flex gap-2">
+                                  <Input
+                                    value={editPurchaseForm.store}
+                                    onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, store: e.target.value })}
+                                    placeholder="Tienda"
+                                    className="h-9 rounded-lg text-sm flex-1"
+                                  />
+                                  <Input
+                                    type="number" step="0.01" min="0"
+                                    value={editPurchaseForm.price}
+                                    onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, price: e.target.value })}
+                                    placeholder="Precio"
+                                    className="h-9 rounded-lg text-sm w-28"
+                                    data-testid="edit-invoice-price"
+                                    onWheel={(e) => e.target.blur()}
+                                  />
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="p-2 bg-white rounded-lg border">
+                                    <p className="text-xs font-medium text-gray-600 mb-1">Impuesto</p>
+                                    <div className="flex gap-2 items-center">
+                                      <Select
+                                        value={editPurchaseForm.tax_option}
+                                        onValueChange={(val) => setEditPurchaseForm({ ...editPurchaseForm, tax_option: val })}
+                                      >
+                                        <SelectTrigger className="h-8 rounded text-xs flex-1">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {taxOptions.map((opt) => (
+                                            <SelectItem key={opt.value} value={opt.value} className="text-xs">{opt.label}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                      {editPurchaseForm.tax_option === "other" && (
+                                        <Input
+                                          type="number" step="0.01" min="0"
+                                          value={editPurchaseForm.custom_tax}
+                                          onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, custom_tax: e.target.value })}
+                                          className="w-16 h-8 text-xs text-center rounded"
+                                          placeholder="%"
+                                        />
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="p-2 bg-white rounded-lg border">
+                                    <label className="flex items-center gap-1 text-xs cursor-pointer mb-1">
+                                      <input
+                                        type="checkbox"
+                                        checked={editPurchaseForm.apply_commission}
+                                        onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, apply_commission: e.target.checked })}
+                                        className="w-3 h-3"
+                                      />
+                                      <span className="font-medium text-gray-700">Comisión $</span>
+                                    </label>
+                                    {editPurchaseForm.apply_commission && (
+                                      <Input
+                                        type="number" step="0.01"
+                                        value={editPurchaseForm.commission}
+                                        onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, commission: e.target.value })}
+                                        className="h-7 text-xs text-center rounded"
+                                        data-testid="edit-invoice-commission"
+                                        onWheel={(e) => e.target.blur()}
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    onClick={(e) => handleSavePurchaseEdit(p.id, e)}
+                                    disabled={savingEdit}
+                                    className="flex-1 h-9 rounded-lg text-white"
+                                    style={{ background: '#2ECC71' }}
+                                    data-testid={`save-invoice-edit-${p.id}`}
+                                  >
+                                    {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Save className="h-4 w-4 mr-1" /> Guardar</>}
+                                  </Button>
+                                  <Button
+                                    size="sm" variant="outline"
+                                    onClick={handleCancelEditPurchase}
+                                    className="h-9 rounded-lg"
+                                    data-testid={`cancel-invoice-edit-${p.id}`}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+                      return (
+                        <tr key={p.id} className={`${idx % 2 === 0 ? "bg-white" : "bg-gray-50"} group hover:bg-red-50 transition-colors`}>
+                          <td className="p-3 text-sm text-center text-gray-600">1</td>
+                          <td className="p-3 text-sm font-medium">{p.item_name}</td>
+                          <td className="p-3 text-sm text-right">${p.price.toFixed(2)}</td>
+                          <td className="p-3 text-sm text-gray-600">{p.store}</td>
+                          <td className="p-3 text-sm text-right">${(p.commission || 0).toFixed(2)}</td>
+                          <td className="p-3 text-sm text-right font-bold">${(p.price + (p.commission || 0)).toFixed(2)}</td>
+                          <td className="p-3 text-center">
+                            <div className="flex items-center gap-1 justify-center">
+                              {canEdit && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 hover:bg-blue-100 hover:text-blue-600 transition-all"
+                                  onClick={(e) => handleStartEditPurchase(p, e)}
+                                  disabled={loading}
+                                  title="Editar artículo (aplica también en LIVE)"
+                                  data-testid={`edit-invoice-purchase-btn-${p.id}`}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              )}
+                              {currentInvoice.purchases.length > 1 && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-600 transition-all"
+                                  onClick={() => handleRemoveItem(p.id)}
+                                  disabled={loading}
+                                  title="Quitar de la factura"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
