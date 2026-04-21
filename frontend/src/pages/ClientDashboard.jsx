@@ -560,7 +560,6 @@ export default function ClientDashboard() {
                                       </p>
                                     </div>
                                     <div className="flex items-center gap-2">
-                                      <p className="font-extrabold text-lg" style={{ color: '#1E3A5F' }}>${inv.total?.toFixed(2)}</p>
                                       <Button
                                         variant="outline"
                                         size="sm"
