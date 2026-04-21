@@ -2917,8 +2917,22 @@ async def update_shipment(shipment_id: str, data: ShipmentUpdate, current_user: 
     if updates:
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         await db.shipments.update_one({"id": shipment_id, "tenant_id": tid}, {"$set": updates})
+    # Resolve linked invoice (new records via shipment.invoice_id, legacy via invoices.shipment_id)
+    linked_invoice_id = shipment.get("invoice_id")
+    if not linked_invoice_id:
+        linked_inv = await db.invoices.find_one(
+            {"shipment_id": shipment_id, "tenant_id": tid},
+            {"_id": 0, "id": 1}
+        )
+        if linked_inv:
+            linked_invoice_id = linked_inv["id"]
+            # Backfill shipment.invoice_id so the next read is correct
+            await db.shipments.update_one(
+                {"id": shipment_id, "tenant_id": tid},
+                {"$set": {"invoice_id": linked_invoice_id}}
+            )
     # If shipping_cost or weight changed and shipment is linked to an invoice, sync to invoice and recalc
-    if shipment.get("invoice_id") and (data.shipping_cost is not None or data.weight_pounds is not None):
+    if linked_invoice_id and (data.shipping_cost is not None or data.weight_pounds is not None):
         inv_updates = {}
         if data.shipping_cost is not None:
             inv_updates["shipping_cost"] = data.shipping_cost
@@ -2926,7 +2940,7 @@ async def update_shipment(shipment_id: str, data: ShipmentUpdate, current_user: 
             inv_updates["weight_pounds"] = data.weight_pounds
         if inv_updates:
             await db.invoices.update_one(
-                {"id": shipment["invoice_id"], "tenant_id": tid},
+                {"id": linked_invoice_id, "tenant_id": tid},
                 {"$set": inv_updates}
             )
         await recalculate_client_invoices(tid, shipment["customer_id"])
@@ -2942,12 +2956,25 @@ async def delete_shipment(shipment_id: str, current_user: dict = Depends(get_cur
     if not shipment:
         raise HTTPException(status_code=404, detail="Envío no encontrado")
     await db.shipments.delete_one({"id": shipment_id, "tenant_id": tid})
-    # Clear shipping_cost from linked invoice and recalc
-    if shipment.get("invoice_id"):
+    # Find the invoice linked to this shipment — check both directions:
+    # 1) shipment.invoice_id (new records)
+    # 2) invoices.shipment_id == shipment_id (legacy records where invoice_id was dropped by the old bug)
+    linked_invoice_id = shipment.get("invoice_id")
+    if not linked_invoice_id:
+        linked_inv = await db.invoices.find_one(
+            {"shipment_id": shipment_id, "tenant_id": tid},
+            {"_id": 0, "id": 1}
+        )
+        if linked_inv:
+            linked_invoice_id = linked_inv["id"]
+    if linked_invoice_id:
         await db.invoices.update_one(
-            {"id": shipment["invoice_id"], "tenant_id": tid},
+            {"id": linked_invoice_id, "tenant_id": tid},
             {"$set": {"shipping_cost": 0, "weight_pounds": 0, "shipment_id": None}}
         )
+        await recalculate_client_invoices(tid, shipment["customer_id"])
+    else:
+        # Still recalc the client chain in case there are stale values
         await recalculate_client_invoices(tid, shipment["customer_id"])
     await create_notification(tid, shipment["user_id"], shipment["customer_id"], "shipment_deleted",
         "Envío Eliminado", "Un envío ha sido eliminado de tu cuenta.")
