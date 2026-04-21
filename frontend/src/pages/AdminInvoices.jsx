@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { searchInvoices, annulInvoice, getInvoiceDetail, getAllClients, getMyTenant } from "@/lib/api";
+import { searchInvoices, annulInvoice, getInvoiceDetail, getAllClients, getMyTenant, recalculateAllInvoices } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +25,8 @@ import {
   ArrowLeft,
   ChevronRight,
   ChevronDown,
-  Upload
+  Upload,
+  RefreshCw
 } from "lucide-react";
 
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
@@ -56,6 +57,8 @@ export default function AdminInvoices() {
   const [tenantInfo, setTenantInfo] = useState(null);
   const [selectedWeek, setSelectedWeek] = useState("all");
   const [expandedWeeks, setExpandedWeeks] = useState({});
+  const [recalcDialogOpen, setRecalcDialogOpen] = useState(false);
+  const [recalcLoading, setRecalcLoading] = useState(false);
   
   const defaultTenantInfo = {
     business_name: user?.tenant_name || "Personal Shopper",
@@ -97,6 +100,20 @@ export default function AdminInvoices() {
     loadClients();
     setClientSearch("");
     setShowClientSelector(true);
+  };
+
+  const handleRecalculateAll = async () => {
+    try {
+      setRecalcLoading(true);
+      const res = await recalculateAllInvoices();
+      toast.success(res.data?.message || "Facturas recalculadas");
+      setRecalcDialogOpen(false);
+      await loadInvoices();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al recalcular");
+    } finally {
+      setRecalcLoading(false);
+    }
   };
 
   const handleSelectClientForInvoice = async (client) => {
@@ -229,14 +246,26 @@ export default function AdminInvoices() {
                 </p>
               </div>
             </div>
-            <Button
-              onClick={handleNewInvoiceClick}
-              className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg"
-              data-testid="new-invoice-btn"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              Nueva Factura
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={() => setRecalcDialogOpen(true)}
+                variant="outline"
+                className="bg-white/10 hover:bg-white/20 text-white border-white/30 font-medium px-4 py-3 rounded-xl"
+                data-testid="recalc-all-invoices-btn"
+                title="Recalcular saldos, abonos y total a pagar en todas las facturas"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Recalcular
+              </Button>
+              <Button
+                onClick={handleNewInvoiceClick}
+                className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-3 rounded-xl shadow-lg"
+                data-testid="new-invoice-btn"
+              >
+                <Plus className="h-5 w-5 mr-2" />
+                Nueva Factura
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -633,7 +662,56 @@ export default function AdminInvoices() {
         </DialogContent>
       </Dialog>
 
-      {/* Client Selector Dialog */}
+      {/* Recalculate All Invoices Dialog */}
+      <Dialog open={recalcDialogOpen} onOpenChange={setRecalcDialogOpen}>
+        <DialogContent data-testid="recalc-all-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-blue-700">
+              <RefreshCw className="h-5 w-5" />
+              Recalcular Todas las Facturas
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4 space-y-3">
+            <p className="text-gray-700">
+              Esta acción recalculará para <strong>todos los clientes</strong> las siguientes cifras almacenadas en cada factura activa:
+            </p>
+            <ul className="list-disc pl-5 text-sm text-gray-600 space-y-1">
+              <li>Abonos aplicados por factura (según fecha de recarga)</li>
+              <li>Saldo a favor anterior / Saldo a favor para la próxima</li>
+              <li>Total a pagar (incluyendo costo de envío actualizado)</li>
+            </ul>
+            <div className="mt-3 p-3 rounded-lg bg-blue-50 border border-blue-200">
+              <p className="text-xs text-blue-800">
+                Útil cuando agregaste envíos o recargas después de crear una factura y las cifras almacenadas quedaron desactualizadas.
+                Esta operación es segura y no cambia compras, recargas ni anula facturas.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRecalcDialogOpen(false)} disabled={recalcLoading}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={handleRecalculateAll}
+              disabled={recalcLoading}
+              data-testid="confirm-recalc-btn"
+            >
+              {recalcLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Recalculando...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Sí, recalcular ahora
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={showClientSelector} onOpenChange={setShowClientSelector}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
