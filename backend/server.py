@@ -518,6 +518,35 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
             {"$set": {"invoice_id": inv["id"]}}
         )
 
+    # Self-heal orphan shipping_cost: invoices that still have shipping_cost > 0 but no real shipment.
+    # This happens when a shipment was deleted under the old bug (before the auto-clear was in place).
+    invs_with_shipping = await db.invoices.find(
+        {"customer_id": customer_id, "tenant_id": tenant_id,
+         "shipping_cost": {"$gt": 0},
+         "is_annulled": {"$ne": True}},
+        {"_id": 0, "id": 1, "shipment_id": 1}
+    ).to_list(1000)
+    for inv in invs_with_shipping:
+        has_real_shipment = False
+        if inv.get("shipment_id"):
+            exists = await db.shipments.find_one(
+                {"id": inv["shipment_id"], "tenant_id": tenant_id}, {"_id": 0, "id": 1}
+            )
+            if exists:
+                has_real_shipment = True
+        if not has_real_shipment:
+            # Also check by invoice_id on shipments (legacy case)
+            exists = await db.shipments.find_one(
+                {"invoice_id": inv["id"], "tenant_id": tenant_id}, {"_id": 0, "id": 1}
+            )
+            if exists:
+                has_real_shipment = True
+        if not has_real_shipment:
+            await db.invoices.update_one(
+                {"id": inv["id"], "tenant_id": tenant_id},
+                {"$set": {"shipping_cost": 0, "weight_pounds": 0, "shipment_id": None}}
+            )
+
     all_deposits = await db.wallet_transactions.find(
         {"user_id": client["id"], "tenant_id": tenant_id, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
         {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
