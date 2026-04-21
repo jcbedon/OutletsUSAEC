@@ -75,6 +75,11 @@ class Tenant(BaseModel):
     invoice_show_tax_summary: bool = True   # Show tax total at the bottom
     # Shipment settings  
     shipment_show_product_list: bool = True  # Show product list when creating shipment
+    shipping_categories: List[dict] = Field(default_factory=lambda: [
+        {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value": 32},
+        {"key": "A", "label": "Categoría A (Personal)", "value": 42},
+        {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value": 52}
+    ])
     # Client ID settings
     allow_custom_client_id: bool = False  # Allow admin to enter custom client ID instead of auto-generated
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -190,9 +195,11 @@ class Shipment(BaseModel):
     customer_id: str
     purchase_ids: List[str]
     invoice_id: Optional[str] = None  # Link to the invoice this shipment belongs to
-    shipping_type: str
-    shipping_cost: float
-    weight_pounds: float = 0
+    shipping_type: str = ""  # DEPRECATED (kept for backward compatibility with existing data)
+    shipping_category: Optional[str] = None  # "G" | "A" | "B" | "OTHER" (current model)
+    shipping_unit_cost: float = 0  # Cost per package (derived from category or custom)
+    shipping_cost: float  # Total cost = unit_cost * package_count
+    weight_pounds: float = 0  # DEPRECATED (kept for backward compatibility with existing data)
     package_count: int = 0
     address: str = ""
     country: str = ""  # Optional
@@ -308,10 +315,12 @@ class PurchaseCreate(BaseModel):
 class ShipmentCreate(BaseModel):
     user_id: str
     purchase_ids: List[str]
-    shipping_type: str
-    shipping_cost: float
-    weight_pounds: float = 0
-    package_count: int = 0
+    shipping_type: Optional[str] = ""  # DEPRECATED
+    shipping_category: Optional[str] = None  # "G" | "A" | "B" | "OTHER"
+    shipping_unit_cost: Optional[float] = None  # Cost per package (required only if category is "OTHER")
+    shipping_cost: Optional[float] = None  # Calculated on backend from unit_cost * package_count, client may send it too
+    weight_pounds: float = 0  # DEPRECATED
+    package_count: int = 1
     address: Optional[str] = ""
     country: Optional[str] = ""
     phone: Optional[str] = ""
@@ -498,7 +507,8 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     # Backfill: if any invoice has shipment_id but the linked shipment lacks invoice_id, repair it.
     # (Historical data before the Shipment model had `invoice_id` defined lost this link silently.)
     invs_with_shipment = await db.invoices.find(
-        {"customer_id": customer_id, "tenant_id": tenant_id, "shipment_id": {"$exists": True, "$ne": None, "$ne": ""}},
+        {"customer_id": customer_id, "tenant_id": tenant_id,
+         "shipment_id": {"$exists": True, "$nin": [None, ""]}},
         {"_id": 0, "id": 1, "shipment_id": 1}
     ).to_list(1000)
     for inv in invs_with_shipment:
@@ -959,6 +969,50 @@ async def update_tenant_tax_options_superadmin(tenant_id: str, data: dict, curre
     await db.tenants.update_one({"id": tenant_id}, {"$set": {"tax_options": tax_options}})
     return {"message": "Opciones de impuestos actualizadas para el tenant", "tax_options": tax_options}
 
+
+def _normalize_shipping_categories(raw):
+    """Validate and normalize a list of shipping categories."""
+    out = []
+    for item in raw or []:
+        key = str(item.get("key", "")).strip().upper()
+        label = str(item.get("label", "")).strip()
+        try:
+            value = float(item.get("value", 0) or 0)
+        except (TypeError, ValueError):
+            value = 0
+        if not key or value < 0 or not label:
+            continue
+        out.append({"key": key, "label": label, "value": round(value, 2)})
+    return out
+
+
+@api_router.put("/admin/settings/shipping-categories")
+async def update_shipping_categories_admin(data: dict, current_user: dict = Depends(get_current_user)):
+    """Tenant admin updates shipping categories used when creating shipments."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    normalized = _normalize_shipping_categories(data.get("shipping_categories", []))
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Se requiere al menos una categoría válida")
+    await db.tenants.update_one({"id": tid}, {"$set": {"shipping_categories": normalized}})
+    return {"message": "Categorías de envío actualizadas", "shipping_categories": normalized}
+
+
+@api_router.put("/superadmin/tenants/{tenant_id}/shipping-categories")
+async def update_shipping_categories_superadmin(tenant_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Superadmin updates shipping categories for a specific tenant."""
+    if current_user["role"] != "superadmin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "id": 1})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    normalized = _normalize_shipping_categories(data.get("shipping_categories", []))
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Se requiere al menos una categoría válida")
+    await db.tenants.update_one({"id": tenant_id}, {"$set": {"shipping_categories": normalized}})
+    return {"message": "Categorías de envío actualizadas para el tenant", "shipping_categories": normalized}
+
 @api_router.get("/superadmin/tenants/{tenant_id}/details")
 async def get_tenant_details(tenant_id: str, current_user: dict = Depends(get_current_user)):
     """Get full tenant details including tax options"""
@@ -974,7 +1028,13 @@ async def get_tenant_details(tenant_id: str, current_user: dict = Depends(get_cu
         {"value": "0", "label": "Sin Taxes"},
         {"value": "other", "label": "Otro"}
     ]
+    default_shipping_categories = [
+        {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value": 32},
+        {"key": "A", "label": "Categoría A (Personal)", "value": 42},
+        {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value": 52}
+    ]
     tenant["tax_options"] = tenant.get("tax_options", default_tax_options)
+    tenant["shipping_categories"] = tenant.get("shipping_categories", default_shipping_categories)
     return tenant
 
 @api_router.put("/superadmin/tenants/{tenant_id}/tracking-url")
@@ -1122,6 +1182,13 @@ async def get_my_tenant(current_user: dict = Depends(get_current_user)):
     tenant = await db.tenants.find_one({"id": current_user["tenant_id"]}, {"_id": 0})
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    # Ensure shipping_categories always present for the frontend
+    if not tenant.get("shipping_categories"):
+        tenant["shipping_categories"] = [
+            {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value": 32},
+            {"key": "A", "label": "Categoría A (Personal)", "value": 42},
+            {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value": 52}
+        ]
     return tenant
 
 @api_router.post("/admin/tenant/logo")
@@ -2635,27 +2702,73 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
     user = await db.users.find_one({"id": shipment_data.user_id, "tenant_id": tid}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    
-    shipment = Shipment(tenant_id=tid, user_id=shipment_data.user_id, customer_id=user["customer_id"],
-        purchase_ids=shipment_data.purchase_ids, shipping_type=shipment_data.shipping_type,
-        shipping_cost=shipment_data.shipping_cost, weight_pounds=shipment_data.weight_pounds,
-        package_count=shipment_data.package_count,
-        address=shipment_data.address, country=shipment_data.country, phone=shipment_data.phone, 
-        additional_info=shipment_data.additional_info, invoice_id=shipment_data.invoice_id)
+
+    # Enforce: every shipment must be linked to exactly one invoice
+    if not shipment_data.invoice_id:
+        raise HTTPException(status_code=400, detail="Debes seleccionar una factura para este envío")
+    invoice = await db.invoices.find_one(
+        {"id": shipment_data.invoice_id, "tenant_id": tid, "is_annulled": {"$ne": True}},
+        {"_id": 0, "id": 1, "customer_id": 1, "shipment_id": 1}
+    )
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    if invoice.get("customer_id") != user["customer_id"]:
+        raise HTTPException(status_code=400, detail="La factura no pertenece al cliente seleccionado")
+    if invoice.get("shipment_id"):
+        raise HTTPException(status_code=400, detail="Esta factura ya tiene un envío asignado")
+
+    # Resolve unit_cost from category + tenant settings
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "shipping_categories": 1})
+    categories = (tenant or {}).get("shipping_categories") or [
+        {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value": 32},
+        {"key": "A", "label": "Categoría A (Personal)", "value": 42},
+        {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value": 52}
+    ]
+    unit_cost = 0.0
+    category_key = (shipment_data.shipping_category or "").upper() or None
+    if category_key and category_key != "OTHER":
+        matched = next((c for c in categories if str(c.get("key", "")).upper() == category_key), None)
+        if not matched:
+            raise HTTPException(status_code=400, detail="Categoría de envío no encontrada en el tenant")
+        unit_cost = float(matched.get("value", 0) or 0)
+    elif category_key == "OTHER":
+        if shipment_data.shipping_unit_cost is None or shipment_data.shipping_unit_cost < 0:
+            raise HTTPException(status_code=400, detail="Ingresa un costo personalizado válido")
+        unit_cost = float(shipment_data.shipping_unit_cost)
+    else:
+        # Fallback: use provided shipping_cost as total (legacy support)
+        if shipment_data.shipping_cost is None:
+            raise HTTPException(status_code=400, detail="Selecciona una categoría de envío")
+        unit_cost = float(shipment_data.shipping_cost) / max(int(shipment_data.package_count or 1), 1)
+
+    package_count = max(int(shipment_data.package_count or 1), 1)
+    total_cost = round(unit_cost * package_count, 2)
+
+    shipment = Shipment(
+        tenant_id=tid,
+        user_id=shipment_data.user_id,
+        customer_id=user["customer_id"],
+        purchase_ids=shipment_data.purchase_ids,
+        shipping_category=category_key,
+        shipping_unit_cost=round(unit_cost, 2),
+        shipping_cost=total_cost,
+        package_count=package_count,
+        address=shipment_data.address, country=shipment_data.country, phone=shipment_data.phone,
+        additional_info=shipment_data.additional_info, invoice_id=shipment_data.invoice_id
+    )
     await db.shipments.insert_one(shipment.model_dump())
-    
-    # If linked to an invoice, update the invoice with the shipment
-    if shipment_data.invoice_id:
-        await db.invoices.update_one(
-            {"id": shipment_data.invoice_id, "tenant_id": tid},
-            {"$set": {"shipment_id": shipment.id, "shipping_cost": shipment_data.shipping_cost, "weight_pounds": shipment_data.weight_pounds}}
-        )
-        # Recalculate invoice chain so saldo_a_favor / total_a_pagar reflect shipping cost
-        await recalculate_client_invoices(tid, user["customer_id"])
-    
+
+    # Update linked invoice
+    await db.invoices.update_one(
+        {"id": shipment_data.invoice_id, "tenant_id": tid},
+        {"$set": {"shipment_id": shipment.id, "shipping_cost": total_cost, "weight_pounds": 0}}
+    )
+    # Recalculate invoice chain so saldo_a_favor / total_a_pagar reflect shipping cost
+    await recalculate_client_invoices(tid, user["customer_id"])
+
     await create_notification(tid, shipment_data.user_id, user["customer_id"], "shipment_created",
-        "Envío Creado", f"Tu envío ha sido creado. Peso: {shipment_data.weight_pounds} lbs. Costo: ${shipment_data.shipping_cost:.2f} USD")
-    return {"message": "Envío creado", "shipment_id": shipment.id, "shipping_cost": shipment_data.shipping_cost, "weight_pounds": shipment_data.weight_pounds}
+        "Envío Creado", f"Tu envío ha sido creado. Paquetes: {package_count}. Costo total: ${total_cost:.2f} USD")
+    return {"message": "Envío creado", "shipment_id": shipment.id, "shipping_cost": total_cost, "package_count": package_count}
 
 @api_router.put("/shipments/{shipment_id}/tracking")
 async def update_tracking(shipment_id: str, data: dict, current_user: dict = Depends(get_current_user)):

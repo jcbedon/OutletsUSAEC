@@ -114,25 +114,28 @@ export default function AdminShipments() {
   const [clientSearch, setClientSearch] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState([]);
   const [shipmentForm, setShipmentForm] = useState({
-    shipping_type: "",
-    shipping_cost: "",
-    weight_pounds: "",
-    package_count: "",
+    shipping_category: "",  // "G" | "A" | "B" | "OTHER"
+    custom_unit_cost: "",   // Only used when category === "OTHER"
+    package_count: "1",
     address: "",
     country: "",
     phone: "",
     additional_info: ""
   });
-  
-  // New: Invoice selection mode
-  const [shipmentSource, setShipmentSource] = useState("purchases"); // "purchases" or "invoice"
+
+  // New: Invoice selection (required for every shipment)
   const [clientInvoices, setClientInvoices] = useState([]);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
-  
-  // Tenant settings
+
+  // Tenant settings (includes shipping_categories)
   const [tenantSettings, setTenantSettings] = useState({
-    shipment_show_product_list: true
+    shipment_show_product_list: true,
+    shipping_categories: [
+      { key: "G", label: "Categoría G (CON Núcleo Familiar)", value: 32 },
+      { key: "A", label: "Categoría A (Personal)", value: 42 },
+      { key: "B", label: "Categoría B (SIN Núcleo Familiar)", value: 52 }
+    ]
   });
 
   // Filter and sort clients
@@ -171,10 +174,14 @@ export default function AdminShipments() {
       ]);
       setShipments(shipmentsRes.data);
       setClients(clientsRes.data);
-      // Load tenant settings
+      // Load tenant settings including shipping categories
       const productListSetting = tenantRes.data.shipment_show_product_list;
+      const categories = Array.isArray(tenantRes.data.shipping_categories) && tenantRes.data.shipping_categories.length > 0
+        ? tenantRes.data.shipping_categories
+        : tenantSettings.shipping_categories;
       setTenantSettings({
-        shipment_show_product_list: productListSetting !== false
+        shipment_show_product_list: productListSetting !== false,
+        shipping_categories: categories
       });
     } catch (error) {
       toast.error("Error al cargar datos");
@@ -189,90 +196,102 @@ export default function AdminShipments() {
     setSelectedPurchases([]);
     setSelectedInvoice(null);
     setClientInvoices([]);
-    setShipmentSource("purchases"); // Reset to default
-    
+    setPendingPurchases([]);
+
     if (client) {
       try {
-        // Load both pending purchases and invoices in parallel
-        const [purchasesRes, invoicesRes] = await Promise.all([
-          getPendingShipmentPurchases(clientId),
-          getClientInvoicesForShipment(client.customer_id)
-        ]);
-        
-        setPendingPurchases(purchasesRes.data);
+        setLoadingInvoices(true);
+        const invoicesRes = await getClientInvoicesForShipment(client.customer_id);
         setClientInvoices(invoicesRes.data);
-        
-        // Auto-select all purchases
-        setSelectedPurchases(purchasesRes.data.map(p => p.id));
-        setShipmentForm({
-          ...shipmentForm,
-          country: client.country,
-          phone: client.whatsapp
-        });
+        setShipmentForm(prev => ({
+          ...prev,
+          country: client.country || prev.country,
+          phone: client.whatsapp || prev.phone
+        }));
       } catch (error) {
-        toast.error("Error al cargar datos del cliente");
+        toast.error("Error al cargar facturas del cliente");
+      } finally {
+        setLoadingInvoices(false);
       }
     }
   };
-  
+
   const handleSelectInvoice = (invoice) => {
     setSelectedInvoice(invoice);
-    // Use the purchases from the invoice
-    if (invoice.purchases) {
+    if (invoice?.purchases) {
       setPendingPurchases(invoice.purchases);
       setSelectedPurchases(invoice.purchases.map(p => p.id));
+    } else {
+      setPendingPurchases([]);
+      setSelectedPurchases([]);
     }
   };
 
+  const getUnitCost = () => {
+    if (!shipmentForm.shipping_category) return 0;
+    if (shipmentForm.shipping_category === "OTHER") {
+      return parseFloat(shipmentForm.custom_unit_cost) || 0;
+    }
+    const cat = tenantSettings.shipping_categories.find(c => c.key === shipmentForm.shipping_category);
+    return cat ? parseFloat(cat.value) || 0 : 0;
+  };
+
+  const getTotalShippingCost = () => {
+    const unit = getUnitCost();
+    const qty = Math.max(parseInt(shipmentForm.package_count) || 1, 1);
+    return Math.round(unit * qty * 100) / 100;
+  };
+
   const handleCreateShipment = async () => {
-    // When product list is hidden, use all pending purchases
-    const purchasesToSend = tenantSettings.shipment_show_product_list 
-      ? selectedPurchases 
-      : pendingPurchases.map(p => p.id);
-    
-    // Validate each field and show specific error
+    // Validate
     if (!selectedClient) {
       toast.error("Selecciona un cliente");
       return;
     }
+    const invoiceId = selectedInvoice?.id || invoiceData?.invoice_id;
+    if (!invoiceId) {
+      toast.error("Selecciona una factura para este envío");
+      return;
+    }
+    if (!shipmentForm.shipping_category) {
+      toast.error("Selecciona una categoría de envío");
+      return;
+    }
+    if (shipmentForm.shipping_category === "OTHER") {
+      const v = parseFloat(shipmentForm.custom_unit_cost);
+      if (isNaN(v) || v < 0) {
+        toast.error("Ingresa un costo personalizado válido");
+        return;
+      }
+    }
+    const packageCount = Math.max(parseInt(shipmentForm.package_count) || 1, 1);
+    const unitCost = getUnitCost();
+    const totalCost = Math.round(unitCost * packageCount * 100) / 100;
+
+    // Shipment purchases come from the selected invoice
+    const purchasesToSend = (selectedInvoice?.purchases || pendingPurchases).map(p => p.id);
     if (purchasesToSend.length === 0) {
-      toast.error("No hay compras pendientes para enviar");
+      toast.error("La factura seleccionada no tiene productos");
       return;
     }
-    if (!shipmentForm.shipping_type) {
-      toast.error("Selecciona el tipo de envío");
-      return;
-    }
-    if (!shipmentForm.shipping_cost) {
-      toast.error("Ingresa el costo de envío");
-      return;
-    }
-
-    const cost = parseFloat(shipmentForm.shipping_cost);
-    if (isNaN(cost) || cost < 0) {
-      toast.error("Ingresa un costo de envío válido");
-      return;
-    }
-
-    const weight = parseFloat(shipmentForm.weight_pounds) || 0;
 
     try {
       const response = await createShipment({
         user_id: selectedClient.id,
         purchase_ids: purchasesToSend,
-        shipping_type: shipmentForm.shipping_type,
-        shipping_cost: cost,
-        weight_pounds: weight,
-        package_count: parseInt(shipmentForm.package_count) || 0,
+        shipping_category: shipmentForm.shipping_category,
+        shipping_unit_cost: unitCost,
+        shipping_cost: totalCost,
+        package_count: packageCount,
         address: shipmentForm.address,
         country: shipmentForm.country,
         phone: shipmentForm.phone,
         additional_info: shipmentForm.additional_info,
-        invoice_id: selectedInvoice?.id || invoiceData?.invoice_id || null
+        invoice_id: invoiceId
       });
-      
+
       const shipmentId = response.data.shipment_id;
-      
+
       // Upload attachments if any
       if (attachmentFiles.length > 0) {
         for (const file of attachmentFiles) {
@@ -286,7 +305,7 @@ export default function AdminShipments() {
       } else {
         toast.success("Envío creado exitosamente");
       }
-      
+
       setCreateDialogOpen(false);
       setSelectedClient(null);
       setPendingPurchases([]);
@@ -295,12 +314,10 @@ export default function AdminShipments() {
       setAttachmentFiles([]);
       setSelectedInvoice(null);
       setClientInvoices([]);
-      setShipmentSource("purchases");
       setShipmentForm({
-        shipping_type: "",
-        shipping_cost: "",
-        weight_pounds: "",
-        package_count: "",
+        shipping_category: "",
+        custom_unit_cost: "",
+        package_count: "1",
         address: "",
         country: "",
         phone: "",
@@ -599,74 +616,20 @@ export default function AdminShipments() {
                   )}
                 </div>
 
-                {/* Source Selection: Purchases or Invoice */}
+                {/* Invoice Selection (required) */}
                 {selectedClient && !invoiceData && (
-                  <div className="space-y-3">
-                    <Label>Origen de los productos</Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShipmentSource("purchases");
-                          setSelectedInvoice(null);
-                          // Reload pending purchases
-                          getPendingShipmentPurchases(selectedClient.id).then(res => {
-                            setPendingPurchases(res.data);
-                            setSelectedPurchases(res.data.map(p => p.id));
-                          });
-                        }}
-                        className={`p-3 rounded-xl border-2 text-left transition-all ${
-                          shipmentSource === "purchases" 
-                            ? "border-blue-500 bg-blue-50" 
-                            : "border-gray-200 hover:border-gray-300"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Package className={`h-5 w-5 ${shipmentSource === "purchases" ? "text-blue-600" : "text-gray-400"}`} />
-                          <span className={`font-medium ${shipmentSource === "purchases" ? "text-blue-800" : "text-gray-700"}`}>
-                            Compras Pendientes
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">Enviar productos sin factura</p>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShipmentSource("invoice");
-                          setSelectedInvoice(null);
-                          setPendingPurchases([]);
-                          setSelectedPurchases([]);
-                        }}
-                        className={`p-3 rounded-xl border-2 text-left transition-all ${
-                          shipmentSource === "invoice" 
-                            ? "border-purple-500 bg-purple-50" 
-                            : "border-gray-200 hover:border-gray-300"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <FileText className={`h-5 w-5 ${shipmentSource === "invoice" ? "text-purple-600" : "text-gray-400"}`} />
-                          <span className={`font-medium ${shipmentSource === "invoice" ? "text-purple-800" : "text-gray-700"}`}>
-                            Desde Factura
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">Seleccionar factura existente</p>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Invoice Selection */}
-                {selectedClient && shipmentSource === "invoice" && !invoiceData && (
-                  <div className="space-y-3">
-                    <Label>Seleccionar Factura ({clientInvoices.length} disponibles)</Label>
-                    {clientInvoices.length === 0 ? (
-                      <div className="p-4 rounded-xl bg-gray-50 border border-dashed border-gray-300 text-center">
-                        <FileText className="h-8 w-8 text-gray-300 mx-auto mb-2" />
-                        <p className="text-sm text-gray-500">No hay facturas pendientes de envío</p>
-                        <p className="text-xs text-gray-400 mt-1">Las facturas ya enviadas no aparecen aquí</p>
+                  <div className="space-y-2">
+                    <Label>Factura del Cliente *</Label>
+                    {loadingInvoices ? (
+                      <p className="text-sm text-gray-500">Cargando facturas...</p>
+                    ) : clientInvoices.length === 0 ? (
+                      <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-center" data-testid="no-invoices-message">
+                        <FileText className="h-8 w-8 text-amber-400 mx-auto mb-2" />
+                        <p className="text-sm text-amber-800 font-semibold">Este cliente no tiene facturas disponibles</p>
+                        <p className="text-xs text-amber-700 mt-1">Crea una factura primero para poder generar un envío.</p>
                       </div>
                     ) : (
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                      <div className="space-y-2 max-h-56 overflow-y-auto" data-testid="invoice-selector-list">
                         {clientInvoices.map((invoice) => (
                           <div
                             key={invoice.id}
@@ -676,6 +639,7 @@ export default function AdminShipments() {
                                 ? "border-purple-500 bg-purple-50"
                                 : "border-gray-200 hover:border-purple-300 bg-white"
                             }`}
+                            data-testid={`invoice-option-${invoice.id}`}
                           >
                             <div className="flex items-center justify-between">
                               <div>
@@ -697,127 +661,84 @@ export default function AdminShipments() {
                         ))}
                       </div>
                     )}
-                    
-                    {/* Selected Invoice Info */}
                     {selectedInvoice && (
-                      <div className="p-3 rounded-xl bg-purple-50 border border-purple-200">
-                        <div className="flex items-center gap-2 mb-2">
+                      <div className="p-3 rounded-xl bg-purple-50 border border-purple-200" data-testid="selected-invoice-info">
+                        <div className="flex items-center gap-2 mb-1">
                           <FileText className="h-4 w-4 text-purple-600" />
                           <span className="font-semibold text-purple-800">Factura {selectedInvoice.invoice_number}</span>
                         </div>
                         <p className="text-sm text-purple-700">
-                          <strong>{selectedInvoice.purchases?.length || 0}</strong> productos incluidos • Total: <strong>${selectedInvoice.total?.toFixed(2)}</strong>
+                          <strong>{selectedInvoice.purchases?.length || 0}</strong> productos • Total factura: <strong>${selectedInvoice.total?.toFixed(2)}</strong>
                         </p>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Pending Purchases - only show when source is "purchases" or when coming from invoice */}
-                {selectedClient && (shipmentSource === "purchases" || invoiceData) && (
+                {/* Shipment details — show only after invoice is selected (or passed via invoiceData) */}
+                {selectedClient && (selectedInvoice || invoiceData) && (
                   <>
-                    {tenantSettings.shipment_show_product_list ? (
+                    {/* Products list (optional view) */}
+                    {tenantSettings.shipment_show_product_list && pendingPurchases.length > 0 && (
                       <div>
-                        <Label>Compras a enviar ({pendingPurchases.length} disponibles)</Label>
-                        {pendingPurchases.length === 0 ? (
-                          <p className="text-sm text-gray-500 mt-2">No hay compras pendientes de envío</p>
-                        ) : (
-                          <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
-                            {pendingPurchases.map((purchase) => (
-                              <label 
-                                key={purchase.id}
-                                className={`flex items-center p-3 rounded-xl border cursor-pointer transition-colors ${
-                                  selectedPurchases.includes(purchase.id) 
-                                    ? 'bg-red-50 border-red-200' 
-                                    : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPurchases.includes(purchase.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedPurchases([...selectedPurchases, purchase.id]);
-                                    } else {
-                                      setSelectedPurchases(selectedPurchases.filter(id => id !== purchase.id));
-                                    }
-                                  }}
-                                  className="mr-3"
-                                />
-                                <div className="flex-1">
-                                  <p className="font-medium text-sm">{purchase.item_name}</p>
-                                  <p className="text-xs text-gray-500">{purchase.store}</p>
-                                </div>
-                                <span className="font-bold text-red-600">${purchase.price.toFixed(2)}</span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="p-3 bg-blue-50 rounded-xl">
-                        <p className="text-sm text-blue-800">
-                          <span className="font-bold">{pendingPurchases.length}</span> compras pendientes serán incluidas automáticamente en este envío.
-                        </p>
+                        <Label>Productos incluidos ({pendingPurchases.length})</Label>
+                        <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                          {pendingPurchases.map((purchase) => (
+                            <div key={purchase.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg text-sm">
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium truncate">{purchase.item_name}</p>
+                                <p className="text-xs text-gray-500">{purchase.store}</p>
+                              </div>
+                              <span className="font-semibold text-gray-700 shrink-0 ml-2">${(purchase.price || 0).toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 
-                    {/* Shipping Type */}
+                    {/* Shipping Category */}
                     <div>
-                      <Label>Tipo de Envío</Label>
-                      <Select 
-                        value={shipmentForm.shipping_type}
-                        onValueChange={(value) => setShipmentForm({ ...shipmentForm, shipping_type: value })}
+                      <Label>Categoría de Envío *</Label>
+                      <Select
+                        value={shipmentForm.shipping_category}
+                        onValueChange={(value) => setShipmentForm({ ...shipmentForm, shipping_category: value })}
                       >
-                        <SelectTrigger className="h-12 rounded-xl mt-1" data-testid="select-shipping-type">
-                          <SelectValue placeholder="Seleccionar tipo" />
+                        <SelectTrigger className="h-12 rounded-xl mt-1" data-testid="select-shipping-category">
+                          <SelectValue placeholder="Selecciona una categoría" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="with_family">Con Familiar en USA</SelectItem>
-                          <SelectItem value="without_family">Sin Familiar en USA</SelectItem>
-                          <SelectItem value="custom">Personalizado</SelectItem>
+                          {tenantSettings.shipping_categories.map((cat) => (
+                            <SelectItem key={cat.key} value={cat.key} data-testid={`category-${cat.key}`}>
+                              {cat.label} — ${Number(cat.value).toFixed(2)} / paquete
+                            </SelectItem>
+                          ))}
+                          <SelectItem value="OTHER" data-testid="category-OTHER">Otro (costo personalizado)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
 
-                    {/* Shipping Cost - Custom */}
-                    <div>
-                      <Label>Costo de Envío (USD) *</Label>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        step="0.01"
-                        placeholder="Ej: 32, 52, o personalizado"
-                        value={shipmentForm.shipping_cost}
-                        onChange={(e) => setShipmentForm({ ...shipmentForm, shipping_cost: e.target.value })}
-                        onWheel={(e) => e.target.blur()}
-                        className="h-12 rounded-xl mt-1 text-xl font-bold"
-                        data-testid="shipping-cost-input"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Define el precio según el cliente y el envío
-                      </p>
-                    </div>
-
-                    {/* Weight in Pounds */}
-                    <div>
-                      <Label>Peso del Envío (Libras)</Label>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        step="0.1"
-                        placeholder="Ej: 5.5"
-                        value={shipmentForm.weight_pounds}
-                        onChange={(e) => setShipmentForm({ ...shipmentForm, weight_pounds: e.target.value })}
-                        onWheel={(e) => e.target.blur()}
-                        className="h-12 rounded-xl mt-1"
-                        data-testid="shipping-weight-input"
-                      />
-                    </div>
+                    {/* Custom Unit Cost (only when OTHER) */}
+                    {shipmentForm.shipping_category === "OTHER" && (
+                      <div>
+                        <Label>Costo por paquete (USD) *</Label>
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          min="0"
+                          placeholder="Ej: 35.00"
+                          value={shipmentForm.custom_unit_cost}
+                          onChange={(e) => setShipmentForm({ ...shipmentForm, custom_unit_cost: e.target.value })}
+                          onWheel={(e) => e.target.blur()}
+                          className="h-12 rounded-xl mt-1"
+                          data-testid="custom-unit-cost-input"
+                        />
+                      </div>
+                    )}
 
                     {/* Package Count */}
                     <div>
-                      <Label>Número de Paquetes</Label>
+                      <Label>Número de Paquetes *</Label>
                       <Input
                         type="number"
                         inputMode="numeric"
@@ -831,23 +752,20 @@ export default function AdminShipments() {
                       />
                     </div>
 
-                    {/* Total Cost Display */}
-                    {selectedPurchases.length > 0 && (
+                    {/* Total Cost */}
+                    {shipmentForm.shipping_category && (
                       <div className="bg-gradient-to-r from-[#1E3A5F] to-[#2a4a73] rounded-xl p-4 text-white">
-                        <div className="flex justify-between items-center mb-1">
-                          <span className="font-medium">Total a Recargar:</span>
-                          <span className="text-2xl font-extrabold" data-testid="total-shipment-cost">
-                            ${(
-                              pendingPurchases
-                                .filter(p => selectedPurchases.includes(p.id))
-                                .reduce((sum, p) => sum + (p.total_price || (p.price + (p.tax || 0) + (p.commission || 0))), 0) +
-                              (parseFloat(shipmentForm.shipping_cost) || 0)
-                            ).toFixed(2)}
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="text-sm text-white/80">
+                              {Math.max(parseInt(shipmentForm.package_count) || 1, 1)} paquete(s) × ${getUnitCost().toFixed(2)}
+                            </p>
+                            <p className="text-sm font-semibold">Total envío:</p>
+                          </div>
+                          <span className="text-3xl font-extrabold" data-testid="total-shipment-cost">
+                            ${getTotalShippingCost().toFixed(2)}
                           </span>
                         </div>
-                        <p className="text-xs text-white/70 text-right">
-                          (Precio incluye: Impuestos, comisión y envío)
-                        </p>
                       </div>
                     )}
 
@@ -997,7 +915,7 @@ export default function AdminShipments() {
 
           const filtered = weekFilter === "all" ? shipments : shipments.filter(s => getWeekKey(s.created_at) === weekFilter);
           const totalShipping = filtered.reduce((sum, s) => sum + (s.shipping_cost || 0), 0);
-          const totalWeight = filtered.reduce((sum, s) => sum + (s.weight_pounds || 0), 0);
+          const totalPackages = filtered.reduce((sum, s) => sum + (s.package_count || 0), 0);
 
           return (
             <>
@@ -1011,7 +929,7 @@ export default function AdminShipments() {
                       </div>
                       <div>
                         <p className="text-2xl font-extrabold text-purple-800">${totalShipping.toFixed(2)}</p>
-                        <p className="text-xs text-purple-600">Envios ({filtered.length}) · {totalWeight.toFixed(1)} lbs</p>
+                        <p className="text-xs text-purple-600">Envios ({filtered.length}) · {totalPackages} paquete{totalPackages === 1 ? '' : 's'}</p>
                       </div>
                     </div>
                     <Select value={weekFilter} onValueChange={setWeekFilter}>
@@ -1064,7 +982,7 @@ export default function AdminShipments() {
                   <CardContent className="p-3 text-center">
                     <Package className="h-5 w-5 text-orange-600 mx-auto mb-1" />
                     <p className="text-2xl font-extrabold text-slate-800">
-                      {filtered.reduce((total, s) => total + Math.ceil((s.weight_pounds || 0) / 8), 0)}
+                      {filtered.reduce((total, s) => total + (s.package_count || 0), 0)}
                     </p>
                     <p className="text-xs text-gray-500">Paquetes</p>
                   </CardContent>
@@ -1115,9 +1033,18 @@ export default function AdminShipments() {
                                 <span className="font-bold text-slate-800">{shipment.user_name}</span>
                               </div>
                               <p className="text-sm text-gray-500">
-                                {shipment.shipping_type === 'with_family' ? 'Con Familiar USA' : 'Sin Familiar USA'}
+                                {(() => {
+                                  const categories = tenantSettings.shipping_categories || [];
+                                  const cat = categories.find(c => c.key === shipment.shipping_category);
+                                  if (cat) return cat.label;
+                                  if (shipment.shipping_category === "OTHER") return "Personalizado";
+                                  // Legacy fallback
+                                  return shipment.shipping_type === 'with_family' ? 'Con Familiar USA'
+                                    : shipment.shipping_type === 'without_family' ? 'Sin Familiar USA'
+                                    : shipment.shipping_type || '';
+                                })()}
                                 {' - '}${shipment.shipping_cost.toFixed(2)}
-                                {shipment.weight_pounds > 0 && ` - ${shipment.weight_pounds} lbs`}
+                                {shipment.package_count > 0 && ` • ${shipment.package_count} paquete${shipment.package_count === 1 ? '' : 's'}`}
                               </p>
                             </div>
                             {getStatusBadge(shipment.status)}

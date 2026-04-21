@@ -129,6 +129,10 @@ export const getReferralStats = () => api.get("/admin/referrals");
 // Settings - Tax Options
 export const getTenantSettings = () => api.get("/admin/settings");
 export const updateTenantTaxOptions = (taxOptions) => api.put("/admin/settings/tax-options", { tax_options: taxOptions });
+export const updateShippingCategories = (shippingCategories) =>
+  api.put("/admin/settings/shipping-categories", { shipping_categories: shippingCategories });
+export const updateShippingCategoriesSuperadmin = (tenantId, shippingCategories) =>
+  api.put(`/superadmin/tenants/${tenantId}/shipping-categories`, { shipping_categories: shippingCategories });
 
 // Invoices
 export const getPendingPurchases = (customerId) => api.get(`/invoices/client/${customerId}/pending-purchases`);
