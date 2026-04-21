@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/App";
 import { useNavigate } from "react-router-dom";
-import { listTenants, createTenant, updateTenantStatus, getSuperadminStats, updateTenantTaxOptionsSuperadmin, updateTenantTrackingUrl, resetTenantAdminPassword, getTenantAdminInfo, updateTenantSettings } from "@/lib/api";
+import { listTenants, createTenant, updateTenantStatus, getSuperadminStats, updateTenantTaxOptionsSuperadmin, updateTenantTrackingUrl, resetTenantAdminPassword, getTenantAdminInfo, updateTenantSettings, updateShippingCategoriesSuperadmin } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Percent, X, Link, Truck, Key, Eye, EyeOff, FileText, Package } from "lucide-react";
+import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Percent, X, Link, Truck, Key, Eye, EyeOff, FileText, Package, DollarSign } from "lucide-react";
 
 export default function SuperadminDashboard() {
   const { user, logout } = useAuth();
@@ -34,6 +34,10 @@ export default function SuperadminDashboard() {
   // Tracking URL configuration state
   const [trackingDialogOpen, setTrackingDialogOpen] = useState(false);
   const [trackingUrl, setTrackingUrl] = useState("");
+
+  // Shipping categories state
+  const [shipDialogOpen, setShipDialogOpen] = useState(false);
+  const [shippingCategories, setShippingCategories] = useState([]);
   
   // Password reset state
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -168,6 +172,66 @@ export default function SuperadminDashboard() {
       loadData();
     } catch (error) {
       toast.error("Error al guardar");
+    }
+  };
+
+  const openShippingDialog = (tenant) => {
+    setSelectedTenant(tenant);
+    const cats = Array.isArray(tenant.shipping_categories) && tenant.shipping_categories.length > 0
+      ? tenant.shipping_categories.map(c => ({ key: c.key || "", label: c.label || "", value: c.value ?? 0 }))
+      : [
+          { key: "G", label: "Categoría G (CON Núcleo Familiar)", value: 32 },
+          { key: "A", label: "Categoría A (Personal)", value: 42 },
+          { key: "B", label: "Categoría B (SIN Núcleo Familiar)", value: 52 }
+        ];
+    setShippingCategories(cats);
+    setShipDialogOpen(true);
+  };
+
+  const updateShipField = (index, key, val) => {
+    const next = [...shippingCategories];
+    next[index] = { ...next[index], [key]: val };
+    setShippingCategories(next);
+  };
+
+  const addShippingCategory = () => {
+    setShippingCategories([...shippingCategories, { key: "", label: "", value: 0 }]);
+  };
+
+  const removeShippingCategory = (index) => {
+    setShippingCategories(shippingCategories.filter((_, i) => i !== index));
+  };
+
+  const handleSaveShippingCategories = async () => {
+    if (!selectedTenant) return;
+    // Validate
+    const normalized = shippingCategories
+      .map(c => ({
+        key: String(c.key || "").trim().toUpperCase(),
+        label: String(c.label || "").trim(),
+        value: parseFloat(c.value) || 0
+      }))
+      .filter(c => c.key && c.label && c.value >= 0);
+    if (normalized.length === 0) {
+      toast.error("Agrega al menos una categoría válida");
+      return;
+    }
+    const keys = normalized.map(c => c.key);
+    if (new Set(keys).size !== keys.length) {
+      toast.error("Las claves (key) no pueden repetirse");
+      return;
+    }
+    if (keys.includes("OTHER")) {
+      toast.error('La clave "OTHER" está reservada');
+      return;
+    }
+    try {
+      await updateShippingCategoriesSuperadmin(selectedTenant.id, normalized);
+      toast.success("Categorías de envío actualizadas");
+      setShipDialogOpen(false);
+      loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al guardar");
     }
   };
 
@@ -424,6 +488,15 @@ export default function SuperadminDashboard() {
                         </Button>
                         <Button
                           variant="outline" size="sm"
+                          className="rounded-lg border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+                          onClick={() => openShippingDialog(tenant)}
+                          data-testid={`config-shipping-${tenant.id}`}
+                        >
+                          <DollarSign className="h-4 w-4 mr-1" />
+                          Envíos
+                        </Button>
+                        <Button
+                          variant="outline" size="sm"
                           className={`rounded-lg ${tenant.status === "active" ? "border-red-200 text-red-600 hover:bg-red-50" : "border-green-200 text-green-600 hover:bg-green-50"}`}
                           onClick={() => handleToggleStatus(tenant.id, tenant.status)}
                           data-testid={`toggle-tenant-${tenant.id}`}
@@ -566,6 +639,96 @@ export default function SuperadminDashboard() {
                 style={{ background: '#1E3A5F', color: 'white' }}
               >
                 Guardar URL de Tracking
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Shipping Categories Dialog */}
+        <Dialog open={shipDialogOpen} onOpenChange={setShipDialogOpen}>
+          <DialogContent className="rounded-2xl max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="shipping-categories-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5 text-emerald-600" />
+                Categorías de Envío - {selectedTenant?.business_name}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <p className="text-sm text-gray-500">
+                Define las categorías de envío que aparecerán al crear un envío. Se usa <strong>costo por paquete × número de paquetes</strong>.
+              </p>
+              <div className="space-y-2">
+                {shippingCategories.map((cat, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-end p-3 border rounded-xl bg-gray-50" data-testid={`ship-cat-row-${idx}`}>
+                    <div className="col-span-2">
+                      <Label className="text-xs font-semibold">Clave</Label>
+                      <Input
+                        value={cat.key}
+                        onChange={(e) => updateShipField(idx, "key", e.target.value.toUpperCase())}
+                        placeholder="G"
+                        maxLength={6}
+                        className="h-10 rounded-lg font-mono text-center uppercase"
+                        data-testid={`ship-cat-key-${idx}`}
+                      />
+                    </div>
+                    <div className="col-span-6">
+                      <Label className="text-xs font-semibold">Nombre visible</Label>
+                      <Input
+                        value={cat.label}
+                        onChange={(e) => updateShipField(idx, "label", e.target.value)}
+                        placeholder="Categoría G (CON Núcleo Familiar)"
+                        className="h-10 rounded-lg"
+                        data-testid={`ship-cat-label-${idx}`}
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <Label className="text-xs font-semibold">Costo / paquete</Label>
+                      <div className="relative">
+                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={cat.value}
+                          onChange={(e) => updateShipField(idx, "value", e.target.value)}
+                          onWheel={(e) => e.target.blur()}
+                          className="h-10 rounded-lg pl-6 font-bold"
+                          data-testid={`ship-cat-value-${idx}`}
+                        />
+                      </div>
+                    </div>
+                    <div className="col-span-1">
+                      <Button
+                        variant="ghost" size="sm"
+                        onClick={() => removeShippingCategory(idx)}
+                        className="h-10 w-10 p-0 text-red-500 hover:bg-red-50"
+                        data-testid={`ship-cat-remove-${idx}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Button
+                variant="outline"
+                onClick={addShippingCategory}
+                className="w-full h-10 rounded-xl border-dashed"
+                data-testid="ship-cat-add"
+              >
+                <Plus className="h-4 w-4 mr-2" /> Agregar categoría
+              </Button>
+              <div className="p-3 bg-blue-50 rounded-xl text-xs text-blue-800 space-y-1">
+                <p><strong>Nota:</strong> La clave <code>OTHER</code> está reservada y no puede usarse — ya está siempre disponible como "Otro (costo personalizado)" en el formulario de envío.</p>
+                <p>Las claves deben ser únicas y las usa el sistema para identificar la categoría.</p>
+              </div>
+              <Button
+                onClick={handleSaveShippingCategories}
+                className="w-full h-11 font-bold rounded-xl"
+                style={{ background: '#1E3A5F', color: 'white' }}
+                data-testid="ship-cat-save"
+              >
+                Guardar Categorías
               </Button>
             </div>
           </DialogContent>
