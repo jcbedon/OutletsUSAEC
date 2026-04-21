@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits } from "@/lib/api";
+import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,6 +27,7 @@ export default function AdminWallet() {
   const logoUrl = user?.tenant_logo || "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
   
   const [pendingDeposits, setPendingDeposits] = useState([]);
+  const [depositAmountEdits, setDepositAmountEdits] = useState({});
   const [allDeposits, setAllDeposits] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -102,6 +103,22 @@ export default function AdminWallet() {
   };
 
   const handleApprove = async (transactionId) => {
+    const tx = pendingDeposits.find(d => d.id === transactionId);
+    // If amount missing or zero, require admin to input it (client-submitted recharges)
+    if (!tx?.amount || tx.amount <= 0) {
+      const amountEdit = depositAmountEdits[transactionId];
+      const newAmount = parseFloat(amountEdit);
+      if (isNaN(newAmount) || newAmount <= 0) {
+        toast.error("Ingresa el monto de la recarga antes de aprobar");
+        return;
+      }
+      try {
+        await setDepositAmount(transactionId, newAmount);
+      } catch (error) {
+        toast.error(error.response?.data?.detail || "Error al asignar monto");
+        return;
+      }
+    }
     setApproving(transactionId);
     try {
       await approveDeposit(transactionId);
@@ -833,6 +850,8 @@ export default function AdminWallet() {
               <div className="space-y-4">
                 {pendingDeposits.map((deposit) => {
                   const proofUrl = getProofUrl(deposit);
+                  const amountKnown = deposit.amount && deposit.amount > 0;
+                  const pendingAmountValue = depositAmountEdits[deposit.id] ?? "";
                   return (
                     <Card key={deposit.id} className="rounded-xl border-yellow-200 bg-yellow-50/50" data-testid="pending-deposit-item">
                       <CardContent className="p-4">
@@ -842,7 +861,12 @@ export default function AdminWallet() {
                               <Badge variant="outline" className="font-bold">#{deposit.customer_id}</Badge>
                               <span className="font-bold text-slate-800">{deposit.user_name}</span>
                             </div>
-                            <p className="text-sm text-gray-500">{deposit.description}</p>
+                            {deposit.reference_number && (
+                              <p className="text-sm font-semibold text-slate-700 mt-1">
+                                Comprobante: <span className="font-mono bg-white px-2 py-0.5 rounded" data-testid={`pending-ref-${deposit.id}`}>{deposit.reference_number}</span>
+                              </p>
+                            )}
+                            <p className="text-xs text-gray-500 mt-1">{deposit.description}</p>
                             <p className="text-xs text-gray-400 mt-1">
                               {new Date(deposit.created_at).toLocaleDateString('es-ES', {
                                 day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
@@ -850,10 +874,31 @@ export default function AdminWallet() {
                             </p>
                           </div>
                           <div className="text-right">
-                            <div className="bg-white px-4 py-2 rounded-xl shadow-sm">
-                              <p className="text-xs text-gray-500">Monto</p>
-                              <p className="text-2xl font-extrabold text-green-600">${deposit.amount.toFixed(2)}</p>
-                            </div>
+                            {amountKnown ? (
+                              <div className="bg-white px-4 py-2 rounded-xl shadow-sm">
+                                <p className="text-xs text-gray-500">Monto</p>
+                                <p className="text-2xl font-extrabold text-green-600">${deposit.amount.toFixed(2)}</p>
+                              </div>
+                            ) : (
+                              <div className="bg-white px-3 py-2 rounded-xl shadow-sm border-2 border-amber-300">
+                                <p className="text-xs text-amber-700 font-semibold mb-1">Monto (USD) *</p>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-lg font-bold text-gray-400">$</span>
+                                  <Input
+                                    type="number"
+                                    inputMode="decimal"
+                                    step="0.01"
+                                    min="0"
+                                    placeholder="0.00"
+                                    value={pendingAmountValue}
+                                    onChange={(e) => setDepositAmountEdits({ ...depositAmountEdits, [deposit.id]: e.target.value })}
+                                    onWheel={(e) => e.target.blur()}
+                                    className="h-9 w-28 text-lg font-bold text-right rounded border-gray-200"
+                                    data-testid={`set-amount-input-${deposit.id}`}
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -875,7 +920,7 @@ export default function AdminWallet() {
                               </DialogTrigger>
                               <DialogContent className="rounded-2xl max-w-2xl">
                                 <DialogHeader>
-                                  <DialogTitle>Comprobante - #{deposit.customer_id} - ${deposit.amount.toFixed(2)}</DialogTitle>
+                                  <DialogTitle>Comprobante - #{deposit.customer_id}{deposit.amount > 0 ? ` - $${deposit.amount.toFixed(2)}` : ""}</DialogTitle>
                                 </DialogHeader>
                                 <div className="mt-2">
                                   <img src={proofUrl} alt="Comprobante" className="w-full rounded-xl" />

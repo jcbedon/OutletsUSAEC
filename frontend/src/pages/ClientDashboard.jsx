@@ -38,7 +38,8 @@ import {
   FileText,
   Download,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  CheckCircle
 } from "lucide-react";
 
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
@@ -58,6 +59,8 @@ export default function ClientDashboard() {
   const [depositProof, setDepositProof] = useState(null);
   const [depositProofPreview, setDepositProofPreview] = useState(null);
   const [depositSubmitting, setDepositSubmitting] = useState(false);
+  const [depositReference, setDepositReference] = useState("");
+  const [depositSuccess, setDepositSuccess] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
@@ -117,28 +120,32 @@ export default function ClientDashboard() {
 
 
   const handleRequestDeposit = async () => {
-    if (!depositAmount || parseFloat(depositAmount) <= 0) {
-      toast.error("Ingresa un monto válido");
+    const ref = (depositReference || "").trim();
+    if (!ref) {
+      toast.error("Ingresa el número de comprobante");
+      return;
+    }
+    if (!depositProof) {
+      toast.error("Debes adjuntar la foto del comprobante");
       return;
     }
     setDepositSubmitting(true);
     try {
       const formData = new FormData();
       formData.append("user_id", user.user_id);
-      formData.append("amount", parseFloat(depositAmount));
-      formData.append("description", "Solicitud de recarga");
-      if (depositProof) {
-        formData.append("file", depositProof);
-      }
+      formData.append("reference_number", ref);
+      formData.append("description", `Recarga con comprobante ${ref}`);
+      formData.append("file", depositProof);
       await requestDepositWithProof(formData);
-      toast.success("Solicitud de recarga enviada. Pendiente de aprobación.");
-      setDepositDialogOpen(false);
+      setDepositSuccess(true);
       setDepositAmount("");
+      setDepositReference("");
       setDepositProof(null);
       setDepositProofPreview(null);
       loadData();
     } catch (error) {
-      toast.error("Error al solicitar recarga");
+      const msg = error.response?.data?.detail || "Error al enviar la solicitud";
+      toast.error(msg);
     } finally {
       setDepositSubmitting(false);
     }
@@ -312,7 +319,15 @@ export default function ClientDashboard() {
             })()}
 
             <div className="flex gap-3">
-              <Dialog open={depositDialogOpen} onOpenChange={setDepositDialogOpen}>
+              <Dialog open={depositDialogOpen} onOpenChange={(open) => {
+                setDepositDialogOpen(open);
+                if (!open) {
+                  setDepositSuccess(false);
+                  setDepositReference("");
+                  setDepositProof(null);
+                  setDepositProofPreview(null);
+                }
+              }}>
                 <DialogTrigger asChild>
                   <Button 
                     className="flex-1 bg-white text-slate-900 hover:bg-gray-100 font-bold rounded-xl h-12"
@@ -323,61 +338,89 @@ export default function ClientDashboard() {
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="rounded-2xl">
-                  <DialogHeader>
-                    <DialogTitle className="text-xl font-bold">Solicitar Recarga</DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4 pt-4">
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Monto (USD)</label>
-                      <Input
-                        type="number"
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        value={depositAmount}
-                        onChange={(e) => setDepositAmount(e.target.value)}
-                        className="h-12 text-xl font-bold text-center rounded-xl mt-2"
-                        data-testid="deposit-amount-input"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-gray-700">Comprobante de pago</label>
-                      <div className="mt-2">
-                        {depositProofPreview ? (
-                          <div className="relative rounded-xl overflow-hidden border-2 border-green-200 bg-green-50">
-                            <img src={depositProofPreview} alt="Comprobante" className="w-full max-h-48 object-contain" />
-                            <button
-                              onClick={() => { setDepositProof(null); setDepositProofPreview(null); }}
-                              className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
-                              data-testid="remove-proof-btn"
-                            >
-                              <X className="h-4 w-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <label className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-red-400 hover:bg-red-50/50 transition-colors">
-                            <Camera className="h-8 w-8 text-gray-400 mb-2" />
-                            <span className="text-sm text-gray-500 font-medium">Subir screenshot del depósito</span>
-                            <span className="text-xs text-gray-400 mt-1">JPG, PNG o PDF</span>
-                            <input
-                              type="file"
-                              accept="image/*,.pdf"
-                              className="hidden"
-                              onChange={handleProofFileChange}
-                              data-testid="deposit-proof-input"
-                            />
-                          </label>
-                        )}
+                  {depositSuccess ? (
+                    <div className="py-4 text-center space-y-4" data-testid="deposit-success-message">
+                      <div className="mx-auto h-16 w-16 rounded-full bg-green-100 flex items-center justify-center">
+                        <CheckCircle className="h-10 w-10 text-green-600" />
                       </div>
+                      <h2 className="text-xl font-bold text-gray-800">¡Solicitud enviada!</h2>
+                      <div className="space-y-2 text-sm text-gray-600 max-w-sm mx-auto">
+                        <p>Tu solicitud será revisada por nuestro equipo.</p>
+                        <p className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-3 text-xs">
+                          <strong>Importante:</strong> No intentes volver a hacer un depósito mientras se procesa este. La revisión puede tomar algo de tiempo.
+                        </p>
+                      </div>
+                      <Button
+                        className="w-full h-12 font-bold rounded-xl"
+                        style={{ background: '#1E3A5F', color: 'white' }}
+                        onClick={() => { setDepositDialogOpen(false); setDepositSuccess(false); }}
+                        data-testid="deposit-success-close"
+                      >
+                        Entendido
+                      </Button>
                     </div>
-                    <Button 
-                      className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
-                      onClick={handleRequestDeposit}
-                      disabled={depositSubmitting}
-                      data-testid="submit-deposit-btn"
-                    >
-                      {depositSubmitting ? "Enviando..." : "Enviar Solicitud"}
-                    </Button>
-                  </div>
+                  ) : (
+                    <>
+                      <DialogHeader>
+                        <DialogTitle className="text-xl font-bold">Solicitar Recarga</DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4 pt-4">
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800">
+                          Ingresa el número de comprobante y adjunta su foto. Nuestro equipo verificará el valor depositado y aprobará tu recarga.
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Número de comprobante *</label>
+                          <Input
+                            type="text"
+                            placeholder="Ej: 123456789"
+                            value={depositReference}
+                            onChange={(e) => setDepositReference(e.target.value)}
+                            className="h-12 text-lg font-bold text-center rounded-xl mt-2"
+                            data-testid="deposit-reference-input"
+                            autoComplete="off"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Foto del comprobante *</label>
+                          <div className="mt-2">
+                            {depositProofPreview ? (
+                              <div className="relative rounded-xl overflow-hidden border-2 border-green-200 bg-green-50">
+                                <img src={depositProofPreview} alt="Comprobante" className="w-full max-h-48 object-contain" />
+                                <button
+                                  onClick={() => { setDepositProof(null); setDepositProofPreview(null); }}
+                                  className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                                  data-testid="remove-proof-btn"
+                                >
+                                  <X className="h-4 w-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <label className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-red-400 hover:bg-red-50/50 transition-colors">
+                                <Camera className="h-8 w-8 text-gray-400 mb-2" />
+                                <span className="text-sm text-gray-500 font-medium">Subir foto del comprobante</span>
+                                <span className="text-xs text-gray-400 mt-1">JPG, PNG o PDF</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  className="hidden"
+                                  onChange={handleProofFileChange}
+                                  data-testid="deposit-proof-input"
+                                />
+                              </label>
+                            )}
+                          </div>
+                        </div>
+                        <Button 
+                          className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
+                          onClick={handleRequestDeposit}
+                          disabled={depositSubmitting}
+                          data-testid="submit-deposit-btn"
+                        >
+                          {depositSubmitting ? "Enviando..." : "Enviar Solicitud"}
+                        </Button>
+                      </div>
+                    </>
+                  )}
                 </DialogContent>
               </Dialog>
 

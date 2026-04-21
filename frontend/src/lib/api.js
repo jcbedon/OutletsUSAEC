@@ -45,6 +45,7 @@ export const getWalletByCustomerId = (customerId) => api.get(`/wallet/by-custome
 export const requestDeposit = (data) => api.post("/wallet/deposit-request", data);
 export const requestDepositWithProof = (formData) => api.post("/wallet/deposit-request-with-proof", formData, { headers: { "Content-Type": "multipart/form-data" } });
 export const approveDeposit = (transactionId) => api.post(`/wallet/approve-deposit/${transactionId}`);
+export const setDepositAmount = (transactionId, amount) => api.put(`/wallet/deposit/${transactionId}/amount`, { amount });
 export const rejectDeposit = (transactionId) => api.post(`/wallet/reject-deposit/${transactionId}`);
 export const getAllDeposits = () => api.get("/wallet/all-deposits");
 export const adminBalanceAdjustment = (data) => api.post("/wallet/admin-adjustment", data);

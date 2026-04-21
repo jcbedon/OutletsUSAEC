@@ -1742,7 +1742,8 @@ async def request_deposit(deposit: WalletDepositRequest, current_user: dict = De
 @api_router.post("/wallet/deposit-request-with-proof")
 async def request_deposit_with_proof(
     user_id: str = FastAPIForm(...),
-    amount: float = FastAPIForm(...),
+    amount: Optional[float] = FastAPIForm(0),
+    reference_number: Optional[str] = FastAPIForm(None),
     description: str = FastAPIForm("Solicitud de recarga"),
     file: UploadFile = File(None),
     current_user: dict = Depends(get_current_user)
@@ -1751,18 +1752,79 @@ async def request_deposit_with_proof(
     wallet = await db.wallets.find_one({"user_id": user_id, "tenant_id": tid}, {"_id": 0})
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
+
+    # Clients must send reference_number + proof file. Admins keep legacy behavior (amount only).
+    is_client_request = current_user["role"] == "client"
+    ref = (reference_number or "").strip()
+    if is_client_request:
+        if not ref:
+            raise HTTPException(status_code=400, detail="El número de comprobante es obligatorio")
+        if not file or not file.filename:
+            raise HTTPException(status_code=400, detail="Debes adjuntar la foto del comprobante")
+
+    # Reject duplicate reference numbers (case-insensitive, within tenant, excluding rejected)
+    if ref:
+        duplicate = await db.wallet_transactions.find_one(
+            {
+                "tenant_id": tid,
+                "reference_number_lower": ref.lower(),
+                "status": {"$in": ["pending", "approved"]},
+                "is_deleted": {"$ne": True}
+            },
+            {"_id": 0, "id": 1, "status": 1}
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail=f"Ya existe una recarga con el comprobante {ref}")
+
     proof_url = None
     if file and file.filename:
         file_data = await file.read()
         obj_path = object_store.upload_file(file_data, file.filename, "proofs")
         proof_url = f"/api/uploads/{obj_path}"
-    transaction = WalletTransaction(tenant_id=tid, user_id=user_id, customer_id=wallet["customer_id"],
-        type="deposit", amount=amount, balance_after=wallet["available"],
-        description=description, status="pending")
+
+    transaction = WalletTransaction(
+        tenant_id=tid, user_id=user_id, customer_id=wallet["customer_id"],
+        type="deposit", amount=float(amount or 0), balance_after=wallet["available"],
+        description=description, status="pending"
+    )
     tx_dict = transaction.model_dump()
     tx_dict["proof_url"] = proof_url
+    if ref:
+        tx_dict["reference_number"] = ref
+        tx_dict["reference_number_lower"] = ref.lower()
     await db.wallet_transactions.insert_one(tx_dict)
-    return {"message": "Solicitud de recarga enviada. Pendiente de aprobación.", "transaction_id": transaction.id}
+    return {
+        "message": "Solicitud enviada. Será revisada por nuestro equipo.",
+        "transaction_id": transaction.id
+    }
+
+
+@api_router.put("/wallet/deposit/{transaction_id}/amount")
+async def set_deposit_amount(transaction_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Admin sets/corrects the amount on a pending recharge request before approving it."""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    if current_user["role"] == "employee":
+        employee = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+        if not employee or not employee.get("permissions", {}).get("approve_recharges"):
+            raise HTTPException(status_code=403, detail="No tienes permiso")
+    tid = current_user["tenant_id"]
+    try:
+        amount = float(data.get("amount"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Monto inválido")
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a cero")
+    tx = await db.wallet_transactions.find_one({"id": transaction_id, "tenant_id": tid}, {"_id": 0, "status": 1})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Recarga no encontrada")
+    if tx["status"] != "pending":
+        raise HTTPException(status_code=400, detail="Solo se puede editar una recarga pendiente")
+    await db.wallet_transactions.update_one(
+        {"id": transaction_id, "tenant_id": tid},
+        {"$set": {"amount": amount}}
+    )
+    return {"message": "Monto actualizado", "amount": amount}
 
 @api_router.post("/wallet/approve-deposit/{transaction_id}")
 async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_current_user)):
@@ -1781,6 +1843,8 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
         raise HTTPException(status_code=404, detail="Transacción no encontrada")
     if transaction["status"] != "pending":
         raise HTTPException(status_code=400, detail="Transacción ya procesada")
+    if not transaction.get("amount") or transaction["amount"] <= 0:
+        raise HTTPException(status_code=400, detail="Debes asignar el monto antes de aprobar")
     wallet = await db.wallets.find_one({"user_id": transaction["user_id"], "tenant_id": tid}, {"_id": 0})
     new_balance = wallet["available"] + transaction["amount"]
     await db.wallets.update_one({"user_id": transaction["user_id"], "tenant_id": tid},
