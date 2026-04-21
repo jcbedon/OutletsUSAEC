@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, getClientAvailableDeposits, annulInvoice, updateInvoiceSaldoPendiente } from "@/lib/api";
+import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, getClientAvailableDeposits, annulInvoice, updateInvoiceSaldoPendiente, updatePurchase, getTenantSettings } from "@/lib/api";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info, Save, X } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import QRCode from "qrcode";
@@ -60,6 +61,20 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
   const [annulPassword, setAnnulPassword] = useState("");
   const [annulling, setAnnulling] = useState(false);
   const [editSaldoPendiente, setEditSaldoPendiente] = useState("");
+  // Inline edit of pending purchases (items)
+  const [editingPurchaseId, setEditingPurchaseId] = useState(null);
+  const [editPurchaseForm, setEditPurchaseForm] = useState({
+    item_name: "", store: "", price: "", tax_option: "0", custom_tax: "",
+    apply_commission: true, commission: "0"
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [taxOptions, setTaxOptions] = useState([
+    { value: "8.25", label: "8.25%" },
+    { value: "10", label: "10%" },
+    { value: "15", label: "15%" },
+    { value: "0", label: "Sin Taxes" },
+    { value: "other", label: "Otro" }
+  ]);
   const invoiceRef = useRef(null);
 
   // Sync editSaldoPendiente when currentInvoice changes
@@ -137,6 +152,98 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       toast.error("Error al cargar compras pendientes");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Load tenant tax options once
+  useEffect(() => {
+    if (!open) return;
+    getTenantSettings()
+      .then((res) => {
+        if (res.data?.tax_options && res.data.tax_options.length > 0) {
+          setTaxOptions(res.data.tax_options);
+        }
+      })
+      .catch(() => {});
+  }, [open]);
+
+  const getEffectiveTaxRate = (taxOption, customTax) => {
+    if (taxOption === "0") return 0;
+    if (taxOption === "other") return parseFloat(customTax) / 100 || 0;
+    return parseFloat(taxOption) / 100 || 0;
+  };
+
+  const handleStartEditPurchase = (purchase, e) => {
+    if (e) e.stopPropagation();
+    setEditingPurchaseId(purchase.id);
+    // Derive tax_option from stored tax_rate
+    let tax_option = "0";
+    let custom_tax = "";
+    if (purchase.apply_tax !== false && purchase.tax_rate > 0) {
+      const rate = (purchase.tax_rate * 100).toFixed(2).replace(/\.?0+$/, '');
+      const matching = taxOptions.find(opt => opt.value === rate && opt.value !== "other");
+      if (matching) {
+        tax_option = rate;
+      } else {
+        tax_option = "other";
+        custom_tax = rate;
+      }
+    }
+    setEditPurchaseForm({
+      item_name: purchase.item_name || "",
+      store: purchase.store || "",
+      price: (purchase.price ?? 0).toString(),
+      tax_option,
+      custom_tax,
+      apply_commission: purchase.apply_commission !== false,
+      commission: (purchase.commission || 0).toString()
+    });
+  };
+
+  const handleCancelEditPurchase = (e) => {
+    if (e) e.stopPropagation();
+    setEditingPurchaseId(null);
+  };
+
+  const handleSavePurchaseEdit = async (purchaseId, e) => {
+    if (e) e.stopPropagation();
+    const orig = pendingPurchases.find(p => p.id === purchaseId);
+    if (!orig) return;
+    try {
+      setSavingEdit(true);
+      const data = {};
+      if (editPurchaseForm.item_name !== orig.item_name) data.item_name = editPurchaseForm.item_name;
+      if (editPurchaseForm.store !== orig.store) data.store = editPurchaseForm.store;
+      const newPrice = parseFloat(editPurchaseForm.price);
+      if (!Number.isNaN(newPrice) && newPrice !== orig.price) data.price = newPrice;
+
+      const newTaxRate = getEffectiveTaxRate(editPurchaseForm.tax_option, editPurchaseForm.custom_tax);
+      const newApplyTax = newTaxRate > 0;
+      const origApplyTax = orig.apply_tax !== false;
+      const origTaxRate = orig.tax_rate || 0;
+      if (newApplyTax !== origApplyTax) data.apply_tax = newApplyTax;
+      if (Math.abs(newTaxRate - origTaxRate) > 0.0001) data.tax_rate = newTaxRate;
+
+      const newApplyCommission = !!editPurchaseForm.apply_commission;
+      const newCommission = parseFloat(editPurchaseForm.commission) || 0;
+      const origApplyCommission = orig.apply_commission !== false;
+      const origCommission = orig.commission || 0;
+      if (newApplyCommission !== origApplyCommission) data.apply_commission = newApplyCommission;
+      if (newApplyCommission && newCommission !== origCommission) data.commission = newCommission;
+      if (!newApplyCommission) data.commission = 0;
+
+      if (Object.keys(data).length === 0) {
+        setEditingPurchaseId(null);
+        return;
+      }
+      await updatePurchase(purchaseId, data);
+      toast.success("Artículo actualizado. Cambios aplicados también en LIVE.");
+      setEditingPurchaseId(null);
+      await loadPendingPurchases();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al editar artículo");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -896,40 +1003,184 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
 
                   {/* Purchases list */}
                   <div className="space-y-2">
-                    {pendingPurchases.map((purchase) => (
-                      <div
-                        key={purchase.id}
-                        className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                          selectedPurchases.includes(purchase.id)
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-gray-200 bg-white hover:border-gray-300"
-                        }`}
-                        onClick={() => togglePurchase(purchase.id)}
-                      >
-                        <div className="flex items-center gap-3">
-                          <Checkbox
-                            checked={selectedPurchases.includes(purchase.id)}
-                            onCheckedChange={() => {}}
+                    {pendingPurchases.map((purchase) => {
+                      const isEditing = editingPurchaseId === purchase.id;
+                      if (isEditing) {
+                        const price = parseFloat(editPurchaseForm.price) || 0;
+                        const taxRate = getEffectiveTaxRate(editPurchaseForm.tax_option, editPurchaseForm.custom_tax);
+                        const taxAmount = price * taxRate;
+                        const commission = editPurchaseForm.apply_commission ? (parseFloat(editPurchaseForm.commission) || 0) : 0;
+                        const totalPreview = price + taxAmount + commission;
+                        const taxLabel = editPurchaseForm.tax_option === "other"
+                          ? `${editPurchaseForm.custom_tax || 0}%`
+                          : editPurchaseForm.tax_option === "0" ? "Sin Tax" : `${editPurchaseForm.tax_option}%`;
+                        return (
+                          <div
+                            key={purchase.id}
+                            className="p-4 rounded-xl border-2 border-blue-400 bg-blue-50/50 space-y-2"
                             onClick={(e) => e.stopPropagation()}
-                            className="data-[state=checked]:bg-blue-600 pointer-events-none"
-                          />
-                          <div className="flex-1">
+                            data-testid={`edit-pending-purchase-${purchase.id}`}
+                          >
                             <div className="flex items-center justify-between">
-                              <p className="font-medium text-gray-800">{purchase.item_name}</p>
-                              <p className="font-bold text-lg" style={{ color: '#1E3A5F' }}>${(purchase.price + (purchase.commission || 0)).toFixed(2)}</p>
+                              <span className="text-xs font-semibold text-blue-700 uppercase">Editando artículo</span>
+                              <span className="text-xs text-gray-500">{purchase.store || ""}</span>
                             </div>
-                            <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
-                              <span>{purchase.store}</span>
-                              <span>Costo: ${purchase.price.toFixed(2)}</span>
-                              {purchase.commission > 0 && <span>Com: ${purchase.commission.toFixed(2)}</span>}
+                            <Input
+                              value={editPurchaseForm.item_name}
+                              onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, item_name: e.target.value })}
+                              placeholder="Producto"
+                              className="h-9 rounded-lg text-sm"
+                              data-testid="edit-pending-item-name"
+                            />
+                            <div className="flex gap-2">
+                              <Input
+                                value={editPurchaseForm.store}
+                                onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, store: e.target.value })}
+                                placeholder="Tienda"
+                                className="h-9 rounded-lg text-sm flex-1"
+                              />
+                              <Input
+                                type="number" step="0.01" min="0"
+                                value={editPurchaseForm.price}
+                                onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, price: e.target.value })}
+                                placeholder="Precio"
+                                className="h-9 rounded-lg text-sm w-28"
+                                data-testid="edit-pending-price"
+                                onWheel={(e) => e.target.blur()}
+                              />
                             </div>
-                            <p className="text-xs text-gray-400 mt-1">
-                              {new Date(purchase.created_at).toLocaleDateString("es-ES")}
-                            </p>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="p-2 bg-white rounded-lg border">
+                                <p className="text-xs font-medium text-gray-600 mb-1">Impuesto</p>
+                                <div className="flex gap-2 items-center">
+                                  <Select
+                                    value={editPurchaseForm.tax_option}
+                                    onValueChange={(val) => setEditPurchaseForm({ ...editPurchaseForm, tax_option: val })}
+                                  >
+                                    <SelectTrigger className="h-8 rounded text-xs flex-1">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {taxOptions.map((opt) => (
+                                        <SelectItem key={opt.value} value={opt.value} className="text-xs">{opt.label}</SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  {editPurchaseForm.tax_option === "other" && (
+                                    <Input
+                                      type="number" step="0.01" min="0"
+                                      value={editPurchaseForm.custom_tax}
+                                      onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, custom_tax: e.target.value })}
+                                      className="w-16 h-8 text-xs text-center rounded"
+                                      placeholder="%"
+                                    />
+                                  )}
+                                </div>
+                              </div>
+                              <div className="p-2 bg-white rounded-lg border">
+                                <label className="flex items-center gap-1 text-xs cursor-pointer mb-1">
+                                  <input
+                                    type="checkbox"
+                                    checked={editPurchaseForm.apply_commission}
+                                    onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, apply_commission: e.target.checked })}
+                                    className="w-3 h-3"
+                                  />
+                                  <span className="font-medium text-gray-700">Comisión $</span>
+                                </label>
+                                {editPurchaseForm.apply_commission && (
+                                  <Input
+                                    type="number" step="0.01"
+                                    value={editPurchaseForm.commission}
+                                    onChange={(e) => setEditPurchaseForm({ ...editPurchaseForm, commission: e.target.value })}
+                                    className="h-7 text-xs text-center rounded"
+                                    data-testid="edit-pending-commission"
+                                    onWheel={(e) => e.target.blur()}
+                                  />
+                                )}
+                              </div>
+                            </div>
+                            {/* Preview */}
+                            <div className="p-2 bg-white/80 rounded-lg text-xs space-y-0.5 border">
+                              <div className="flex justify-between"><span className="text-gray-500">Precio:</span><span>${price.toFixed(2)}</span></div>
+                              {taxRate > 0 && (
+                                <div className="flex justify-between"><span className="text-gray-500">Tax ({taxLabel}):</span><span>${taxAmount.toFixed(2)}</span></div>
+                              )}
+                              {editPurchaseForm.apply_commission && (
+                                <div className="flex justify-between"><span className="text-gray-500">Comisión:</span><span>${commission.toFixed(2)}</span></div>
+                              )}
+                              <div className="flex justify-between pt-1 border-t font-bold text-blue-700"><span>Total:</span><span>${totalPreview.toFixed(2)}</span></div>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                onClick={(e) => handleSavePurchaseEdit(purchase.id, e)}
+                                disabled={savingEdit}
+                                className="flex-1 h-9 rounded-lg text-white"
+                                style={{ background: '#2ECC71' }}
+                                data-testid={`save-pending-edit-${purchase.id}`}
+                              >
+                                {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Save className="h-4 w-4 mr-1" /> Guardar</>}
+                              </Button>
+                              <Button
+                                size="sm" variant="outline"
+                                onClick={handleCancelEditPurchase}
+                                className="h-9 rounded-lg"
+                                data-testid={`cancel-pending-edit-${purchase.id}`}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div
+                          key={purchase.id}
+                          className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                            selectedPurchases.includes(purchase.id)
+                              ? "border-blue-500 bg-blue-50"
+                              : "border-gray-200 bg-white hover:border-gray-300"
+                          }`}
+                          onClick={() => togglePurchase(purchase.id)}
+                          data-testid={`pending-purchase-${purchase.id}`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <Checkbox
+                              checked={selectedPurchases.includes(purchase.id)}
+                              onCheckedChange={() => {}}
+                              onClick={(e) => e.stopPropagation()}
+                              className="data-[state=checked]:bg-blue-600 pointer-events-none"
+                            />
+                            <div className="flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="font-medium text-gray-800 truncate">{purchase.item_name}</p>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <p className="font-bold text-lg" style={{ color: '#1E3A5F' }}>${(purchase.price + (purchase.commission || 0)).toFixed(2)}</p>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 text-gray-500 hover:text-blue-600 hover:bg-blue-100"
+                                    onClick={(e) => handleStartEditPurchase(purchase, e)}
+                                    title="Editar artículo (aplica también en LIVE)"
+                                    data-testid={`edit-pending-purchase-btn-${purchase.id}`}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-4 mt-1 text-sm text-gray-500">
+                                <span>{purchase.store}</span>
+                                <span>Costo: ${purchase.price.toFixed(2)}</span>
+                                {purchase.commission > 0 && <span>Com: ${purchase.commission.toFixed(2)}</span>}
+                              </div>
+                              <p className="text-xs text-gray-400 mt-1">
+                                {new Date(purchase.created_at).toLocaleDateString("es-ES")}
+                              </p>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* Saldo Pendiente Field */}
@@ -1096,9 +1347,13 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                   </div>
                   <div className="text-right">
                     <p className="text-3xl font-bold">{currentInvoice.invoice_number}</p>
-                    <Badge className={currentInvoice.status === "approved" ? "bg-green-500 mt-2" : "bg-yellow-500 mt-2"}>
-                      {currentInvoice.status === "approved" ? "PAGADA" : "PENDIENTE"}
-                    </Badge>
+                    {currentInvoice.is_annulled ? (
+                      <Badge className="bg-red-600 mt-2">ANULADA</Badge>
+                    ) : (
+                      <Badge className={currentInvoice.status === "approved" ? "bg-green-500 mt-2" : "bg-yellow-500 mt-2"}>
+                        {currentInvoice.status === "approved" ? "PAGADA" : "PENDIENTE"}
+                      </Badge>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1472,8 +1727,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                 invoices.map((inv) => (
                   <div
                     key={inv.id}
-                    className={`p-4 rounded-xl border transition-all ${inv.is_annulled ? 'bg-red-50/30 border-red-100 opacity-60' : 'hover:border-blue-300 hover:shadow-md cursor-pointer'}`}
-                    onClick={() => !inv.is_annulled && handleViewInvoice(inv)}
+                    className={`p-4 rounded-xl border transition-all ${inv.is_annulled ? 'bg-red-50/30 border-red-100 hover:border-red-300 cursor-pointer' : 'hover:border-blue-300 hover:shadow-md cursor-pointer'}`}
+                    onClick={() => handleViewInvoice(inv)}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
