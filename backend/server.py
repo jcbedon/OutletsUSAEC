@@ -189,6 +189,7 @@ class Shipment(BaseModel):
     user_id: str
     customer_id: str
     purchase_ids: List[str]
+    invoice_id: Optional[str] = None  # Link to the invoice this shipment belongs to
     shipping_type: str
     shipping_cost: float
     weight_pounds: float = 0
@@ -493,6 +494,20 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     client = await db.users.find_one({"customer_id": customer_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1})
     if not client:
         return
+
+    # Backfill: if any invoice has shipment_id but the linked shipment lacks invoice_id, repair it.
+    # (Historical data before the Shipment model had `invoice_id` defined lost this link silently.)
+    invs_with_shipment = await db.invoices.find(
+        {"customer_id": customer_id, "tenant_id": tenant_id, "shipment_id": {"$exists": True, "$ne": None, "$ne": ""}},
+        {"_id": 0, "id": 1, "shipment_id": 1}
+    ).to_list(1000)
+    for inv in invs_with_shipment:
+        await db.shipments.update_one(
+            {"id": inv["shipment_id"], "tenant_id": tenant_id,
+             "$or": [{"invoice_id": None}, {"invoice_id": {"$exists": False}}, {"invoice_id": ""}]},
+            {"$set": {"invoice_id": inv["id"]}}
+        )
+
     all_deposits = await db.wallet_transactions.find(
         {"user_id": client["id"], "tenant_id": tenant_id, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
         {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
@@ -2914,7 +2929,16 @@ async def get_client_pending_balance(customer_id: str, current_user: dict = Depe
         )
         if not shipment and last_invoice.get("purchase_ids"):
             shipment = await db.shipments.find_one(
-                {"tenant_id": tid, "customer_id": customer_id.upper(), "purchase_ids": {"$in": last_invoice["purchase_ids"]}},
+                {
+                    "tenant_id": tid,
+                    "customer_id": customer_id.upper(),
+                    "purchase_ids": {"$in": last_invoice["purchase_ids"]},
+                    "$or": [
+                        {"invoice_id": None},
+                        {"invoice_id": {"$exists": False}},
+                        {"invoice_id": ""}
+                    ]
+                },
                 {"_id": 0, "shipping_cost": 1}
             )
         if shipment:
@@ -3222,13 +3246,20 @@ async def search_invoices(
             shipments_by_invoice[s["invoice_id"]] = s
         
         # For invoices without direct link, try to find by purchase_ids
+        # IMPORTANT: only match shipments that are NOT linked to a different invoice
+        # (otherwise the same shipping cost would show on two invoices)
         for inv in invoices:
             if inv["id"] not in shipments_by_invoice and inv.get("purchase_ids"):
                 shipment = await db.shipments.find_one(
                     {
                         "tenant_id": tid,
                         "customer_id": inv.get("customer_id"),
-                        "purchase_ids": {"$in": inv["purchase_ids"]}
+                        "purchase_ids": {"$in": inv["purchase_ids"]},
+                        "$or": [
+                            {"invoice_id": None},
+                            {"invoice_id": {"$exists": False}},
+                            {"invoice_id": ""}
+                        ]
                     },
                     {"_id": 0},
                     sort=[("created_at", -1)]
@@ -3357,12 +3388,18 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     )
     
     # If no shipment by invoice_id, try to find one that contains the same purchases
+    # IMPORTANT: only match shipments that are NOT linked to a different invoice
     if not shipment and invoice.get("purchase_ids"):
         shipment = await db.shipments.find_one(
             {
                 "tenant_id": tid,
                 "customer_id": invoice.get("customer_id"),
-                "purchase_ids": {"$in": invoice["purchase_ids"]}
+                "purchase_ids": {"$in": invoice["purchase_ids"]},
+                "$or": [
+                    {"invoice_id": None},
+                    {"invoice_id": {"$exists": False}},
+                    {"invoice_id": ""}
+                ]
             },
             {"_id": 0},
             sort=[("created_at", -1)]
