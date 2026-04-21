@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount } from "@/lib/api";
+import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount, scanDepositProof } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,6 +28,8 @@ export default function AdminWallet() {
   
   const [pendingDeposits, setPendingDeposits] = useState([]);
   const [depositAmountEdits, setDepositAmountEdits] = useState({});
+  const [scanningDeposit, setScanningDeposit] = useState(null);
+  const [scanResults, setScanResults] = useState({}); // {depositId: {detected_reference_number, detected_amount, matches_reference, ...}}
   const [allDeposits, setAllDeposits] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -99,6 +101,30 @@ export default function AdminWallet() {
       toast.error("Error al cargar datos");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleScanProof = async (depositId) => {
+    setScanningDeposit(depositId);
+    try {
+      const res = await scanDepositProof(depositId);
+      setScanResults({ ...scanResults, [depositId]: res.data });
+      // If detected amount and admin hasn't set one yet, prefill it
+      const currentEdit = depositAmountEdits[depositId];
+      if (!currentEdit && res.data.detected_amount) {
+        setDepositAmountEdits({ ...depositAmountEdits, [depositId]: String(res.data.detected_amount) });
+      }
+      if (res.data.matches_reference === true) {
+        toast.success("Comprobante coincide");
+      } else if (res.data.matches_reference === false) {
+        toast.error("El comprobante NO coincide con lo que escribió el cliente");
+      } else {
+        toast.info("Información extraída del comprobante");
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al leer el comprobante");
+    } finally {
+      setScanningDeposit(null);
     }
   };
 
@@ -933,6 +959,61 @@ export default function AdminWallet() {
                             <p className="text-sm text-gray-400 flex items-center justify-center gap-2">
                               <Image className="h-4 w-4" /> Sin comprobante adjunto
                             </p>
+                          </div>
+                        )}
+
+                        {/* AI Scan button + results */}
+                        {proofUrl && (
+                          <div className="mb-3">
+                            <Button
+                              onClick={() => handleScanProof(deposit.id)}
+                              disabled={scanningDeposit === deposit.id}
+                              variant="outline"
+                              size="sm"
+                              className="w-full h-10 border-indigo-200 text-indigo-700 hover:bg-indigo-50 rounded-xl"
+                              data-testid={`scan-proof-${deposit.id}`}
+                            >
+                              {scanningDeposit === deposit.id ? (
+                                <span className="flex items-center gap-2">
+                                  <span className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-600 border-t-transparent"></span>
+                                  Leyendo comprobante...
+                                </span>
+                              ) : (
+                                <>✨ Leer comprobante con IA</>
+                              )}
+                            </Button>
+                            {scanResults[deposit.id] && (
+                              <div className="mt-2 p-3 rounded-xl border bg-white" data-testid={`scan-result-${deposit.id}`}>
+                                <div className="text-xs space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-gray-500">Número detectado:</span>
+                                    <span className="font-mono font-bold">{scanResults[deposit.id].detected_reference_number || "—"}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-gray-500">Monto detectado:</span>
+                                    <span className="font-bold text-green-700">
+                                      {scanResults[deposit.id].detected_amount != null ? `$${Number(scanResults[deposit.id].detected_amount).toFixed(2)}` : "—"}
+                                    </span>
+                                  </div>
+                                  {scanResults[deposit.id].confidence && (
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-gray-500">Confianza:</span>
+                                      <span className="font-medium capitalize">{scanResults[deposit.id].confidence}</span>
+                                    </div>
+                                  )}
+                                  {scanResults[deposit.id].matches_reference === true && (
+                                    <div className="mt-2 p-2 rounded bg-green-50 border border-green-200 text-green-800 font-semibold flex items-center gap-1">
+                                      <CheckCircle className="h-4 w-4" /> El número coincide con el del cliente
+                                    </div>
+                                  )}
+                                  {scanResults[deposit.id].matches_reference === false && (
+                                    <div className="mt-2 p-2 rounded bg-red-50 border border-red-200 text-red-800 font-semibold">
+                                      ⚠ El número NO coincide con el del cliente ({scanResults[deposit.id].client_reference_number || "—"})
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
 
