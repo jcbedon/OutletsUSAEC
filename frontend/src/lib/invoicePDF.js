@@ -217,10 +217,15 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
   const taxes = inv.total_tax || 0;
   const shippingCost = shipment?.shipping_cost || 0;
   const saldoPend = inv.saldo_pendiente || 0;
+  const saldoFavorAnterior = inv.saldo_a_favor_anterior || 0;
+  const saldoFavor = inv.saldo_a_favor || 0;
   const grandTotal = displaySubtotal + taxes + shippingCost + saldoPend;
   const appliedDeposits = inv.applied_deposits || [];
   const depositsApplied = inv.deposits_applied || 0;
-  const totalAPagar = Math.max(0, grandTotal - depositsApplied);
+  // Prefer backend's authoritative total_a_pagar if present; fallback to computed value
+  const totalAPagar = inv.total_a_pagar != null
+    ? inv.total_a_pagar
+    : Math.max(0, grandTotal - depositsApplied - saldoFavorAnterior);
 
   doc.setTextColor(...colors.textSecondary);
   doc.setFontSize(9);
@@ -258,6 +263,18 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
     });
   }
 
+  // Saldo a Favor anterior (credit applied to this invoice)
+  if (saldoFavorAnterior > 0) {
+    if (appliedDeposits.length === 0) finalY += 8;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(...colors.textSecondary);
+    doc.text("Saldo a Favor (anterior):", totalsX, finalY);
+    doc.setTextColor(22, 101, 52);
+    doc.text(`-$${saldoFavorAnterior.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+    finalY += 5;
+  }
+
   finalY += 2;
   doc.setDrawColor(...colors.textPrimary);
   doc.setLineWidth(0.5);
@@ -269,6 +286,17 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
   doc.text("Total a pagar:", totalsX, finalY);
   doc.setFontSize(14);
   doc.text(`$${totalAPagar.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+
+  // Saldo a Favor para la próxima factura (credit carried forward)
+  if (saldoFavor > 0) {
+    finalY += 8;
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(22, 101, 52);
+    doc.text("Saldo a Favor (próxima factura):", totalsX, finalY);
+    doc.setFontSize(10);
+    doc.text(`+$${saldoFavor.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+  }
 
   // Footer
   const minFooterY = finalY + 20;
