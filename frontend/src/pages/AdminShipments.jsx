@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/App";
 import { 
@@ -12,7 +12,10 @@ import {
   updateShipment,
   deleteShipment,
   getMyTenant,
-  getClientInvoicesForShipment
+  getClientInvoicesForShipment,
+  createUploadSession,
+  getUploadSession,
+  attachSessionFilesToShipment
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -45,8 +48,12 @@ import {
   FileText,
   AlertCircle,
   DollarSign,
-  ChevronDown
+  ChevronDown,
+  Smartphone,
+  RefreshCw
 } from "lucide-react";
+import QRCode from "qrcode";
+import axios from "axios";
 
 const LOGO_URL_DEFAULT = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
@@ -138,6 +145,11 @@ export default function AdminShipments() {
     ]
   });
 
+  // Mobile QR upload session
+  const [uploadSession, setUploadSession] = useState(null); // {token, url, qr_data_url, expires_at}
+  const [remoteFiles, setRemoteFiles] = useState([]); // files uploaded via mobile
+  const pollingRef = useRef(null);
+
   // Filter and sort clients
   const sortedClients = [...clients].sort((a, b) => a.name.localeCompare(b.name));
   const filteredClients = sortedClients.filter(client => 
@@ -164,6 +176,69 @@ export default function AdminShipments() {
       }
     }
   }, [invoiceData, clients, createDialogOpen]);
+
+  // Create upload session when dialog opens; clean up when it closes
+  useEffect(() => {
+    let cancelled = false;
+    const cleanup = () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+    if (createDialogOpen && !uploadSession) {
+      (async () => {
+        try {
+          const res = await createUploadSession();
+          if (cancelled) return;
+          const { token, expires_at } = res.data;
+          const origin = window.location.origin;
+          const mobileUrl = `${origin}/m/upload/${token}`;
+          const qrDataUrl = await QRCode.toDataURL(mobileUrl, {
+            width: 220, margin: 1, color: { dark: "#0F172A", light: "#FFFFFF" }
+          });
+          if (cancelled) return;
+          setUploadSession({ token, url: mobileUrl, qr_data_url: qrDataUrl, expires_at });
+        } catch (err) {
+          // non-critical; silent fail (QR just won't show)
+          console.error("No se pudo crear la sesión de subida:", err);
+        }
+      })();
+    }
+    if (!createDialogOpen) {
+      setUploadSession(null);
+      setRemoteFiles([]);
+      cleanup();
+    }
+    return cleanup;
+  }, [createDialogOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Poll for files uploaded via mobile
+  useEffect(() => {
+    if (!uploadSession?.token || !createDialogOpen) return;
+    const tick = async () => {
+      try {
+        const res = await getUploadSession(uploadSession.token);
+        const files = res.data.files || [];
+        if (files.length !== remoteFiles.length) {
+          if (files.length > remoteFiles.length) {
+            const diff = files.length - remoteFiles.length;
+            toast.success(`${diff} archivo(s) recibido(s) desde el teléfono`);
+          }
+          setRemoteFiles(files);
+        }
+      } catch (err) {
+        // ignore; session may expire naturally
+      }
+    };
+    pollingRef.current = setInterval(tick, 3000);
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [uploadSession?.token, createDialogOpen, remoteFiles.length]);
 
   const loadData = async () => {
     try {
@@ -301,7 +376,22 @@ export default function AdminShipments() {
             console.error("Error uploading attachment:", err);
           }
         }
-        toast.success(`Envío creado con ${attachmentFiles.length} archivo(s) adjunto(s)`);
+      }
+
+      // Attach files uploaded via QR/mobile session (if any)
+      let remoteCount = 0;
+      if (uploadSession?.token && remoteFiles.length > 0) {
+        try {
+          const res = await attachSessionFilesToShipment(shipmentId, uploadSession.token);
+          remoteCount = res.data?.attached_count || remoteFiles.length;
+        } catch (err) {
+          console.error("Error attaching session files:", err);
+        }
+      }
+
+      const totalAttached = attachmentFiles.length + remoteCount;
+      if (totalAttached > 0) {
+        toast.success(`Envío creado con ${totalAttached} archivo(s) adjunto(s)`);
       } else {
         toast.success("Envío creado exitosamente");
       }
@@ -517,7 +607,6 @@ export default function AdminShipments() {
               setSelectedPurchases([]);
               setSelectedInvoice(null);
               setClientInvoices([]);
-              setShipmentSource("purchases");
               setClientSearch("");
             }
           }}>
@@ -861,6 +950,42 @@ export default function AdminShipments() {
                               </Button>
                             </div>
                           ))}
+                        </div>
+                      )}
+
+                      {/* Mobile QR upload */}
+                      {uploadSession && (
+                        <div className="mt-4 p-4 rounded-xl border-2 border-dashed border-blue-300 bg-blue-50/50" data-testid="mobile-upload-qr-block">
+                          <div className="flex items-start gap-3">
+                            <div className="shrink-0">
+                              <img
+                                src={uploadSession.qr_data_url}
+                                alt="QR code"
+                                className="w-28 h-28 rounded-lg border-2 border-white shadow-sm"
+                                data-testid="mobile-upload-qr-image"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold text-blue-900 flex items-center gap-1">
+                                <Smartphone className="h-4 w-4" />
+                                Subir desde el teléfono
+                              </p>
+                              <p className="text-xs text-blue-700 mt-1">
+                                Escanea el QR con la cámara de tu teléfono para subir fotos o PDFs sin salir de esta pantalla.
+                              </p>
+                              <div className="mt-2 flex items-center gap-2">
+                                <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${remoteFiles.length > 0 ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                                  <RefreshCw className="h-3 w-3 animate-spin-slow" />
+                                  {remoteFiles.length > 0 ? `${remoteFiles.length} recibido(s)` : "Esperando..."}
+                                </span>
+                              </div>
+                              {remoteFiles.length > 0 && (
+                                <p className="text-xs text-green-700 mt-2">
+                                  Los archivos se adjuntarán al envío al crearlo.
+                                </p>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>

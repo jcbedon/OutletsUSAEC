@@ -134,6 +134,21 @@ export const updateShippingCategories = (shippingCategories) =>
 export const updateShippingCategoriesSuperadmin = (tenantId, shippingCategories) =>
   api.put(`/superadmin/tenants/${tenantId}/shipping-categories`, { shipping_categories: shippingCategories });
 
+// Mobile upload sessions (QR flow)
+export const createUploadSession = () => api.post("/upload-sessions");
+export const getUploadSession = (token) => api.get(`/upload-sessions/${token}`);
+export const clearUploadSessionFiles = (token) => api.delete(`/upload-sessions/${token}/files`);
+export const getUploadSessionPublicInfo = (token) => api.get(`/upload-sessions/${token}/public-info`);
+export const attachSessionFilesToShipment = (shipmentId, token) =>
+  api.post(`/shipments/${shipmentId}/attach-session`, { token });
+export const uploadSessionFile = (token, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return api.post(`/upload-sessions/${token}/files`, formData, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
+};
+
 // Invoices
 export const getPendingPurchases = (customerId) => api.get(`/invoices/client/${customerId}/pending-purchases`);
 export const createInvoice = (data) => api.post("/invoices", data);

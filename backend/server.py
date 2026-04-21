@@ -2874,6 +2874,128 @@ async def upload_shipment_attachment(shipment_id: str, file: UploadFile = File(.
     
     return {"message": "Archivo adjuntado", "file_url": file_url, "attachments": current_attachments}
 
+
+@api_router.post("/shipments/{shipment_id}/attach-session")
+async def attach_session_files_to_shipment(shipment_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Attach all files from an upload session to a shipment (server-side, no re-upload)."""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    token = data.get("token")
+    if not token:
+        raise HTTPException(status_code=400, detail="Token requerido")
+    shipment = await db.shipments.find_one({"id": shipment_id, "tenant_id": tid}, {"_id": 0, "attachments": 1})
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Envío no encontrado")
+    session = await db.upload_sessions.find_one({"token": token, "tenant_id": tid}, {"_id": 0, "files": 1})
+    if not session:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    file_urls = [f["file_url"] for f in (session.get("files") or [])]
+    if not file_urls:
+        return {"message": "Sin archivos", "attachments": shipment.get("attachments", [])}
+    current_attachments = shipment.get("attachments", []) + file_urls
+    await db.shipments.update_one(
+        {"id": shipment_id, "tenant_id": tid},
+        {"$set": {"attachments": current_attachments, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    # Clean up: delete session
+    await db.upload_sessions.delete_one({"token": token, "tenant_id": tid})
+    return {"message": "Archivos adjuntados", "attachments": current_attachments, "attached_count": len(file_urls)}
+
+
+
+# Short-lived public upload sessions so admins can scan a QR and upload files from their phone
+# during shipment creation. Files are temporarily tied to a session and returned to the admin's
+# desktop UI via polling.
+
+@api_router.post("/upload-sessions")
+async def create_upload_session(current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    token = uuid.uuid4().hex + uuid.uuid4().hex  # 64 chars
+    now = datetime.now(timezone.utc)
+    session = {
+        "token": token,
+        "tenant_id": current_user["tenant_id"],
+        "created_by": current_user["user_id"],
+        "files": [],
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(minutes=30)).isoformat()
+    }
+    await db.upload_sessions.insert_one(session)
+    return {"token": token, "expires_at": session["expires_at"]}
+
+
+@api_router.get("/upload-sessions/{token}/public-info")
+async def get_upload_session_public_info(token: str):
+    """Public endpoint the mobile page calls to validate the session and show context."""
+    session = await db.upload_sessions.find_one({"token": token}, {"_id": 0, "tenant_id": 1, "expires_at": 1, "files": 1})
+    if not session:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    now = datetime.now(timezone.utc)
+    if datetime.fromisoformat(session["expires_at"]) < now:
+        raise HTTPException(status_code=410, detail="Sesión expirada")
+    tenant = await db.tenants.find_one({"id": session["tenant_id"]}, {"_id": 0, "business_name": 1, "logo_url": 1})
+    return {
+        "valid": True,
+        "expires_at": session["expires_at"],
+        "files_count": len(session.get("files", [])),
+        "business_name": (tenant or {}).get("business_name", ""),
+        "logo_url": (tenant or {}).get("logo_url")
+    }
+
+
+@api_router.post("/upload-sessions/{token}/files")
+async def upload_session_file(token: str, file: UploadFile = File(...)):
+    """Public endpoint: mobile device uploads a file to the session."""
+    session = await db.upload_sessions.find_one({"token": token}, {"_id": 0, "tenant_id": 1, "expires_at": 1, "files": 1})
+    if not session:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    if datetime.fromisoformat(session["expires_at"]) < datetime.now(timezone.utc):
+        raise HTTPException(status_code=410, detail="Sesión expirada")
+    file_ext = Path(file.filename).suffix or ".bin"
+    filename = f"session_{token[:12]}_{uuid.uuid4().hex[:8]}{file_ext}"
+    content = await file.read()
+    obj_path = object_store.upload_file(content, filename, "shipments")
+    file_url = f"/api/uploads/{obj_path}"
+    file_entry = {
+        "file_url": file_url,
+        "original_name": file.filename or filename,
+        "uploaded_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.upload_sessions.update_one({"token": token}, {"$push": {"files": file_entry}})
+    return {"message": "Archivo subido", "file_url": file_url}
+
+
+@api_router.get("/upload-sessions/{token}")
+async def get_upload_session(token: str, current_user: dict = Depends(get_current_user)):
+    """Admin polls this endpoint to see uploaded files."""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    session = await db.upload_sessions.find_one(
+        {"token": token, "tenant_id": current_user["tenant_id"]},
+        {"_id": 0}
+    )
+    if not session:
+        raise HTTPException(status_code=404, detail="Sesión no encontrada")
+    return {
+        "token": session["token"],
+        "files": session.get("files", []),
+        "expires_at": session["expires_at"]
+    }
+
+
+@api_router.delete("/upload-sessions/{token}/files")
+async def clear_upload_session_files(token: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    await db.upload_sessions.update_one(
+        {"token": token, "tenant_id": current_user["tenant_id"]},
+        {"$set": {"files": []}}
+    )
+    return {"message": "Sesión limpiada"}
+
+
 @api_router.get("/shipments/user/{user_id}")
 async def get_user_shipments(user_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
