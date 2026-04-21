@@ -2635,6 +2635,8 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
             {"id": shipment_data.invoice_id, "tenant_id": tid},
             {"$set": {"shipment_id": shipment.id, "shipping_cost": shipment_data.shipping_cost, "weight_pounds": shipment_data.weight_pounds}}
         )
+        # Recalculate invoice chain so saldo_a_favor / total_a_pagar reflect shipping cost
+        await recalculate_client_invoices(tid, user["customer_id"])
     
     await create_notification(tid, shipment_data.user_id, user["customer_id"], "shipment_created",
         "Envío Creado", f"Tu envío ha sido creado. Peso: {shipment_data.weight_pounds} lbs. Costo: ${shipment_data.shipping_cost:.2f} USD")
@@ -2787,6 +2789,19 @@ async def update_shipment(shipment_id: str, data: ShipmentUpdate, current_user: 
     if updates:
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         await db.shipments.update_one({"id": shipment_id, "tenant_id": tid}, {"$set": updates})
+    # If shipping_cost or weight changed and shipment is linked to an invoice, sync to invoice and recalc
+    if shipment.get("invoice_id") and (data.shipping_cost is not None or data.weight_pounds is not None):
+        inv_updates = {}
+        if data.shipping_cost is not None:
+            inv_updates["shipping_cost"] = data.shipping_cost
+        if data.weight_pounds is not None:
+            inv_updates["weight_pounds"] = data.weight_pounds
+        if inv_updates:
+            await db.invoices.update_one(
+                {"id": shipment["invoice_id"], "tenant_id": tid},
+                {"$set": inv_updates}
+            )
+        await recalculate_client_invoices(tid, shipment["customer_id"])
     updated = await db.shipments.find_one({"id": shipment_id, "tenant_id": tid}, {"_id": 0})
     return updated
 
@@ -2799,6 +2814,13 @@ async def delete_shipment(shipment_id: str, current_user: dict = Depends(get_cur
     if not shipment:
         raise HTTPException(status_code=404, detail="Envío no encontrado")
     await db.shipments.delete_one({"id": shipment_id, "tenant_id": tid})
+    # Clear shipping_cost from linked invoice and recalc
+    if shipment.get("invoice_id"):
+        await db.invoices.update_one(
+            {"id": shipment["invoice_id"], "tenant_id": tid},
+            {"$set": {"shipping_cost": 0, "weight_pounds": 0, "shipment_id": None}}
+        )
+        await recalculate_client_invoices(tid, shipment["customer_id"])
     await create_notification(tid, shipment["user_id"], shipment["customer_id"], "shipment_deleted",
         "Envío Eliminado", "Un envío ha sido eliminado de tu cuenta.")
     return {"message": "Envío eliminado"}
@@ -2862,7 +2884,10 @@ async def get_client_pending_balance(customer_id: str, current_user: dict = Depe
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
-    
+
+    # Ensure invoice chain is up-to-date (shipping costs added later, deposits, etc.)
+    await recalculate_client_invoices(tid, customer_id.upper())
+
     # Find the most recent non-annulled invoice for this client
     last_invoice = await db.invoices.find_one(
         {"customer_id": customer_id.upper(), "tenant_id": tid, "is_annulled": {"$ne": True}},
@@ -3044,6 +3069,10 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
         {"id": {"$in": purchase_ids}, "tenant_id": tid},
         {"$set": {"invoice_id": invoice.id, "invoiced_at": now}}
     )
+
+    # Recalculate the full invoice chain to ensure consistency across invoices
+    # (handles edge cases like shipping costs added later on previous invoices)
+    await recalculate_client_invoices(tid, customer_id)
     
     return {
         "message": "Factura creada",
