@@ -140,9 +140,9 @@ export default function AdminShipments() {
     shipment_show_product_list: true,
     shipping_mode: "packages",
     shipping_categories: [
-      { key: "G", label: "Categoría G (CON Núcleo Familiar)", value: 32 },
-      { key: "A", label: "Categoría A (Personal)", value: 42 },
-      { key: "B", label: "Categoría B (SIN Núcleo Familiar)", value: 52 }
+      { key: "G", label: "Categoría G (CON Núcleo Familiar)", value_packages: 32, value_pounds: 32 },
+      { key: "A", label: "Categoría A (Personal)", value_packages: 42, value_pounds: 42 },
+      { key: "B", label: "Categoría B (SIN Núcleo Familiar)", value_packages: 52, value_pounds: 52 }
     ]
   });
 
@@ -310,7 +310,10 @@ export default function AdminShipments() {
       return parseFloat(shipmentForm.custom_unit_cost) || 0;
     }
     const cat = tenantSettings.shipping_categories.find(c => c.key === shipmentForm.shipping_category);
-    return cat ? parseFloat(cat.value) || 0 : 0;
+    if (!cat) return 0;
+    const priceField = tenantSettings.shipping_mode === "pounds" ? "value_pounds" : "value_packages";
+    const price = cat[priceField] ?? cat.value ?? 0;
+    return parseFloat(price) || 0;
   };
 
   const getTotalShippingCost = () => {
@@ -806,9 +809,11 @@ export default function AdminShipments() {
                         <SelectContent>
                           {tenantSettings.shipping_categories.map((cat) => {
                             const unit = tenantSettings.shipping_mode === "pounds" ? "libra" : "paquete";
+                            const priceField = tenantSettings.shipping_mode === "pounds" ? "value_pounds" : "value_packages";
+                            const price = cat[priceField] ?? cat.value ?? 0;
                             return (
                               <SelectItem key={cat.key} value={cat.key} data-testid={`category-${cat.key}`}>
-                                {cat.label} — ${Number(cat.value).toFixed(2)} / {unit}
+                                {cat.label} — ${Number(price).toFixed(2)} / {unit}
                               </SelectItem>
                             );
                           })}

@@ -179,11 +179,16 @@ export default function SuperadminDashboard() {
   const openShippingDialog = (tenant) => {
     setSelectedTenant(tenant);
     const cats = Array.isArray(tenant.shipping_categories) && tenant.shipping_categories.length > 0
-      ? tenant.shipping_categories.map(c => ({ key: c.key || "", label: c.label || "", value: c.value ?? 0 }))
+      ? tenant.shipping_categories.map(c => ({
+          key: c.key || "",
+          label: c.label || "",
+          value_packages: c.value_packages ?? c.value ?? 0,
+          value_pounds: c.value_pounds ?? c.value ?? 0,
+        }))
       : [
-          { key: "G", label: "Categoría G (CON Núcleo Familiar)", value: 32 },
-          { key: "A", label: "Categoría A (Personal)", value: 42 },
-          { key: "B", label: "Categoría B (SIN Núcleo Familiar)", value: 52 }
+          { key: "G", label: "Categoría G (CON Núcleo Familiar)", value_packages: 32, value_pounds: 32 },
+          { key: "A", label: "Categoría A (Personal)", value_packages: 42, value_pounds: 42 },
+          { key: "B", label: "Categoría B (SIN Núcleo Familiar)", value_packages: 52, value_pounds: 52 }
         ];
     setShippingCategories(cats);
     setShippingMode(tenant.shipping_mode === "pounds" ? "pounds" : "packages");
@@ -197,7 +202,7 @@ export default function SuperadminDashboard() {
   };
 
   const addShippingCategory = () => {
-    setShippingCategories([...shippingCategories, { key: "", label: "", value: 0 }]);
+    setShippingCategories([...shippingCategories, { key: "", label: "", value_packages: 0, value_pounds: 0 }]);
   };
 
   const removeShippingCategory = (index) => {
@@ -211,9 +216,10 @@ export default function SuperadminDashboard() {
       .map(c => ({
         key: String(c.key || "").trim().toUpperCase(),
         label: String(c.label || "").trim(),
-        value: parseFloat(c.value) || 0
+        value_packages: parseFloat(c.value_packages) || 0,
+        value_pounds: parseFloat(c.value_pounds) || 0,
       }))
-      .filter(c => c.key && c.label && c.value >= 0);
+      .filter(c => c.key && c.label && c.value_packages >= 0 && c.value_pounds >= 0);
     if (normalized.length === 0) {
       toast.error("Agrega al menos una categoría válida");
       return;
@@ -657,7 +663,7 @@ export default function SuperadminDashboard() {
             </DialogHeader>
             <div className="space-y-4 pt-2">
               <p className="text-sm text-gray-500">
-                Define las categorías de envío que aparecerán al crear un envío. Se usa <strong>costo por unidad × cantidad</strong>.
+                Define las categorías de envío que aparecerán al crear un envío. Cada categoría guarda <strong>dos precios independientes</strong>: uno para modo paquetes y otro para libras. El modo activo determina cuál se usa al cotizar.
               </p>
 
               {/* Mode toggle */}
@@ -690,53 +696,77 @@ export default function SuperadminDashboard() {
               </div>
               <div className="space-y-2">
                 {shippingCategories.map((cat, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-end p-3 border rounded-xl bg-gray-50" data-testid={`ship-cat-row-${idx}`}>
-                    <div className="col-span-2">
-                      <Label className="text-xs font-semibold">Clave</Label>
-                      <Input
-                        value={cat.key}
-                        onChange={(e) => updateShipField(idx, "key", e.target.value.toUpperCase())}
-                        placeholder="G"
-                        maxLength={6}
-                        className="h-10 rounded-lg font-mono text-center uppercase"
-                        data-testid={`ship-cat-key-${idx}`}
-                      />
-                    </div>
-                    <div className="col-span-6">
-                      <Label className="text-xs font-semibold">Nombre visible</Label>
-                      <Input
-                        value={cat.label}
-                        onChange={(e) => updateShipField(idx, "label", e.target.value)}
-                        placeholder="Categoría G (CON Núcleo Familiar)"
-                        className="h-10 rounded-lg"
-                        data-testid={`ship-cat-label-${idx}`}
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <Label className="text-xs font-semibold">Costo / {shippingMode === "pounds" ? "libra" : "paquete"}</Label>
-                      <div className="relative">
-                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                  <div key={idx} className="p-3 border rounded-xl bg-gray-50 space-y-2" data-testid={`ship-cat-row-${idx}`}>
+                    <div className="grid grid-cols-12 gap-2 items-end">
+                      <div className="col-span-3">
+                        <Label className="text-xs font-semibold">Clave</Label>
                         <Input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={cat.value}
-                          onChange={(e) => updateShipField(idx, "value", e.target.value)}
-                          onWheel={(e) => e.target.blur()}
-                          className="h-10 rounded-lg pl-6 font-bold"
-                          data-testid={`ship-cat-value-${idx}`}
+                          value={cat.key}
+                          onChange={(e) => updateShipField(idx, "key", e.target.value.toUpperCase())}
+                          placeholder="G"
+                          maxLength={6}
+                          className="h-10 rounded-lg font-mono text-center uppercase"
+                          data-testid={`ship-cat-key-${idx}`}
                         />
                       </div>
+                      <div className="col-span-8">
+                        <Label className="text-xs font-semibold">Nombre visible</Label>
+                        <Input
+                          value={cat.label}
+                          onChange={(e) => updateShipField(idx, "label", e.target.value)}
+                          placeholder="Categoría G (CON Núcleo Familiar)"
+                          className="h-10 rounded-lg"
+                          data-testid={`ship-cat-label-${idx}`}
+                        />
+                      </div>
+                      <div className="col-span-1">
+                        <Button
+                          variant="ghost" size="sm"
+                          onClick={() => removeShippingCategory(idx)}
+                          className="h-10 w-10 p-0 text-red-500 hover:bg-red-50"
+                          data-testid={`ship-cat-remove-${idx}`}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="col-span-1">
-                      <Button
-                        variant="ghost" size="sm"
-                        onClick={() => removeShippingCategory(idx)}
-                        className="h-10 w-10 p-0 text-red-500 hover:bg-red-50"
-                        data-testid={`ship-cat-remove-${idx}`}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className={`p-2 rounded-lg border-2 ${shippingMode === "packages" ? "border-blue-400 bg-blue-50/40" : "border-gray-200 bg-white"}`}>
+                        <Label className="text-xs font-semibold text-blue-800">
+                          Costo por paquete {shippingMode === "packages" && <span className="text-[10px] font-normal">(modo activo)</span>}
+                        </Label>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={cat.value_packages ?? 0}
+                            onChange={(e) => updateShipField(idx, "value_packages", e.target.value)}
+                            onWheel={(e) => e.target.blur()}
+                            className="h-10 rounded-lg pl-6 font-bold"
+                            data-testid={`ship-cat-value-packages-${idx}`}
+                          />
+                        </div>
+                      </div>
+                      <div className={`p-2 rounded-lg border-2 ${shippingMode === "pounds" ? "border-emerald-400 bg-emerald-50/40" : "border-gray-200 bg-white"}`}>
+                        <Label className="text-xs font-semibold text-emerald-800">
+                          Costo por libra {shippingMode === "pounds" && <span className="text-[10px] font-normal">(modo activo)</span>}
+                        </Label>
+                        <div className="relative">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={cat.value_pounds ?? 0}
+                            onChange={(e) => updateShipField(idx, "value_pounds", e.target.value)}
+                            onWheel={(e) => e.target.blur()}
+                            className="h-10 rounded-lg pl-6 font-bold"
+                            data-testid={`ship-cat-value-pounds-${idx}`}
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}

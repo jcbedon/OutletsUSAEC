@@ -77,9 +77,9 @@ class Tenant(BaseModel):
     shipment_show_product_list: bool = True  # Show product list when creating shipment
     shipping_mode: str = "packages"  # "packages" | "pounds" — determines unit label in shipment creation
     shipping_categories: List[dict] = Field(default_factory=lambda: [
-        {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value": 32},
-        {"key": "A", "label": "Categoría A (Personal)", "value": 42},
-        {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value": 52}
+        {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value_packages": 32, "value_pounds": 32},
+        {"key": "A", "label": "Categoría A (Personal)", "value_packages": 42, "value_pounds": 42},
+        {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value_packages": 52, "value_pounds": 52}
     ])
     # Client ID settings
     allow_custom_client_id: bool = False  # Allow admin to enter custom client ID instead of auto-generated
@@ -919,6 +919,8 @@ async def list_tenants(current_user: dict = Depends(get_current_user)):
     for t in tenants:
         admin_count = await db.users.count_documents({"tenant_id": t["id"], "role": "admin"})
         client_count = await db.users.count_documents({"tenant_id": t["id"], "role": "client"})
+        if t.get("shipping_categories"):
+            t["shipping_categories"] = _ensure_category_dual_prices(t["shipping_categories"])
         result.append({**t, "admin_count": admin_count, "client_count": client_count})
     return result
 
@@ -1002,18 +1004,55 @@ async def update_tenant_tax_options_superadmin(tenant_id: str, data: dict, curre
 
 
 def _normalize_shipping_categories(raw):
-    """Validate and normalize a list of shipping categories."""
+    """Validate and normalize a list of shipping categories.
+    Each category stores independent prices for packages and pounds modes.
+    Accepts legacy `value` and maps it to both `value_packages` and `value_pounds` if those are missing.
+    """
     out = []
     for item in raw or []:
         key = str(item.get("key", "")).strip().upper()
         label = str(item.get("label", "")).strip()
+        # Legacy fallback
         try:
-            value = float(item.get("value", 0) or 0)
+            legacy_value = float(item.get("value", 0) or 0)
         except (TypeError, ValueError):
-            value = 0
-        if not key or value < 0 or not label:
+            legacy_value = 0
+        try:
+            value_packages = float(item.get("value_packages", legacy_value) or 0)
+        except (TypeError, ValueError):
+            value_packages = legacy_value
+        try:
+            value_pounds = float(item.get("value_pounds", legacy_value) or 0)
+        except (TypeError, ValueError):
+            value_pounds = legacy_value
+        if not key or not label or value_packages < 0 or value_pounds < 0:
             continue
-        out.append({"key": key, "label": label, "value": round(value, 2)})
+        out.append({
+            "key": key,
+            "label": label,
+            "value_packages": round(value_packages, 2),
+            "value_pounds": round(value_pounds, 2),
+            # Keep legacy `value` in sync with packages price for backward compatibility
+            "value": round(value_packages, 2),
+        })
+    return out
+
+
+def _ensure_category_dual_prices(categories):
+    """Ensure every category in the list has both value_packages and value_pounds fields.
+    Used to migrate legacy docs on-the-fly when sending to the frontend.
+    """
+    if not isinstance(categories, list):
+        return []
+    out = []
+    for c in categories:
+        if not isinstance(c, dict):
+            continue
+        legacy = c.get("value", 0) or 0
+        c.setdefault("value_packages", c.get("value_packages", legacy))
+        c.setdefault("value_pounds", c.get("value_pounds", legacy))
+        c["value"] = c.get("value_packages", legacy)
+        out.append(c)
     return out
 
 
@@ -1068,12 +1107,12 @@ async def get_tenant_details(tenant_id: str, current_user: dict = Depends(get_cu
         {"value": "other", "label": "Otro"}
     ]
     default_shipping_categories = [
-        {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value": 32},
-        {"key": "A", "label": "Categoría A (Personal)", "value": 42},
-        {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value": 52}
+        {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value_packages": 32, "value_pounds": 32, "value": 32},
+        {"key": "A", "label": "Categoría A (Personal)", "value_packages": 42, "value_pounds": 42, "value": 42},
+        {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value_packages": 52, "value_pounds": 52, "value": 52}
     ]
     tenant["tax_options"] = tenant.get("tax_options", default_tax_options)
-    tenant["shipping_categories"] = tenant.get("shipping_categories", default_shipping_categories)
+    tenant["shipping_categories"] = _ensure_category_dual_prices(tenant.get("shipping_categories", default_shipping_categories))
     return tenant
 
 @api_router.put("/superadmin/tenants/{tenant_id}/tracking-url")
@@ -1221,13 +1260,15 @@ async def get_my_tenant(current_user: dict = Depends(get_current_user)):
     tenant = await db.tenants.find_one({"id": current_user["tenant_id"]}, {"_id": 0})
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant no encontrado")
-    # Ensure shipping_categories always present for the frontend
+    # Ensure shipping_categories always present and have dual prices for the frontend
     if not tenant.get("shipping_categories"):
         tenant["shipping_categories"] = [
-            {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value": 32},
-            {"key": "A", "label": "Categoría A (Personal)", "value": 42},
-            {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value": 52}
+            {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value_packages": 32, "value_pounds": 32, "value": 32},
+            {"key": "A", "label": "Categoría A (Personal)", "value_packages": 42, "value_pounds": 42, "value": 42},
+            {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value_packages": 52, "value_pounds": 52, "value": 52}
         ]
+    else:
+        tenant["shipping_categories"] = _ensure_category_dual_prices(tenant["shipping_categories"])
     if not tenant.get("shipping_mode"):
         tenant["shipping_mode"] = "packages"
     return tenant
@@ -2985,9 +3026,9 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
     # Resolve unit_cost from category + tenant settings
     tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "shipping_categories": 1, "shipping_mode": 1})
     categories = (tenant or {}).get("shipping_categories") or [
-        {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value": 32},
-        {"key": "A", "label": "Categoría A (Personal)", "value": 42},
-        {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value": 52}
+        {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value_packages": 32, "value_pounds": 32},
+        {"key": "A", "label": "Categoría A (Personal)", "value_packages": 42, "value_pounds": 42},
+        {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value_packages": 52, "value_pounds": 52}
     ]
     shipping_mode = (tenant or {}).get("shipping_mode") or "packages"
     unit_cost = 0.0
@@ -2996,7 +3037,9 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
         matched = next((c for c in categories if str(c.get("key", "")).upper() == category_key), None)
         if not matched:
             raise HTTPException(status_code=400, detail="Categoría de envío no encontrada en el tenant")
-        unit_cost = float(matched.get("value", 0) or 0)
+        # Pick the mode-specific price; fallback to legacy `value` if mode-specific is missing
+        price_field = "value_pounds" if shipping_mode == "pounds" else "value_packages"
+        unit_cost = float(matched.get(price_field, matched.get("value", 0)) or 0)
     elif category_key == "OTHER":
         if shipment_data.shipping_unit_cost is None or shipment_data.shipping_unit_cost < 0:
             raise HTTPException(status_code=400, detail="Ingresa un costo personalizado válido")
