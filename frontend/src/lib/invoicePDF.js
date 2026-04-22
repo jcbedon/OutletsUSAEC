@@ -206,7 +206,8 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
   let finalY = doc.lastAutoTable.finalY + 8;
 
   // Helper: ensure we have enough vertical space; add a new page if not.
-  const SAFE_BOTTOM = pageHeight - 32; // leave ~32mm for footer
+  // Tight footer buffer (~20mm) so we don't leave big gaps on page 1.
+  const SAFE_BOTTOM = pageHeight - 22;
   const ensureSpace = (requiredMM) => {
     if (finalY + requiredMM > SAFE_BOTTOM) {
       doc.addPage();
@@ -215,7 +216,8 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
     }
   };
 
-  ensureSpace(22); // stats box + some breathing room
+  // Only page-break before the stats box if it literally won't fit.
+  ensureSpace(18);
   const totalArticulos = inv.purchases?.length || 0;
   const totalEtiqueta = inv.subtotal || 0;
   const shipmentMode = shipment?.shipping_mode;
@@ -252,24 +254,9 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
   finalY += 18;
 
   // Financial summary
-  // Estimate total lines needed for the financial block to avoid splitting it across pages
-  const numDeposits = Array.isArray(inv.applied_deposits) ? inv.applied_deposits.length : 0;
-  const hasTaxes = (inv.total_tax || 0) > 0;
-  const hasShipping = (shipment?.shipping_cost || 0) > 0;
-  const hasSaldoPend = (inv.saldo_pendiente || 0) > 0;
-  const hasSaldoFavAnt = (inv.saldo_a_favor_anterior || 0) > 0;
-  const hasSaldoFav = (inv.saldo_a_favor || 0) > 0;
-  // Base: subtotal + total line + total a pagar  = ~24mm
-  // Plus 6mm each for: taxes, shipping, saldo pend, saldo fav anterior, deposits, saldo fav próxima
-  const estFinancialMM =
-    30
-    + (hasTaxes ? 6 : 0)
-    + (hasShipping ? 6 : 0)
-    + (hasSaldoPend ? 6 : 0)
-    + (hasSaldoFavAnt ? 8 : 0)
-    + (numDeposits * 5)
-    + (hasSaldoFav ? 10 : 0);
-  ensureSpace(estFinancialMM);
+  // No bulk pre-check here — we draw each block and call ensureSpace()
+  // only before the critical lines below. This prevents gratuitous page
+  // breaks that leave huge blank gaps after the products table.
   const totalsX = pageWidth - margin - 70;
   const displaySubtotal = (inv.subtotal || 0) + (inv.total_commission || 0);
   const taxes = inv.total_tax || 0;
@@ -312,6 +299,8 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
   if (saldoPend > 0) { finalY += 6; doc.setTextColor(194, 65, 12); doc.text("Saldo Pendiente:", totalsX, finalY); doc.text(`$${saldoPend.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" }); }
 
   finalY += 4;
+  // Critical: "Total:" line must stay visible. If we're near the bottom, break now.
+  ensureSpace(14);
   doc.setDrawColor(...colors.divider);
   doc.setLineWidth(0.3);
   doc.line(totalsX, finalY, pageWidth - margin, finalY);
@@ -349,6 +338,8 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
   }
 
   finalY += 2;
+  // Critical: "Total a pagar:" line must stay visible + its saldo-a-favor next-line if present.
+  ensureSpace(saldoFavor > 0 ? 22 : 14);
   doc.setDrawColor(...colors.textPrimary);
   doc.setLineWidth(0.5);
   doc.line(totalsX, finalY, pageWidth - margin, finalY);
@@ -371,11 +362,10 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
     doc.text(`+$${saldoFavor.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
   }
 
-  // Footer — always reserve ~25mm at the bottom of the current page.
-  // If we can't fit the footer after the financial summary on this page, add a new one.
-  const footerHeight = 25;
-  ensureSpace(footerHeight);
-  const footerY = Math.min(finalY + footerHeight, pageHeight - 12);
+  // Footer — always anchored to the bottom of the current page.
+  // ensureSpace makes sure we have ~25mm of vertical room; if not, page-break first.
+  ensureSpace(25);
+  const footerY = pageHeight - 22;
 
   doc.setDrawColor(...colors.divider);
   doc.setLineWidth(0.3);
