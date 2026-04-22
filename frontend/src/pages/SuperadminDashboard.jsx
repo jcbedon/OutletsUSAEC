@@ -38,6 +38,7 @@ export default function SuperadminDashboard() {
   // Shipping categories state
   const [shipDialogOpen, setShipDialogOpen] = useState(false);
   const [shippingCategories, setShippingCategories] = useState([]);
+  const [shippingMode, setShippingMode] = useState("packages");
   
   // Password reset state
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -185,6 +186,7 @@ export default function SuperadminDashboard() {
           { key: "B", label: "Categoría B (SIN Núcleo Familiar)", value: 52 }
         ];
     setShippingCategories(cats);
+    setShippingMode(tenant.shipping_mode === "pounds" ? "pounds" : "packages");
     setShipDialogOpen(true);
   };
 
@@ -226,7 +228,7 @@ export default function SuperadminDashboard() {
       return;
     }
     try {
-      await updateShippingCategoriesSuperadmin(selectedTenant.id, normalized);
+      await updateShippingCategoriesSuperadmin(selectedTenant.id, normalized, shippingMode);
       toast.success("Categorías de envío actualizadas");
       setShipDialogOpen(false);
       loadData();
@@ -655,8 +657,37 @@ export default function SuperadminDashboard() {
             </DialogHeader>
             <div className="space-y-4 pt-2">
               <p className="text-sm text-gray-500">
-                Define las categorías de envío que aparecerán al crear un envío. Se usa <strong>costo por paquete × número de paquetes</strong>.
+                Define las categorías de envío que aparecerán al crear un envío. Se usa <strong>costo por unidad × cantidad</strong>.
               </p>
+
+              {/* Mode toggle */}
+              <div className="p-3 rounded-xl border-2 bg-slate-50" data-testid="shipping-mode-toggle">
+                <Label className="text-xs font-bold text-slate-700 uppercase tracking-wide">Modo de cálculo</Label>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShippingMode("packages")}
+                    className={`p-3 rounded-lg border-2 text-sm font-semibold transition ${shippingMode === "packages"
+                      ? "border-blue-500 bg-blue-50 text-blue-800"
+                      : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"}`}
+                    data-testid="mode-packages"
+                  >
+                    Por Paquetes
+                    <div className="text-xs font-normal mt-0.5 text-gray-500">Costo × # de paquetes</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShippingMode("pounds")}
+                    className={`p-3 rounded-lg border-2 text-sm font-semibold transition ${shippingMode === "pounds"
+                      ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                      : "border-gray-200 bg-white text-gray-500 hover:border-gray-300"}`}
+                    data-testid="mode-pounds"
+                  >
+                    Por Libras
+                    <div className="text-xs font-normal mt-0.5 text-gray-500">Costo × # de libras</div>
+                  </button>
+                </div>
+              </div>
               <div className="space-y-2">
                 {shippingCategories.map((cat, idx) => (
                   <div key={idx} className="grid grid-cols-12 gap-2 items-end p-3 border rounded-xl bg-gray-50" data-testid={`ship-cat-row-${idx}`}>
@@ -682,7 +713,7 @@ export default function SuperadminDashboard() {
                       />
                     </div>
                     <div className="col-span-3">
-                      <Label className="text-xs font-semibold">Costo / paquete</Label>
+                      <Label className="text-xs font-semibold">Costo / {shippingMode === "pounds" ? "libra" : "paquete"}</Label>
                       <div className="relative">
                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
                         <Input

@@ -133,8 +133,11 @@ export const getTenantSettings = () => api.get("/admin/settings");
 export const updateTenantTaxOptions = (taxOptions) => api.put("/admin/settings/tax-options", { tax_options: taxOptions });
 export const updateShippingCategories = (shippingCategories) =>
   api.put("/admin/settings/shipping-categories", { shipping_categories: shippingCategories });
-export const updateShippingCategoriesSuperadmin = (tenantId, shippingCategories) =>
-  api.put(`/superadmin/tenants/${tenantId}/shipping-categories`, { shipping_categories: shippingCategories });
+export const updateShippingCategoriesSuperadmin = (tenantId, shippingCategories, shippingMode) =>
+  api.put(`/superadmin/tenants/${tenantId}/shipping-categories`, {
+    shipping_categories: shippingCategories,
+    ...(shippingMode ? { shipping_mode: shippingMode } : {})
+  });
 
 // Mobile upload sessions (QR flow)
 export const createUploadSession = () => api.post("/upload-sessions");

@@ -138,6 +138,7 @@ export default function AdminShipments() {
   // Tenant settings (includes shipping_categories)
   const [tenantSettings, setTenantSettings] = useState({
     shipment_show_product_list: true,
+    shipping_mode: "packages",
     shipping_categories: [
       { key: "G", label: "Categoría G (CON Núcleo Familiar)", value: 32 },
       { key: "A", label: "Categoría A (Personal)", value: 42 },
@@ -256,6 +257,7 @@ export default function AdminShipments() {
         : tenantSettings.shipping_categories;
       setTenantSettings({
         shipment_show_product_list: productListSetting !== false,
+        shipping_mode: tenantRes.data.shipping_mode === "pounds" ? "pounds" : "packages",
         shipping_categories: categories
       });
     } catch (error) {
@@ -313,7 +315,10 @@ export default function AdminShipments() {
 
   const getTotalShippingCost = () => {
     const unit = getUnitCost();
-    const qty = Math.max(parseInt(shipmentForm.package_count) || 1, 1);
+    const rawQty = parseFloat(shipmentForm.package_count) || 1;
+    const qty = tenantSettings.shipping_mode === "pounds"
+      ? Math.max(rawQty, 0.01)
+      : Math.max(Math.round(rawQty), 1);
     return Math.round(unit * qty * 100) / 100;
   };
 
@@ -339,7 +344,10 @@ export default function AdminShipments() {
         return;
       }
     }
-    const packageCount = Math.max(parseInt(shipmentForm.package_count) || 1, 1);
+    const rawQty = parseFloat(shipmentForm.package_count) || 1;
+    const packageCount = tenantSettings.shipping_mode === "pounds"
+      ? Math.max(rawQty, 0.01)
+      : Math.max(Math.round(rawQty), 1);
     const unitCost = getUnitCost();
     const totalCost = Math.round(unitCost * packageCount * 100) / 100;
 
@@ -796,11 +804,14 @@ export default function AdminShipments() {
                           <SelectValue placeholder="Selecciona una categoría" />
                         </SelectTrigger>
                         <SelectContent>
-                          {tenantSettings.shipping_categories.map((cat) => (
-                            <SelectItem key={cat.key} value={cat.key} data-testid={`category-${cat.key}`}>
-                              {cat.label} — ${Number(cat.value).toFixed(2)} / paquete
-                            </SelectItem>
-                          ))}
+                          {tenantSettings.shipping_categories.map((cat) => {
+                            const unit = tenantSettings.shipping_mode === "pounds" ? "libra" : "paquete";
+                            return (
+                              <SelectItem key={cat.key} value={cat.key} data-testid={`category-${cat.key}`}>
+                                {cat.label} — ${Number(cat.value).toFixed(2)} / {unit}
+                              </SelectItem>
+                            );
+                          })}
                           <SelectItem value="OTHER" data-testid="category-OTHER">Otro (costo personalizado)</SelectItem>
                         </SelectContent>
                       </Select>
@@ -809,7 +820,7 @@ export default function AdminShipments() {
                     {/* Custom Unit Cost (only when OTHER) */}
                     {shipmentForm.shipping_category === "OTHER" && (
                       <div>
-                        <Label>Costo por paquete (USD) *</Label>
+                        <Label>Costo por {tenantSettings.shipping_mode === "pounds" ? "libra" : "paquete"} (USD) *</Label>
                         <Input
                           type="number"
                           inputMode="decimal"
@@ -825,14 +836,15 @@ export default function AdminShipments() {
                       </div>
                     )}
 
-                    {/* Package Count */}
+                    {/* Quantity (packages or pounds) */}
                     <div>
-                      <Label>Número de Paquetes *</Label>
+                      <Label>Número de {tenantSettings.shipping_mode === "pounds" ? "Libras" : "Paquetes"} *</Label>
                       <Input
                         type="number"
-                        inputMode="numeric"
-                        min="1"
-                        placeholder="Ej: 2"
+                        inputMode={tenantSettings.shipping_mode === "pounds" ? "decimal" : "numeric"}
+                        step={tenantSettings.shipping_mode === "pounds" ? "0.01" : "1"}
+                        min={tenantSettings.shipping_mode === "pounds" ? "0.1" : "1"}
+                        placeholder={tenantSettings.shipping_mode === "pounds" ? "Ej: 3.5" : "Ej: 2"}
                         value={shipmentForm.package_count}
                         onChange={(e) => setShipmentForm({ ...shipmentForm, package_count: e.target.value })}
                         onWheel={(e) => e.target.blur()}
@@ -847,7 +859,12 @@ export default function AdminShipments() {
                         <div className="flex justify-between items-center">
                           <div>
                             <p className="text-sm text-white/80">
-                              {Math.max(parseInt(shipmentForm.package_count) || 1, 1)} paquete(s) × ${getUnitCost().toFixed(2)}
+                              {(() => {
+                                const rawQty = parseFloat(shipmentForm.package_count) || 1;
+                                const qty = tenantSettings.shipping_mode === "pounds" ? rawQty : Math.max(Math.round(rawQty), 1);
+                                const unit = tenantSettings.shipping_mode === "pounds" ? "libra(s)" : "paquete(s)";
+                                return `${qty} ${unit} × $${getUnitCost().toFixed(2)}`;
+                              })()}
                             </p>
                             <p className="text-sm font-semibold">Total envío:</p>
                           </div>
@@ -1054,7 +1071,16 @@ export default function AdminShipments() {
                       </div>
                       <div>
                         <p className="text-2xl font-extrabold text-purple-800">${totalShipping.toFixed(2)}</p>
-                        <p className="text-xs text-purple-600">Envios ({filtered.length}) · {totalPackages} paquete{totalPackages === 1 ? '' : 's'}</p>
+                        <p className="text-xs text-purple-600">
+                          Envíos ({filtered.length}) · {(() => {
+                            const pkgTotal = filtered.filter(s => s.shipping_mode !== "pounds").reduce((sum, s) => sum + (s.package_count || 0), 0);
+                            const lbTotal = filtered.filter(s => s.shipping_mode === "pounds").reduce((sum, s) => sum + (s.package_count || 0), 0);
+                            const parts = [];
+                            if (pkgTotal > 0) parts.push(`${pkgTotal} paquete${pkgTotal === 1 ? '' : 's'}`);
+                            if (lbTotal > 0) parts.push(`${lbTotal.toFixed(1)} lb`);
+                            return parts.length ? parts.join(' • ') : '0';
+                          })()}
+                        </p>
                       </div>
                     </div>
                     <Select value={weekFilter} onValueChange={setWeekFilter}>
@@ -1106,10 +1132,32 @@ export default function AdminShipments() {
                 <Card className="rounded-xl">
                   <CardContent className="p-3 text-center">
                     <Package className="h-5 w-5 text-orange-600 mx-auto mb-1" />
-                    <p className="text-2xl font-extrabold text-slate-800">
-                      {filtered.reduce((total, s) => total + (s.package_count || 0), 0)}
-                    </p>
-                    <p className="text-xs text-gray-500">Paquetes</p>
+                    {(() => {
+                      const pkgTotal = filtered.filter(s => s.shipping_mode !== "pounds").reduce((sum, s) => sum + (s.package_count || 0), 0);
+                      const lbTotal = filtered.filter(s => s.shipping_mode === "pounds").reduce((sum, s) => sum + (s.package_count || 0), 0);
+                      if (pkgTotal > 0 && lbTotal > 0) {
+                        return (
+                          <>
+                            <p className="text-lg font-extrabold text-slate-800 leading-tight">{pkgTotal} / {lbTotal.toFixed(1)}</p>
+                            <p className="text-[10px] text-gray-500">Paquetes / Libras</p>
+                          </>
+                        );
+                      }
+                      if (lbTotal > 0) {
+                        return (
+                          <>
+                            <p className="text-2xl font-extrabold text-slate-800">{lbTotal.toFixed(1)}</p>
+                            <p className="text-xs text-gray-500">Libras</p>
+                          </>
+                        );
+                      }
+                      return (
+                        <>
+                          <p className="text-2xl font-extrabold text-slate-800">{pkgTotal}</p>
+                          <p className="text-xs text-gray-500">Paquetes</p>
+                        </>
+                      );
+                    })()}
                   </CardContent>
                 </Card>
               </div>
@@ -1169,7 +1217,12 @@ export default function AdminShipments() {
                                     : shipment.shipping_type || '';
                                 })()}
                                 {' - '}${shipment.shipping_cost.toFixed(2)}
-                                {shipment.package_count > 0 && ` • ${shipment.package_count} paquete${shipment.package_count === 1 ? '' : 's'}`}
+                                {shipment.package_count > 0 && (() => {
+                                  const isPounds = shipment.shipping_mode === "pounds";
+                                  const qty = isPounds ? Number(shipment.package_count).toFixed(1) : shipment.package_count;
+                                  const unit = isPounds ? 'lb' : `paquete${shipment.package_count === 1 ? '' : 's'}`;
+                                  return ` • ${qty} ${unit}`;
+                                })()}
                               </p>
                             </div>
                             {getStatusBadge(shipment.status)}

@@ -75,6 +75,7 @@ class Tenant(BaseModel):
     invoice_show_tax_summary: bool = True   # Show tax total at the bottom
     # Shipment settings  
     shipment_show_product_list: bool = True  # Show product list when creating shipment
+    shipping_mode: str = "packages"  # "packages" | "pounds" — determines unit label in shipment creation
     shipping_categories: List[dict] = Field(default_factory=lambda: [
         {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value": 32},
         {"key": "A", "label": "Categoría A (Personal)", "value": 42},
@@ -197,10 +198,11 @@ class Shipment(BaseModel):
     invoice_id: Optional[str] = None  # Link to the invoice this shipment belongs to
     shipping_type: str = ""  # DEPRECATED (kept for backward compatibility with existing data)
     shipping_category: Optional[str] = None  # "G" | "A" | "B" | "OTHER" (current model)
-    shipping_unit_cost: float = 0  # Cost per package (derived from category or custom)
+    shipping_unit_cost: float = 0  # Cost per unit (package or pound, depending on mode)
     shipping_cost: float  # Total cost = unit_cost * package_count
+    shipping_mode: str = "packages"  # "packages" | "pounds" — snapshot at creation time
     weight_pounds: float = 0  # DEPRECATED (kept for backward compatibility with existing data)
-    package_count: int = 0
+    package_count: float = 0  # Units (packages or pounds depending on shipping_mode)
     address: str = ""
     country: str = ""  # Optional
     phone: str = ""    # Optional
@@ -317,10 +319,10 @@ class ShipmentCreate(BaseModel):
     purchase_ids: List[str]
     shipping_type: Optional[str] = ""  # DEPRECATED
     shipping_category: Optional[str] = None  # "G" | "A" | "B" | "OTHER"
-    shipping_unit_cost: Optional[float] = None  # Cost per package (required only if category is "OTHER")
+    shipping_unit_cost: Optional[float] = None  # Cost per unit (required only if category is "OTHER")
     shipping_cost: Optional[float] = None  # Calculated on backend from unit_cost * package_count, client may send it too
     weight_pounds: float = 0  # DEPRECATED
-    package_count: int = 1
+    package_count: float = 1  # Units (packages or pounds depending on tenant.shipping_mode)
     address: Optional[str] = ""
     country: Optional[str] = ""
     phone: Optional[str] = ""
@@ -1024,8 +1026,12 @@ async def update_shipping_categories_admin(data: dict, current_user: dict = Depe
     normalized = _normalize_shipping_categories(data.get("shipping_categories", []))
     if not normalized:
         raise HTTPException(status_code=400, detail="Se requiere al menos una categoría válida")
-    await db.tenants.update_one({"id": tid}, {"$set": {"shipping_categories": normalized}})
-    return {"message": "Categorías de envío actualizadas", "shipping_categories": normalized}
+    update_fields = {"shipping_categories": normalized}
+    mode = data.get("shipping_mode")
+    if mode in ("packages", "pounds"):
+        update_fields["shipping_mode"] = mode
+    await db.tenants.update_one({"id": tid}, {"$set": update_fields})
+    return {"message": "Categorías de envío actualizadas", **update_fields}
 
 
 @api_router.put("/superadmin/tenants/{tenant_id}/shipping-categories")
@@ -1039,8 +1045,12 @@ async def update_shipping_categories_superadmin(tenant_id: str, data: dict, curr
     normalized = _normalize_shipping_categories(data.get("shipping_categories", []))
     if not normalized:
         raise HTTPException(status_code=400, detail="Se requiere al menos una categoría válida")
-    await db.tenants.update_one({"id": tenant_id}, {"$set": {"shipping_categories": normalized}})
-    return {"message": "Categorías de envío actualizadas para el tenant", "shipping_categories": normalized}
+    update_fields = {"shipping_categories": normalized}
+    mode = data.get("shipping_mode")
+    if mode in ("packages", "pounds"):
+        update_fields["shipping_mode"] = mode
+    await db.tenants.update_one({"id": tenant_id}, {"$set": update_fields})
+    return {"message": "Categorías de envío actualizadas para el tenant", **update_fields}
 
 @api_router.get("/superadmin/tenants/{tenant_id}/details")
 async def get_tenant_details(tenant_id: str, current_user: dict = Depends(get_current_user)):
@@ -1218,6 +1228,8 @@ async def get_my_tenant(current_user: dict = Depends(get_current_user)):
             {"key": "A", "label": "Categoría A (Personal)", "value": 42},
             {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value": 52}
         ]
+    if not tenant.get("shipping_mode"):
+        tenant["shipping_mode"] = "packages"
     return tenant
 
 @api_router.post("/admin/tenant/logo")
@@ -2917,12 +2929,13 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
         raise HTTPException(status_code=400, detail="Esta factura ya tiene un envío asignado")
 
     # Resolve unit_cost from category + tenant settings
-    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "shipping_categories": 1})
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "shipping_categories": 1, "shipping_mode": 1})
     categories = (tenant or {}).get("shipping_categories") or [
         {"key": "G", "label": "Categoría G (CON Núcleo Familiar)", "value": 32},
         {"key": "A", "label": "Categoría A (Personal)", "value": 42},
         {"key": "B", "label": "Categoría B (SIN Núcleo Familiar)", "value": 52}
     ]
+    shipping_mode = (tenant or {}).get("shipping_mode") or "packages"
     unit_cost = 0.0
     category_key = (shipment_data.shipping_category or "").upper() or None
     if category_key and category_key != "OTHER":
@@ -2938,9 +2951,18 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
         # Fallback: use provided shipping_cost as total (legacy support)
         if shipment_data.shipping_cost is None:
             raise HTTPException(status_code=400, detail="Selecciona una categoría de envío")
-        unit_cost = float(shipment_data.shipping_cost) / max(int(shipment_data.package_count or 1), 1)
+        unit_cost = float(shipment_data.shipping_cost) / max(float(shipment_data.package_count or 1), 1)
 
-    package_count = max(int(shipment_data.package_count or 1), 1)
+    # package_count represents units (packages OR pounds depending on tenant.shipping_mode)
+    try:
+        package_count = float(shipment_data.package_count or 1)
+    except (TypeError, ValueError):
+        package_count = 1
+    if package_count <= 0:
+        package_count = 1
+    # Pounds can be fractional, packages should remain integer for clarity
+    if shipping_mode == "packages":
+        package_count = max(int(round(package_count)), 1)
     total_cost = round(unit_cost * package_count, 2)
 
     shipment = Shipment(
@@ -2951,6 +2973,7 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
         shipping_category=category_key,
         shipping_unit_cost=round(unit_cost, 2),
         shipping_cost=total_cost,
+        shipping_mode=shipping_mode,
         package_count=package_count,
         address=shipment_data.address, country=shipment_data.country, phone=shipment_data.phone,
         additional_info=shipment_data.additional_info, invoice_id=shipment_data.invoice_id
@@ -2965,9 +2988,10 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
     # Recalculate invoice chain so saldo_a_favor / total_a_pagar reflect shipping cost
     await recalculate_client_invoices(tid, user["customer_id"])
 
+    unit_label = "libra(s)" if shipping_mode == "pounds" else "paquete(s)"
     await create_notification(tid, shipment_data.user_id, user["customer_id"], "shipment_created",
-        "Envío Creado", f"Tu envío ha sido creado. Paquetes: {package_count}. Costo total: ${total_cost:.2f} USD")
-    return {"message": "Envío creado", "shipment_id": shipment.id, "shipping_cost": total_cost, "package_count": package_count}
+        "Envío Creado", f"Tu envío ha sido creado. {package_count} {unit_label}. Costo total: ${total_cost:.2f} USD")
+    return {"message": "Envío creado", "shipment_id": shipment.id, "shipping_cost": total_cost, "package_count": package_count, "shipping_mode": shipping_mode}
 
 @api_router.put("/shipments/{shipment_id}/tracking")
 async def update_tracking(shipment_id: str, data: dict, current_user: dict = Depends(get_current_user)):

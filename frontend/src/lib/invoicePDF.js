@@ -192,7 +192,21 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
   let finalY = doc.lastAutoTable.finalY + 8;
   const totalArticulos = inv.purchases?.length || 0;
   const totalEtiqueta = inv.subtotal || 0;
+  const shipmentMode = shipment?.shipping_mode;
+  const packageCount = shipment?.package_count || 0;
   const weightPounds = shipment?.weight_pounds || 0;
+  const isPoundsMode = shipmentMode === "pounds";
+  // Header / value for the 3rd stat column
+  const thirdStatLabel = isPoundsMode
+    ? "Libras"
+    : (shipmentMode === "packages" || packageCount > 0)
+      ? "Paquetes"
+      : "Peso en Libras";
+  const thirdStatValue = isPoundsMode
+    ? `${Number(packageCount).toFixed(1)} lb`
+    : (shipmentMode === "packages" || packageCount > 0)
+      ? `${packageCount}`
+      : `${weightPounds} lbs`;
 
   doc.setFillColor(241, 245, 249);
   doc.roundedRect(margin, finalY - 2, contentWidth, 14, 2, 2, "F");
@@ -202,12 +216,12 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
   doc.setTextColor(...colors.textSecondary);
   doc.text("Total de articulos", margin + statWidth * 0.5, finalY + 3, { align: "center" });
   doc.text("Total Etiqueta", margin + statWidth * 1.5, finalY + 3, { align: "center" });
-  doc.text("Peso en Libras", margin + statWidth * 2.5, finalY + 3, { align: "center" });
+  doc.text(thirdStatLabel, margin + statWidth * 2.5, finalY + 3, { align: "center" });
   doc.setFontSize(9);
   doc.setTextColor(...colors.textPrimary);
   doc.text(totalArticulos.toString(), margin + statWidth * 0.5, finalY + 9, { align: "center" });
   doc.text(`$${totalEtiqueta.toFixed(2)}`, margin + statWidth * 1.5, finalY + 9, { align: "center" });
-  doc.text(`${weightPounds} lbs`, margin + statWidth * 2.5, finalY + 9, { align: "center" });
+  doc.text(thirdStatValue, margin + statWidth * 2.5, finalY + 9, { align: "center" });
 
   finalY += 18;
 
@@ -235,7 +249,22 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
   doc.text(`$${displaySubtotal.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
 
   if (taxes > 0) { finalY += 6; doc.setTextColor(...colors.textSecondary); doc.text("Taxes:", totalsX, finalY); doc.setTextColor(...colors.textPrimary); doc.text(`$${taxes.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" }); }
-  if (shippingCost > 0) { finalY += 6; doc.setTextColor(...colors.textSecondary); doc.text("Envio:", totalsX, finalY); doc.setTextColor(...colors.textPrimary); doc.text(`$${shippingCost.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" }); }
+  if (shippingCost > 0) {
+    finalY += 6;
+    doc.setTextColor(...colors.textSecondary);
+    const shipmentMode = shipment?.shipping_mode;
+    const qty = shipment?.package_count;
+    let shipLabel = "Envio:";
+    if (qty && qty > 0) {
+      const unit = shipmentMode === "pounds"
+        ? `${Number(qty).toFixed(1)} lb`
+        : `${qty} paq.`;
+      shipLabel = `Envio (${unit}):`;
+    }
+    doc.text(shipLabel, totalsX, finalY);
+    doc.setTextColor(...colors.textPrimary);
+    doc.text(`$${shippingCost.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
+  }
   if (saldoPend > 0) { finalY += 6; doc.setTextColor(194, 65, 12); doc.text("Saldo Pendiente:", totalsX, finalY); doc.text(`$${saldoPend.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" }); }
 
   finalY += 4;

@@ -932,8 +932,22 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                       <p className="font-bold text-lg text-purple-800">${(currentInvoice.shipment.shipping_cost || 0).toFixed(2)}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-purple-600">Peso</p>
-                      <p className="font-bold text-lg text-purple-800">{currentInvoice.shipment.weight_pounds || 0} lbs</p>
+                      {(() => {
+                        const s = currentInvoice.shipment;
+                        const isPounds = s.shipping_mode === "pounds";
+                        const label = isPounds ? "Libras" : (s.shipping_mode === "packages" || s.package_count > 0 ? "Paquetes" : "Peso");
+                        const value = isPounds
+                          ? `${Number(s.package_count || 0).toFixed(1)} lb`
+                          : (s.shipping_mode === "packages" || s.package_count > 0)
+                            ? `${s.package_count || 0}`
+                            : `${s.weight_pounds || 0} lbs`;
+                        return (
+                          <>
+                            <p className="text-xs text-purple-600">{label}</p>
+                            <p className="font-bold text-lg text-purple-800">{value}</p>
+                          </>
+                        );
+                      })()}
                     </div>
                     <div>
                       <p className="text-xs text-purple-600">Tracking ({currentInvoice.shipment.tracking_numbers?.length || (currentInvoice.shipment.tracking_number ? 1 : 0)} paquete(s))</p>
@@ -1179,8 +1193,22 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                         <p className="font-bold text-lg" style={{ color: '#1E3A5F' }}>${totalEtiqueta.toFixed(2)}</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-xs text-gray-500 font-semibold">Peso en Libras</p>
-                        <p className="font-bold text-lg" style={{ color: '#1E3A5F' }}>{weightPounds} lbs</p>
+                        {(() => {
+                          const s = currentInvoice.shipment;
+                          const mode = s?.shipping_mode;
+                          const qty = s?.package_count;
+                          const isPounds = mode === "pounds";
+                          let label, value;
+                          if (isPounds) { label = "Libras"; value = `${Number(qty || 0).toFixed(1)} lb`; }
+                          else if (mode === "packages" || (qty && qty > 0)) { label = "Paquetes"; value = `${qty || 0}`; }
+                          else { label = "Peso en Libras"; value = `${weightPounds} lbs`; }
+                          return (
+                            <>
+                              <p className="text-xs text-gray-500 font-semibold">{label}</p>
+                              <p className="font-bold text-lg" style={{ color: '#1E3A5F' }}>{value}</p>
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
 
