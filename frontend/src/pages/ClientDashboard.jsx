@@ -294,9 +294,12 @@ export default function ClientDashboard() {
               const pendingDebt = wallet?.pending_debt || 0;
               const saldoFavor = wallet?.saldo_a_favor || 0;
               const pendingDeposit = wallet?.pending_deposit_total || 0;
+              const pendingDepositsList = wallet?.pending_deposits || [];
               const hasDebt = pendingDebt > 0;
               const hasFavor = saldoFavor > 0;
               const hasPendingDeposit = pendingDeposit > 0;
+              const hasPendingDepositRequest = pendingDepositsList.length > 0;
+              const hasUnreadDeposit = hasPendingDepositRequest && !hasPendingDeposit;
 
               // Projected balance if the pending deposit(s) get approved:
               // - if client has favor: favor + deposit
@@ -335,6 +338,14 @@ export default function ClientDashboard() {
                           {projectedBalance >= 0 ? '+' : '-'}${Math.abs(projectedBalance).toFixed(2)}
                         </span>
                         {projectedBalance > 0 ? ' a favor.' : projectedBalance < 0 ? ' pendiente.' : '.'}
+                      </p>
+                    </div>
+                  )}
+
+                  {hasUnreadDeposit && (
+                    <div className="mb-4 rounded-xl bg-amber-400/20 border border-amber-200/40 p-3" data-testid="pending-deposit-unread-note">
+                      <p className="text-xs text-amber-100 font-medium leading-relaxed">
+                        Tu depósito está siendo procesado y verificado por nuestro equipo. Cuando se apruebe, tu nuevo saldo aparecerá aquí.
                       </p>
                     </div>
                   )}

@@ -1,56 +1,60 @@
-# Outlets USA EC - Personal Shopper SaaS Platform
+# PRD — Outlets USA EC (Personal Shoppers SaaS)
 
-## Original Problem Statement
-SaaS platform for personal shoppers with multi-tenancy, live shopping, wallets, shipments, invoices, and client management.
+## Problem Statement
+Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturación dinámica, shipments y portal de clientes. Énfasis en:
+1. **Invoice & Wallet Sync** — deposits trackean correctamente saldo a favor / saldo pendiente a través de cadenas de facturas.
+2. **Shipments** — cálculo flexible (por paquetes o libras) con categorías G/A/B por tenant, mapeados 1-a-1 con invoice.
+3. **Client Portal + AI OCR** — clientes suben comprobantes; Gemini Vision extrae monto automáticamente.
+4. **Storage & Workflows** — QR uploads móviles para adjuntos, PDFs unificados.
 
-## Core Requirements
-1. **Invoice & Wallet Synchronization**: Invoices reflect specific deposits without duplicating. Saldo Pendiente carries over automatically.
-2. **File Storage**: All uploads persist via Emergent Object Store.
-3. **Client Portal**: Clients see debt, deposits, weekly-grouped purchase history, downloadable PDF invoices.
-4. **Stats & Metrics**: Weekly filters (Tuesday 00:00 – Monday 23:59) for sales, commissions, shipping, packages.
-5. **Language**: Spanish UI.
+## Personas
+- Superadmin (plataforma)
+- Admin tenant
+- Empleado
+- Cliente
 
-## Architecture
-- **Backend**: FastAPI + Motor (MongoDB) — `/app/backend/server.py` (monolith ~4700 lines, pending refactor).
-- **Frontend**: React + Tailwind + Shadcn UI.
-- **Integrations**: Emergent Object Store, jsPDF (frontend), QRCode.
+## Stack
+- Frontend: React + Tailwind + Shadcn UI
+- Backend: FastAPI + Motor (MongoDB)
+- AI OCR: `emergentintegrations` (Gemini Vision vía EMERGENT_LLM_KEY)
+- PDFs: jsPDF
+- Object Store: Emergent internal
 
-## Key Business Rules
-- **Weekly windows**: Tuesday 00:00 → Monday 23:59 everywhere.
-- **Deposits**: A recarga is NEVER split. It applies entirely to the latest active invoice. Excess becomes `saldo_a_favor` carried to next invoice.
-- **Saldo Pendiente**: Strictly the `total_a_pagar` from the previous invoice. Auto-filled, locked except for first invoice.
+## Changelog (Feb 2026)
+- **2026-02-XX**: Inline editing de purchase items en facturas pending, auto-sync a LIVE.
+- **2026-02-XX**: Auto-recalculo de `saldo_a_favor` en cadenas de facturas + botón manual "Recalcular" en Admin.
+- **2026-02-XX**: Shipments mapeados estrictamente por `invoice_id`. Toggle tenant packages/pounds desde Superadmin.
+- **2026-02-XX**: Wallet Recharges overhaul — cliente sube proof + referencia; admin revisa.
+- **2026-02-XX**: Gemini Vision OCR integrado — detecta monto automáticamente desde comprobante y proyecta nuevo saldo.
+- **2026-02-XX**: Mobile tabs del Client Portal con labels visibles.
+- **2026-02-XX**: QR upload sessions para adjuntos de shipments.
+- **2026-02-XX**: PDFs unificados con breakdown de Saldo a Favor.
+- **2026-02-XX (hoy)**: Fallback message en Client Dashboard cuando la IA detecta $0 o el admin aún no asigna monto: *"Tu depósito está siendo procesado y verificado por nuestro equipo. Cuando se apruebe, tu nuevo saldo aparecerá aquí."*
 
-## Implemented (Recent Changelog)
-### Feb 2026 — Current Session
-- [Feb 21] **Inline edit of pending purchases in Invoice Dialog**: Admin can edit item name, store, price, tax option, and commission directly from the "Nueva Factura" view. Changes call `PUT /api/purchases/{id}` and propagate automatically to LIVE view (single source of truth). Verified E2E.
+## Roadmap
+### P0
+- 🚨 **Refactor backend `server.py`** (5300+ líneas) → routers modulares.
+- Refactor `InvoiceDialog.jsx` (~1500 líneas).
 
-### Prior Session
-- Invoice weekly grouping (Tue–Mon).
-- Dashboard uniform cards + weekly filters for Sales/Commissions/Shipping/Packages/Clients.
-- "Compraron" (Buyers) drill-down report.
-- Deposit carry-over logic (non-split, `saldo_a_favor` / `saldo_pendiente`).
-- `/api/admin/recalculate-all-invoices` for recomputing production data.
-- Client Portal: Tabs "Pendientes de facturar" + "Historial" (invoiced).
-- Admin Live: Top list of clients that bought during live, with "reviewed" toggle.
-- Shipments: Manual `package_count`, fixed "Crear Envío" button disappearing.
-- Annulled invoices: Read-only view with "ANULADA" badge (frontend verified via screenshot flow).
-- PDF invoice redesign (SaaS aesthetic, QR to client portal).
-
-## Key API Endpoints
-- `POST /api/admin/recalculate-all-invoices`
-- `GET /api/admin/reports/buyers`
-- `PUT /api/purchases/{purchase_id}` — used by both LIVE edit and invoice-dialog inline edit.
-- `GET /api/invoices/{invoice_id}` — fetches purchases live from `purchases` collection.
-
-## Pending / Backlog
 ### P1
-- Email notifications for invoices & shipments (Resend/SendGrid TBD).
+- Email notifications para facturas y shipments.
+- Validar vista de facturas Anuladas (clickeable + badge ANULADA) — código existe, pendiente E2E test.
+
 ### P2
 - WhatsApp Cloud API integration.
-- PWA setup for mobile install.
-### P0 Technical Debt
-- Refactor `/app/backend/server.py` into modular routers (`routers/invoices.py`, `routers/wallet.py`, `routers/purchases.py`, etc.).
-- Split `/app/frontend/src/components/InvoiceDialog.jsx` (~1750 lines) into smaller subcomponents.
+- PWA instalable.
 
-## Credentials
-See `/app/memory/test_credentials.md`.
+### P3
+- AI OCR confidence indicator (low/med/high) en Admin Wallet.
+
+## Known Env Issues
+- Object Store falla al inicializar en preview (funciona en producción). Safe to bypass.
+
+## Key Files
+- `/app/backend/server.py` — monolith
+- `/app/frontend/src/pages/ClientDashboard.jsx`
+- `/app/frontend/src/pages/AdminShipments.jsx`
+- `/app/frontend/src/pages/AdminWallet.jsx`
+- `/app/frontend/src/pages/SuperadminDashboard.jsx`
+- `/app/frontend/src/components/InvoiceDialog.jsx`
+- `/app/frontend/src/lib/invoicePDF.js`
