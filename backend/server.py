@@ -1737,7 +1737,34 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
             last_total_a_pagar = last_inv.get("total_a_pagar", 0) or 0
             last_saldo_a_favor = last_inv.get("saldo_a_favor", 0) or 0
     
-    return {**wallet, "total_saldo_pendiente": round(saldo_pend, 2), "pending_debt": round(last_total_a_pagar, 2), "saldo_a_favor": round(last_saldo_a_favor, 2)}
+    # Sum pending deposit amounts (AI-detected if admin hasn't set amount yet)
+    pending_cursor = db.wallet_transactions.find(
+        {"tenant_id": tid, "user_id": user_id, "type": "deposit", "status": "pending"},
+        {"_id": 0, "amount": 1, "ai_scan": 1, "reference_number": 1, "created_at": 1}
+    )
+    pending_deposits_info = []
+    pending_deposit_total = 0.0
+    async for tx in pending_cursor:
+        admin_amount = tx.get("amount") or 0
+        ai_amount = (tx.get("ai_scan") or {}).get("detected_amount") or 0
+        # Prefer admin-entered amount; fall back to AI-detected
+        effective = admin_amount if admin_amount > 0 else ai_amount
+        if effective > 0:
+            pending_deposit_total += effective
+        pending_deposits_info.append({
+            "amount": admin_amount,
+            "detected_amount": ai_amount,
+            "effective_amount": effective,
+            "reference_number": tx.get("reference_number"),
+            "created_at": tx.get("created_at")
+        })
+
+    return {**wallet,
+            "total_saldo_pendiente": round(saldo_pend, 2),
+            "pending_debt": round(last_total_a_pagar, 2),
+            "saldo_a_favor": round(last_saldo_a_favor, 2),
+            "pending_deposit_total": round(pending_deposit_total, 2),
+            "pending_deposits": pending_deposits_info}
 
 @api_router.post("/wallet/deposit-request")
 async def request_deposit(deposit: WalletDepositRequest, current_user: dict = Depends(get_current_user)):
@@ -1805,9 +1832,112 @@ async def request_deposit_with_proof(
         tx_dict["reference_number"] = ref
         tx_dict["reference_number_lower"] = ref.lower()
     await db.wallet_transactions.insert_one(tx_dict)
+
+    # Auto-scan proof with Gemini Vision (best-effort; doesn't block success)
+    detected_amount = None
+    if proof_url:
+        try:
+            scan = await _scan_proof_image(proof_url, session_id=f"auto-{transaction.id}")
+            if scan:
+                detected_amount = scan.get("detected_amount")
+                update_fields = {
+                    "ai_scan": {
+                        "detected_reference_number": scan.get("detected_reference_number"),
+                        "detected_amount": detected_amount,
+                        "currency": scan.get("currency"),
+                        "confidence": scan.get("confidence"),
+                        "scanned_at": datetime.now(timezone.utc).isoformat()
+                    }
+                }
+                await db.wallet_transactions.update_one(
+                    {"id": transaction.id, "tenant_id": tid},
+                    {"$set": update_fields}
+                )
+        except Exception:
+            pass
+
     return {
         "message": "Solicitud enviada. Será revisada por nuestro equipo.",
-        "transaction_id": transaction.id
+        "transaction_id": transaction.id,
+        "detected_amount": detected_amount
+    }
+
+
+async def _scan_proof_image(proof_url: str, session_id: str = "ocr"):
+    """Use Gemini Vision to extract reference number + amount from a proof image URL.
+    Returns dict with detected_reference_number, detected_amount, currency, confidence, raw.
+    Never raises — returns empty dict on failure so callers can treat it as best-effort.
+    """
+    if not proof_url or "/api/uploads/" not in proof_url:
+        return {}
+    obj_path = proof_url.split("/api/uploads/", 1)[1]
+    try:
+        image_bytes, content_type = object_store.get_object(obj_path)
+    except Exception:
+        return {}
+    if content_type == "application/octet-stream":
+        ext = obj_path.rsplit(".", 1)[-1].lower() if "." in obj_path else ""
+        content_type = object_store.MIME_TYPES.get(ext, "image/jpeg")
+    import tempfile, json as _json, re as _re
+    suffix = "." + (obj_path.rsplit(".", 1)[-1] if "." in obj_path else "jpg")
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(image_bytes)
+        tmp_path = tmp.name
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
+        emergent_key = os.environ.get("EMERGENT_LLM_KEY")
+        if not emergent_key:
+            return {}
+        chat = LlmChat(
+            api_key=emergent_key,
+            session_id=session_id,
+            system_message=(
+                "You extract payment information from deposit receipt images. "
+                "Return STRICT JSON with exactly these fields: "
+                '{"reference_number": "<string or null>", "amount": <number or null>, "currency": "<string or null>", "confidence": "<low|medium|high>"}. '
+                "Rules: reference_number is the voucher/transaction/receipt number (usually long digits). "
+                "amount is the numeric amount deposited (no currency symbols). "
+                "If a value cannot be confidently read, use null. No extra text, only JSON."
+            )
+        ).with_model("gemini", "gemini-2.5-flash")
+        image_file = FileContentWithMimeType(file_path=tmp_path, mime_type=content_type)
+        prompt = (
+            "Analiza este comprobante de depósito y extrae el número de comprobante/referencia "
+            "y el monto depositado. Responde únicamente con JSON."
+        )
+        raw = await chat.send_message(UserMessage(text=prompt, file_contents=[image_file]))
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+        return {}
+    try:
+        os.unlink(tmp_path)
+    except Exception:
+        pass
+    text = str(raw).strip()
+    m = _re.search(r"\{.*\}", text, _re.DOTALL)
+    parsed = {}
+    if m:
+        try:
+            parsed = _json.loads(m.group(0))
+        except Exception:
+            parsed = {}
+    detected_ref = parsed.get("reference_number")
+    if isinstance(detected_ref, str):
+        detected_ref = detected_ref.strip() or None
+    detected_amount = parsed.get("amount")
+    try:
+        detected_amount = float(detected_amount) if detected_amount is not None else None
+    except (TypeError, ValueError):
+        detected_amount = None
+    return {
+        "detected_reference_number": detected_ref,
+        "detected_amount": detected_amount,
+        "currency": parsed.get("currency"),
+        "confidence": parsed.get("confidence"),
+        "raw": text[:500]
     }
 
 
@@ -1826,94 +1956,18 @@ async def scan_deposit_proof(transaction_id: str, current_user: dict = Depends(g
     proof_url = tx.get("proof_url")
     if not proof_url:
         raise HTTPException(status_code=400, detail="Esta recarga no tiene comprobante adjunto")
-
-    # Resolve the object-store path from the stored URL (e.g. "/api/uploads/outletsusaec/proofs/abc.jpg")
-    if "/api/uploads/" in proof_url:
-        obj_path = proof_url.split("/api/uploads/", 1)[1]
-    else:
-        raise HTTPException(status_code=400, detail="URL de comprobante no soportada")
-
-    try:
-        image_bytes, content_type = object_store.get_object(obj_path)
-    except Exception:
-        raise HTTPException(status_code=502, detail="No se pudo descargar el comprobante")
-
-    # Gemini supports JPEG/PNG/WEBP/PDF natively
-    if content_type == "application/octet-stream":
-        ext = obj_path.rsplit(".", 1)[-1].lower() if "." in obj_path else ""
-        content_type = object_store.MIME_TYPES.get(ext, "image/jpeg")
-
-    # Save to temp file for FileContentWithMimeType
-    import tempfile
-    suffix = "." + (obj_path.rsplit(".", 1)[-1] if "." in obj_path else "jpg")
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        tmp.write(image_bytes)
-        tmp_path = tmp.name
-
-    try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType
-        emergent_key = os.environ.get("EMERGENT_LLM_KEY")
-        if not emergent_key:
-            raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY no configurada")
-        chat = LlmChat(
-            api_key=emergent_key,
-            session_id=f"ocr-{transaction_id}",
-            system_message=(
-                "You extract payment information from deposit receipt images. "
-                "Return STRICT JSON with exactly these fields: "
-                '{"reference_number": "<string or null>", "amount": <number or null>, "currency": "<string or null>", "confidence": "<low|medium|high>"}. '
-                "Rules: reference_number is the voucher/transaction/receipt number (usually long digits). "
-                "amount is the numeric amount deposited (no currency symbols). "
-                "If a value cannot be confidently read, use null. No extra text, only JSON."
-            )
-        ).with_model("gemini", "gemini-2.5-flash")
-
-        image_file = FileContentWithMimeType(file_path=tmp_path, mime_type=content_type)
-        prompt = (
-            "Analiza este comprobante de depósito y extrae el número de comprobante/referencia "
-            "y el monto depositado. Responde únicamente con JSON."
-        )
-        raw = await chat.send_message(UserMessage(text=prompt, file_contents=[image_file]))
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
-
-    # Parse JSON (Gemini sometimes wraps in markdown fences)
-    import json as _json
-    import re as _re
-    text = str(raw).strip()
-    # Strip ```json ... ``` wrappers
-    m = _re.search(r"\{.*\}", text, _re.DOTALL)
-    parsed = {}
-    if m:
-        try:
-            parsed = _json.loads(m.group(0))
-        except Exception:
-            parsed = {}
-
-    detected_ref = (parsed.get("reference_number") or "").strip() if isinstance(parsed.get("reference_number"), str) else None
-    detected_amount = parsed.get("amount")
-    try:
-        detected_amount = float(detected_amount) if detected_amount is not None else None
-    except (TypeError, ValueError):
-        detected_amount = None
-
-    # Compare with client-provided values
+    result = await _scan_proof_image(proof_url, session_id=f"ocr-{transaction_id}")
+    if not result:
+        raise HTTPException(status_code=502, detail="No se pudo leer el comprobante")
     client_ref = (tx.get("reference_number") or "").strip()
+    detected_ref = result.get("detected_reference_number")
     matches_reference = None
     if client_ref and detected_ref:
-        matches_reference = client_ref.lower().replace(" ", "") == detected_ref.lower().replace(" ", "")
-
+        matches_reference = client_ref.lower().replace(" ", "") == str(detected_ref).lower().replace(" ", "")
     return {
-        "detected_reference_number": detected_ref,
-        "detected_amount": detected_amount,
-        "currency": parsed.get("currency"),
-        "confidence": parsed.get("confidence"),
+        **result,
         "client_reference_number": client_ref or None,
-        "matches_reference": matches_reference,
-        "raw": text[:500]
+        "matches_reference": matches_reference
     }
 
 

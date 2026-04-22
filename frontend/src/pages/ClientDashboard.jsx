@@ -293,9 +293,18 @@ export default function ClientDashboard() {
             {(() => {
               const pendingDebt = wallet?.pending_debt || 0;
               const saldoFavor = wallet?.saldo_a_favor || 0;
+              const pendingDeposit = wallet?.pending_deposit_total || 0;
               const hasDebt = pendingDebt > 0;
               const hasFavor = saldoFavor > 0;
-              
+              const hasPendingDeposit = pendingDeposit > 0;
+
+              // Projected balance if the pending deposit(s) get approved:
+              // - if client has favor: favor + deposit
+              // - else: deposit - debt (can be negative = still owing)
+              const projectedBalance = hasFavor
+                ? saldoFavor + pendingDeposit
+                : pendingDeposit - pendingDebt;
+
               return (
                 <>
                   <div className="flex justify-between items-start mb-4">
@@ -314,6 +323,21 @@ export default function ClientDashboard() {
                       </Badge>
                     </div>
                   </div>
+
+                  {hasPendingDeposit && (
+                    <div className="mb-4 rounded-xl bg-amber-400/20 border border-amber-200/40 p-3" data-testid="pending-deposit-note">
+                      <p className="text-xs text-amber-100 font-medium leading-relaxed">
+                        Tu depósito de <span className="font-extrabold text-white">${pendingDeposit.toFixed(2)}</span> está siendo procesado y verificado por nuestro equipo.
+                      </p>
+                      <p className="text-xs text-amber-100 mt-2 leading-relaxed">
+                        Cuando se apruebe, tu nuevo saldo será de{' '}
+                        <span className="font-extrabold text-white">
+                          {projectedBalance >= 0 ? '+' : '-'}${Math.abs(projectedBalance).toFixed(2)}
+                        </span>
+                        {projectedBalance > 0 ? ' a favor.' : projectedBalance < 0 ? ' pendiente.' : '.'}
+                      </p>
+                    </div>
+                  )}
                 </>
               );
             })()}
