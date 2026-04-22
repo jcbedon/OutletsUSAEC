@@ -513,46 +513,46 @@ export default function ClientDashboard() {
       {/* Tabs */}
       <div className="max-w-lg mx-auto px-4 mt-6">
         <Tabs defaultValue="invoices" className="w-full">
-          <TabsList className="grid w-full grid-cols-5 bg-gray-100 rounded-xl p-1 h-auto">
-            <TabsTrigger 
-              value="invoices" 
-              className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
+          <TabsList className="grid w-full grid-cols-5 bg-gray-100 rounded-xl p-1 h-auto gap-1">
+            <TabsTrigger
+              value="invoices"
+              className="flex flex-col items-center justify-center gap-1 data-[state=active]:bg-white rounded-lg py-2 px-1 text-[11px] sm:text-xs font-medium leading-none"
               data-testid="tab-invoices"
             >
-              <FileText className="h-4 w-4 mb-1" />
-              <span className="hidden sm:inline ml-1">Facturas</span>
+              <FileText className="h-4 w-4" />
+              <span>Facturas</span>
             </TabsTrigger>
-            <TabsTrigger 
-              value="purchases" 
-              className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
+            <TabsTrigger
+              value="purchases"
+              className="flex flex-col items-center justify-center gap-1 data-[state=active]:bg-white rounded-lg py-2 px-1 text-[11px] sm:text-xs font-medium leading-none"
               data-testid="tab-purchases"
             >
-              <ShoppingBag className="h-4 w-4 mb-1" />
-              <span className="hidden sm:inline ml-1">Compras</span>
+              <ShoppingBag className="h-4 w-4" />
+              <span>Compras</span>
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="purchase-history"
-              className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
+              className="flex flex-col items-center justify-center gap-1 data-[state=active]:bg-white rounded-lg py-2 px-1 text-[11px] sm:text-xs font-medium leading-none"
               data-testid="tab-purchase-history"
             >
-              <History className="h-4 w-4 mb-1" />
-              <span className="hidden sm:inline ml-1">Historial</span>
+              <History className="h-4 w-4" />
+              <span>Historial</span>
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="shipments"
-              className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
+              className="flex flex-col items-center justify-center gap-1 data-[state=active]:bg-white rounded-lg py-2 px-1 text-[11px] sm:text-xs font-medium leading-none"
               data-testid="tab-shipments"
             >
-              <Truck className="h-4 w-4 mb-1" />
-              <span className="hidden sm:inline ml-1">Envios</span>
+              <Truck className="h-4 w-4" />
+              <span>Envíos</span>
             </TabsTrigger>
-            <TabsTrigger 
+            <TabsTrigger
               value="notifications"
-              className="data-[state=active]:bg-white rounded-lg py-2 text-xs font-medium"
+              className="flex flex-col items-center justify-center gap-1 data-[state=active]:bg-white rounded-lg py-2 px-1 text-[11px] sm:text-xs font-medium leading-none"
               data-testid="tab-notifications"
             >
-              <Bell className="h-4 w-4 mb-1" />
-              <span className="hidden sm:inline ml-1">Avisos</span>
+              <Bell className="h-4 w-4" />
+              <span>Avisos</span>
             </TabsTrigger>
           </TabsList>
 
