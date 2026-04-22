@@ -4,29 +4,32 @@
 Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturación dinámica, shipments y portal de clientes.
 
 ## Personas
-- Superadmin (plataforma) · Admin tenant · Empleado · Cliente
+- Superadmin · Admin tenant · Empleado · Cliente
 
 ## Stack
 - Frontend: React + Tailwind + Shadcn UI
 - Backend: FastAPI + Motor (MongoDB)
-- AI OCR: `emergentintegrations` (Gemini Vision vía EMERGENT_LLM_KEY)
+- AI OCR: emergentintegrations (Gemini Vision)
 - PDFs: jsPDF · Object Store: Emergent internal
 
 ## Changelog (Feb 2026)
-- Inline editing de purchase items (pending) con sync a LIVE.
-- Auto-recalculo de `saldo_a_favor` en cadenas de facturas + botón manual.
-- Shipments mapeados 1-a-1 a invoices vía `invoice_id`.
-- Toggle tenant Paquetes/Libras desde Superadmin.
-- Wallet Recharges overhaul con Gemini Vision OCR automático.
-- Mobile tabs del Client Portal con labels.
-- QR upload sessions para adjuntos de shipments.
+- Inline editing purchase items + sync LIVE.
+- Auto-recalculo de `saldo_a_favor` en cadenas de facturas.
+- Shipments mapeados 1-a-1 a invoices.
+- Toggle tenant Paquetes/Libras (Superadmin).
+- Wallet recharges con Gemini Vision OCR.
+- Mobile tabs con labels + QR uploads.
 - PDFs unificados con breakdown de Saldo a Favor.
 - Fallback message en Client Dashboard cuando IA detecta $0.
-- **[hoy]** Shipping categories con **precios independientes por modo**: cada categoría G/A/B guarda `value_packages` y `value_pounds` separadamente. Al cambiar uno no afecta el otro. Retro-compatible con campo legacy `value`.
+- Shipping categories con **precios independientes por modo** (packages/pounds).
+- **[hoy]** PDFs:
+  - Fix: contenido ya no se corta abajo cuando hay muchos items/líneas financieras (paginación con `ensureSpace`, redibujo del container en cada página, footer garantizado al final).
+  - Fix: PDF siempre re-consulta la factura al backend antes de generar → si el admin quitó un ítem o editó un precio, el PDF refleja los valores correctos.
+- **[hoy]** Backend `remove_item_from_invoice` y `update_purchase` ahora disparan `recalculate_client_invoices` → `total_a_pagar`, `saldo_a_favor`, `saldo_pendiente` y `applied_deposits` se actualizan automáticamente en toda la cadena.
 
 ## Roadmap
 ### P0 técnico
-- 🚨 Refactor `server.py` (5387 líneas) → routers modulares.
+- Refactor `server.py` (5400+ líneas) → routers modulares.
 - Refactor `InvoiceDialog.jsx` (~1500 líneas).
 
 ### P1
@@ -44,9 +47,9 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
 
 ## Key Files
 - `/app/backend/server.py`
+- `/app/frontend/src/lib/invoicePDF.js`
+- `/app/frontend/src/components/InvoiceDialog.jsx`
 - `/app/frontend/src/pages/ClientDashboard.jsx`
 - `/app/frontend/src/pages/AdminShipments.jsx`
 - `/app/frontend/src/pages/AdminWallet.jsx`
 - `/app/frontend/src/pages/SuperadminDashboard.jsx`
-- `/app/frontend/src/components/InvoiceDialog.jsx`
-- `/app/frontend/src/lib/invoicePDF.js`

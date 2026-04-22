@@ -2966,6 +2966,15 @@ async def update_purchase(purchase_id: str, data: PurchaseUpdate, current_user: 
             )
 
     updated = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0})
+
+    # If any financial field changed and the purchase is linked to an invoice,
+    # recalculate the client's invoice chain so PDFs/views show correct totals.
+    if (price_changed or tax_changed or commission_changed) and purchase.get("invoice_id"):
+        try:
+            await recalculate_client_invoices(tid, purchase.get("customer_id"))
+        except Exception as _re_err:
+            logger.error(f"Error recalculating after update_purchase: {_re_err}")
+
     return updated
 
 @api_router.delete("/purchases/{purchase_id}")
@@ -4111,7 +4120,16 @@ async def remove_item_from_invoice(invoice_id: str, data: dict, current_user: di
         {"id": purchase_id, "tenant_id": tid},
         {"$set": update_fields}
     )
-    
+
+    # Recalculate the full invoice chain for this client so that totals
+    # (saldo_pendiente, saldo_a_favor, total_a_pagar, deposits_applied, etc.)
+    # reflect the new invoice subtotal after the item removal. Without this,
+    # downstream PDFs and client views would show stale financial values.
+    try:
+        await recalculate_client_invoices(tid, invoice.get("customer_id"))
+    except Exception as _re_err:
+        logger.error(f"Error recalculating after remove_item_from_invoice: {_re_err}")
+
     return {
         "message": "Artículo removido de la factura",
         "removed_purchase_id": purchase_id,

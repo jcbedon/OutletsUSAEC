@@ -435,12 +435,22 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
     if (!currentInvoice) return;
     setGeneratingPDF(true);
     try {
+      // Always re-fetch the latest invoice state from the backend before generating the PDF.
+      // This ensures that if the user removed an item / adjusted a value, the PDF reflects it.
+      let invoiceForPDF = currentInvoice;
+      try {
+        const fresh = await getInvoiceDetail(currentInvoice.id);
+        invoiceForPDF = fresh.data;
+        setCurrentInvoice(fresh.data);
+      } catch (_) {
+        // If refetch fails, fall back to in-memory state so user can still get a PDF.
+      }
       const tenant = {
-        ...(currentInvoice.tenant || {}),
+        ...(invoiceForPDF.tenant || {}),
         ...tenantInfo
       };
       const { generateInvoicePDF } = await import("@/lib/invoicePDF");
-      await generateInvoicePDF(currentInvoice, tenant);
+      await generateInvoicePDF(invoiceForPDF, tenant);
       toast.success("PDF descargado");
     } catch (error) {
       toast.error("Error al generar PDF");
