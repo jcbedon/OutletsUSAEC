@@ -90,12 +90,11 @@ export default function MobileRechargeUpload() {
             </p>
           </div>
 
-          {/* Hidden file input */}
+          {/* Hidden file input — no `capture` so the device shows camera + gallery + files picker. */}
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            capture="environment"
             onChange={handleFileChange}
             className="hidden"
           />
