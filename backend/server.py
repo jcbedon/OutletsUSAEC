@@ -2131,7 +2131,14 @@ async def reject_deposit(transaction_id: str, current_user: dict = Depends(get_c
         entity_name=f"${transaction['amount']:.2f} - {transaction['customer_id']}",
         details={"amount": transaction["amount"], "customer_id": transaction["customer_id"]}
     )
-    
+
+    # Recalculate the client invoice chain so `applied_deposits` only contains approved+non-deleted deposits.
+    # (A rejected deposit must never appear inside an invoice's deposits array.)
+    try:
+        await recalculate_client_invoices(tid, transaction["customer_id"])
+    except Exception as _re_err:
+        logger.error(f"Error recalculating after reject_deposit: {_re_err}")
+
     return {"message": "Depósito rechazado"}
 
 @api_router.post("/wallet/delete-deposit/{transaction_id}")
@@ -2204,7 +2211,15 @@ async def delete_deposit(transaction_id: str, data: dict, current_user: dict = D
         entity_name=f"${transaction['amount']:.2f} - {transaction.get('customer_id', '')}",
         details={"amount": transaction["amount"], "customer_id": transaction.get("customer_id", "")}
     )
-    
+
+    # Full recalculation of the client invoice chain so totals (`total_a_pagar`,
+    # `saldo_pendiente`, `saldo_a_favor`) reflect the deposit removal across all invoices.
+    try:
+        if transaction.get("customer_id"):
+            await recalculate_client_invoices(tid, transaction["customer_id"])
+    except Exception as _re_err:
+        logger.error(f"Error recalculating after delete_deposit: {_re_err}")
+
     return {"message": "Recarga eliminada exitosamente"}
 
 class AdminBalanceAdjustment(BaseModel):
