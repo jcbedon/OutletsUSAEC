@@ -2776,9 +2776,6 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
             f"Producto: {purchase_data.item_name}\n"
             f"Tienda: {purchase_data.store or '—'}\n"
             f"Precio: ${purchase_data.price:.2f}"
-            + (f" + Tax ${tax:.2f}" if tax else "")
-            + (f" + Comisión ${commission_fee:.2f}" if commission_fee else "")
-            + f"\nTotal: ${total:.2f}\nSaldo actual: ${new_balance:.2f}"
         ))
     await check_low_balance(tid, user["id"], purchase_data.customer_id.upper(), new_balance)
     return {
