@@ -192,22 +192,16 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
       0: { cellWidth: 18, halign: "center" }, 1: { cellWidth: 50 }, 2: { cellWidth: 22, halign: "right" },
       3: { cellWidth: 30 }, 4: { cellWidth: 22, halign: "right" }, 5: { cellWidth: 25, halign: "right", fontStyle: "bold" },
     },
-    margin: { left: margin, right: margin, top: 20, bottom: 30 },
+    margin: { left: margin, right: margin, top: 20, bottom: 18 },
     styles: { lineColor: colors.divider, lineWidth: 0.2 },
-    didDrawPage: (data) => {
-      // Only redraw background for pages after the first (first page already painted).
-      if (data.pageNumber > 1) {
-        drawPageBackground();
-      }
-    },
   });
 
   // Summary stats
   let finalY = doc.lastAutoTable.finalY + 8;
 
   // Helper: ensure we have enough vertical space; add a new page if not.
-  // Tight footer buffer (~20mm) so we don't leave big gaps on page 1.
-  const SAFE_BOTTOM = pageHeight - 22;
+  // 35mm clear at the bottom: 25mm for footer + 10mm safety.
+  const SAFE_BOTTOM = pageHeight - 35;
   const ensureSpace = (requiredMM) => {
     if (finalY + requiredMM > SAFE_BOTTOM) {
       doc.addPage();
@@ -279,8 +273,9 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
   doc.setTextColor(...colors.textPrimary);
   doc.text(`$${displaySubtotal.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
 
-  if (taxes > 0) { finalY += 6; doc.setTextColor(...colors.textSecondary); doc.text("Taxes:", totalsX, finalY); doc.setTextColor(...colors.textPrimary); doc.text(`$${taxes.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" }); }
+  if (taxes > 0) { ensureSpace(7); finalY += 6; doc.setTextColor(...colors.textSecondary); doc.text("Taxes:", totalsX, finalY); doc.setTextColor(...colors.textPrimary); doc.text(`$${taxes.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" }); }
   if (shippingCost > 0) {
+    ensureSpace(7);
     finalY += 6;
     doc.setTextColor(...colors.textSecondary);
     const shipmentMode = shipment?.shipping_mode;
@@ -296,7 +291,7 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
     doc.setTextColor(...colors.textPrimary);
     doc.text(`$${shippingCost.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" });
   }
-  if (saldoPend > 0) { finalY += 6; doc.setTextColor(194, 65, 12); doc.text("Saldo Pendiente:", totalsX, finalY); doc.text(`$${saldoPend.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" }); }
+  if (saldoPend > 0) { ensureSpace(7); finalY += 6; doc.setTextColor(194, 65, 12); doc.text("Saldo Pendiente:", totalsX, finalY); doc.text(`$${saldoPend.toFixed(2)}`, pageWidth - margin, finalY, { align: "right" }); }
 
   finalY += 4;
   // Critical: "Total:" line must stay visible. If we're near the bottom, break now.
@@ -317,6 +312,7 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     appliedDeposits.forEach((dep, idx) => {
+      ensureSpace(6);
       doc.setTextColor(...colors.textSecondary);
       doc.text(`Abono ${idx + 1}:`, totalsX, finalY);
       doc.setTextColor(22, 101, 52);
@@ -327,6 +323,7 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
 
   // Saldo a Favor anterior (credit applied to this invoice)
   if (saldoFavorAnterior > 0) {
+    ensureSpace(7);
     if (appliedDeposits.length === 0) finalY += 8;
     doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
