@@ -558,6 +558,18 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
         {"customer_id": customer_id, "tenant_id": tenant_id, "is_annulled": {"$ne": True}},
         {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1, "shipping_cost": 1, "created_at": 1}
     ).sort("created_at", 1).to_list(1000)
+
+    # Defensive cleanup: any annulled invoice that still has stale applied_deposits
+    # (from before annul cleared them) gets wiped here so historial views show $0.
+    await db.invoices.update_many(
+        {"customer_id": customer_id, "tenant_id": tenant_id,
+         "is_annulled": True,
+         "$or": [
+             {"applied_deposits": {"$exists": True, "$ne": []}},
+             {"deposits_applied": {"$gt": 0}},
+         ]},
+        {"$set": {"applied_deposits": [], "deposits_applied": 0}}
+    )
     
     if not all_invoices:
         return
