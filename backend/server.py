@@ -4577,13 +4577,18 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
     import math
     date_filter = {}
     if period == "week":
-        # Week = Tuesday 00:00 to Monday 23:59:59
+        # Week = current Monday 01:00 (tenant local, UTC-5 Ecuador) → next Monday 00:59:59
+        # In UTC that is Monday 06:00 → next Monday 05:59:59.
         now = datetime.now(timezone.utc)
-        # Calculate days since last Tuesday (Tuesday = weekday 1)
-        days_since_tuesday = (now.weekday() - 1) % 7
-        week_start = now - timedelta(days=days_since_tuesday)
-        week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+        # Monday = weekday 0
+        days_since_monday = now.weekday()
+        candidate_start = (now - timedelta(days=days_since_monday)).replace(hour=6, minute=0, second=0, microsecond=0)
+        # If we're before Monday 06:00 UTC (i.e. before local Monday 01:00), the active week
+        # is the previous one — push the start back 7 days.
+        if now < candidate_start:
+            candidate_start = candidate_start - timedelta(days=7)
+        week_start = candidate_start
+        week_end = week_start + timedelta(days=7) - timedelta(seconds=1)
         date_filter = {"created_at": {"$gte": week_start.isoformat(), "$lte": week_end.isoformat()}}
     # "all" = no filter
     
@@ -4592,10 +4597,15 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
     
     invoice_match = {"tenant_id": tid, "is_annulled": {"$ne": True}, **date_filter}
     
-    # Total sales = sum of invoice totals (what the business actually billed)
-    total_sales = await db.invoices.aggregate([
-        {"$match": invoice_match}, {"$group": {"_id": None, "total": {"$sum": "$total"}}}
+    # Total sales = sum of (price + tax) of every purchase in the period.
+    # This is what the user wants on the "Ventas" card: label price + taxes only,
+    # excluding commission. Pulls directly from purchases (not invoices) so it
+    # also captures purchases that haven't been billed yet but were registered.
+    total_sales_agg = await db.purchases.aggregate([
+        {"$match": purchase_match},
+        {"$group": {"_id": None, "total": {"$sum": {"$add": ["$price", {"$ifNull": ["$tax", 0]}]}}}}
     ]).to_list(1)
+    total_sales = [{"total": total_sales_agg[0]["total"]}] if total_sales_agg else []
     # Commissions from invoices
     total_commissions = await db.invoices.aggregate([
         {"$match": invoice_match}, {"$group": {"_id": None, "total": {"$sum": "$total_commission"}}}
@@ -4649,12 +4659,15 @@ async def get_buyers_report(period: str = "week", current_user: dict = Depends(g
     # Date filter
     date_filter = {}
     if period == "week":
-        # Week = Tuesday 00:00 to Monday 23:59:59
+        # Week = current Monday 01:00 local (UTC-5 Ecuador) → next Monday 00:59:59 local
+        # In UTC: Monday 06:00 → next Monday 05:59:59
         now = datetime.now(timezone.utc)
-        days_since_tuesday = (now.weekday() - 1) % 7
-        week_start = now - timedelta(days=days_since_tuesday)
-        week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
-        week_end = week_start + timedelta(days=6, hours=23, minutes=59, seconds=59)
+        days_since_monday = now.weekday()
+        candidate_start = (now - timedelta(days=days_since_monday)).replace(hour=6, minute=0, second=0, microsecond=0)
+        if now < candidate_start:
+            candidate_start = candidate_start - timedelta(days=7)
+        week_start = candidate_start
+        week_end = week_start + timedelta(days=7) - timedelta(seconds=1)
         date_filter = {"created_at": {"$gte": week_start.isoformat(), "$lte": week_end.isoformat()}}
     
     purchase_match = {"tenant_id": tid, **date_filter}
