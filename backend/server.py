@@ -1641,7 +1641,7 @@ async def get_pending_deposits(current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
-    transactions = await db.wallet_transactions.find({"type": "deposit", "status": "pending", "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    transactions = await db.wallet_transactions.find({"type": "deposit", "status": "pending", "tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}).sort("created_at", -1).to_list(100)
     result = []
     for t in transactions:
         user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
@@ -1780,7 +1780,7 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
     
     # Sum pending deposit amounts (AI-detected if admin hasn't set amount yet)
     pending_cursor = db.wallet_transactions.find(
-        {"tenant_id": tid, "user_id": user_id, "type": "deposit", "status": "pending"},
+        {"tenant_id": tid, "user_id": user_id, "type": "deposit", "status": "pending", "is_deleted": {"$ne": True}},
         {"_id": 0, "amount": 1, "ai_scan": 1, "reference_number": 1, "created_at": 1}
     )
     pending_deposits_info = []
@@ -3886,7 +3886,8 @@ async def search_invoices(
                 "user_id": {"$in": user_ids},
                 "tenant_id": tid,
                 "type": "deposit",
-                "status": "approved"
+                "status": "approved",
+                "is_deleted": {"$ne": True}
             },
             {"_id": 0, "user_id": 1, "amount": 1, "created_at": 1}
         ).sort("created_at", -1).to_list(500)
