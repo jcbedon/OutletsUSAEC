@@ -1623,29 +1623,67 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                   </div>
                 </div>
 
-                {auditResult.needs_recalc ? (
-                  <>
-                    <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-amber-900">
-                      <p className="font-bold text-sm">{auditResult.issues.length} inconsistencia(s) detectada(s)</p>
-                      <ul className="text-xs mt-2 space-y-1 list-disc pl-4">
-                        {auditResult.issues.slice(0, 6).map((iss, idx) => {
-                          const labels = {
-                            tx_not_found: "Transacción no existe",
-                            tx_deleted: "Recarga eliminada",
-                            tx_not_approved: "No aprobada",
-                            amount_mismatch: "Monto diferente",
-                            missing_id: "Sin ID de depósito",
-                          };
-                          return (
-                            <li key={idx} data-testid="audit-issue">
-                              {labels[iss.type] || iss.type}
-                              {iss.amount != null ? ` — $${Number(iss.amount).toFixed(2)}` : ''}
-                              {iss.tx_status ? ` (${iss.tx_status})` : ''}
-                            </li>
-                          );
-                        })}
-                      </ul>
+                {/* Customer-wide audit */}
+                {auditResult.customer_audit && auditResult.customer_audit.customer_id && (
+                  <div className={`rounded-xl border p-3 ${auditResult.customer_audit.needs_recalc ? 'bg-amber-50 border-amber-200' : 'bg-green-50 border-green-200'}`} data-testid="audit-customer-summary">
+                    <p className="text-[10px] uppercase font-bold text-slate-700 mb-2">Auditoría del cliente</p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <p className="text-slate-500">Recargas aprobadas</p>
+                        <p className="font-extrabold text-slate-800">
+                          {auditResult.customer_audit.approved_count} · ${(auditResult.customer_audit.approved_total || 0).toFixed(2)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Asignadas a facturas</p>
+                        <p className={`font-extrabold ${auditResult.customer_audit.needs_recalc ? 'text-amber-700' : 'text-green-700'}`}>
+                          {auditResult.customer_audit.assigned_count} · ${(auditResult.customer_audit.assigned_total || 0).toFixed(2)}
+                        </p>
+                      </div>
                     </div>
+                    {auditResult.customer_audit.duplicates.length > 0 && (
+                      <p className="mt-2 text-xs text-amber-800">
+                        ⚠️ {auditResult.customer_audit.duplicates.length} abono(s) duplicado(s) entre facturas
+                      </p>
+                    )}
+                    {auditResult.customer_audit.orphans.length > 0 && (
+                      <p className="mt-1 text-xs text-amber-800">
+                        ⚠️ {auditResult.customer_audit.orphans.length} recarga(s) aprobada(s) sin asignar a ninguna factura
+                      </p>
+                    )}
+                    {auditResult.customer_audit.stale_assigned_ids.length > 0 && (
+                      <p className="mt-1 text-xs text-amber-800">
+                        ⚠️ {auditResult.customer_audit.stale_assigned_ids.length} abono(s) referencian recargas no aprobadas
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {(auditResult.needs_recalc || auditResult.customer_audit?.needs_recalc) ? (
+                  <>
+                    {auditResult.issues && auditResult.issues.length > 0 && (
+                      <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-amber-900">
+                        <p className="font-bold text-sm">{auditResult.issues.length} inconsistencia(s) en esta factura</p>
+                        <ul className="text-xs mt-2 space-y-1 list-disc pl-4">
+                          {auditResult.issues.slice(0, 6).map((iss, idx) => {
+                            const labels = {
+                              tx_not_found: "Transacción no existe",
+                              tx_deleted: "Recarga eliminada",
+                              tx_not_approved: "No aprobada",
+                              amount_mismatch: "Monto diferente",
+                              missing_id: "Sin ID de depósito",
+                            };
+                            return (
+                              <li key={idx} data-testid="audit-issue">
+                                {labels[iss.type] || iss.type}
+                                {iss.amount != null ? ` — $${Number(iss.amount).toFixed(2)}` : ''}
+                                {iss.tx_status ? ` (${iss.tx_status})` : ''}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    )}
                     <Button
                       onClick={handleRecalcInvoice}
                       disabled={recalcing}
@@ -1653,7 +1691,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                       style={{ background: '#1E3A5F', color: 'white' }}
                       data-testid="audit-recalc-btn"
                     >
-                      {recalcing ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Recalculando...</>) : (<><RefreshCw className="h-4 w-4 mr-2" />Recalcular esta factura</>)}
+                      {recalcing ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Recalculando...</>) : (<><RefreshCw className="h-4 w-4 mr-2" />Recalcular cadena del cliente</>)}
                     </Button>
                   </>
                 ) : (

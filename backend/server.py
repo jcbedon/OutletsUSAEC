@@ -4081,10 +4081,12 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
 @api_router.get("/invoices/{invoice_id}/audit")
 async def audit_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
     """Audit an invoice's applied_deposits in real time:
-    - Verify each deposit_id references an existing transaction
-    - Verify the transaction is approved and not soft-deleted
-    Returns a list of issues + the recomputed `applied_deposits` snapshot
-    so the caller knows whether a recalc is needed.
+    - Per-invoice: verify each deposit_id is approved + not deleted, amounts match.
+    - Customer-wide: also detect orphan deposits (approved but not in any invoice),
+      duplicates (same deposit_id across multiple non-annulled invoices), and
+      total wallet vs total assigned mismatch.
+    Returns the per-invoice issues plus a customer summary so the UI can decide
+    whether a recalc is needed even when this specific invoice looks clean.
     """
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
@@ -4132,6 +4134,76 @@ async def audit_invoice(invoice_id: str, current_user: dict = Depends(get_curren
         "valid_deposits_amount": round(valid_amount, 2),
         "issues": issues,
         "needs_recalc": len(issues) > 0,
+        "customer_audit": await _customer_deposit_audit(tid, invoice.get("customer_id")),
+    }
+
+
+async def _customer_deposit_audit(tenant_id: str, customer_id: str | None) -> dict:
+    """Customer-wide deposit audit: cross-checks wallet deposits vs deposits assigned
+    across all non-annulled invoices. Detects orphans (approved but not in any invoice)
+    and duplicates (same deposit_id in multiple invoices)."""
+    if not customer_id:
+        return {}
+    user = await db.users.find_one(
+        {"customer_id": customer_id, "tenant_id": tenant_id},
+        {"_id": 0, "id": 1}
+    )
+    if not user:
+        return {}
+    # All approved, non-deleted deposits in wallet
+    wallet_deposits = await db.wallet_transactions.find(
+        {"user_id": user["id"], "tenant_id": tenant_id, "type": "deposit",
+         "status": "approved", "is_deleted": {"$ne": True}},
+        {"_id": 0, "id": 1, "amount": 1, "created_at": 1}
+    ).to_list(2000)
+    approved_count = len(wallet_deposits)
+    approved_total = round(sum(d.get("amount", 0) or 0 for d in wallet_deposits), 2)
+    approved_ids = {d["id"] for d in wallet_deposits}
+
+    # All applied_deposits across non-annulled invoices for this customer
+    invoices = await db.invoices.find(
+        {"customer_id": customer_id, "tenant_id": tenant_id, "is_annulled": {"$ne": True}},
+        {"_id": 0, "id": 1, "invoice_number": 1, "applied_deposits": 1}
+    ).to_list(2000)
+    seen_in_invoices: dict[str, list[str]] = {}
+    assigned_total = 0.0
+    assigned_count = 0
+    for inv in invoices:
+        for dep in inv.get("applied_deposits", []) or []:
+            did = dep.get("deposit_id") or ""
+            if not did:
+                continue
+            assigned_count += 1
+            assigned_total += dep.get("amount_applied", 0) or 0
+            seen_in_invoices.setdefault(did, []).append(inv.get("invoice_number") or inv["id"][:8])
+
+    duplicates = [
+        {"deposit_id": did, "invoices": invs}
+        for did, invs in seen_in_invoices.items() if len(invs) > 1
+    ]
+    orphan_ids = approved_ids - set(seen_in_invoices.keys())
+    orphans = [
+        {"deposit_id": d["id"], "amount": d.get("amount", 0), "created_at": d.get("created_at")}
+        for d in wallet_deposits if d["id"] in orphan_ids
+    ]
+    # Stale = assigned in invoice but not approved/deleted (or rejected)
+    assigned_ids = set(seen_in_invoices.keys())
+    stale_ids = [did for did in assigned_ids if did not in approved_ids]
+
+    needs_recalc = bool(duplicates or stale_ids or
+                        round(assigned_total, 2) != approved_total or
+                        assigned_count != approved_count)
+
+    return {
+        "customer_id": customer_id,
+        "approved_count": approved_count,
+        "approved_total": approved_total,
+        "assigned_count": assigned_count,
+        "assigned_total": round(assigned_total, 2),
+        "orphans": orphans,
+        "duplicates": duplicates,
+        "stale_assigned_ids": stale_ids,
+        "needs_recalc": needs_recalc,
     }
 
 
