@@ -4313,10 +4313,44 @@ async def annul_invoice(invoice_id: str, data: dict = None, current_user: dict =
 
 # ==================== NOTIFICATIONS ====================
 
+import re as _notif_re
+
+_LEGACY_PURCHASE_PATTERN = _notif_re.compile(
+    r"Compraste\s+(?P<item>.+?)\s+-\s+Precio:\s*\$(?P<price>[\d,.]+)"
+)
+
+
+def _reformat_purchase_notification(notif: dict) -> dict:
+    """Rewrite legacy 'Compra Registrada' messages to the simplified format
+    (item + store + price only). Pulls store from the linked purchase if available.
+    Pure cosmetic — never persisted, only mutates the in-memory dict."""
+    msg = notif.get("message") or ""
+    m = _LEGACY_PURCHASE_PATTERN.search(msg)
+    if not m:
+        return notif
+    item = m.group("item").strip()
+    try:
+        price = float(m.group("price").replace(",", ""))
+    except ValueError:
+        return notif
+    notif["title"] = "Nueva compra registrada"
+    notif["message"] = (
+        f"Producto: {item}\n"
+        f"Tienda: —\n"
+        f"Precio: ${price:.2f}"
+    )
+    return notif
+
+
 @api_router.get("/notifications/{user_id}")
 async def get_user_notifications(user_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
     notifications = await db.notifications.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
+    # Cosmetically simplify legacy purchase notifications so historical entries
+    # match the new compact format (no taxes / commission / total / saldo).
+    for n in notifications:
+        if n.get("type") == "purchase_created":
+            _reformat_purchase_notification(n)
     return notifications
 
 # ==================== REPORTS ====================
