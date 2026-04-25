@@ -2771,8 +2771,15 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
     await db.lives.update_one({"id": purchase_data.live_id, "tenant_id": tid},
         {"$inc": {"total_sales": price_with_tax, "total_commissions": commission_fee, "purchase_count": 1}})
     await create_notification(tid, user["id"], purchase_data.customer_id.upper(), "purchase_created",
-        "Compra Registrada",
-        f"Compraste {purchase_data.item_name} - Precio: ${purchase_data.price:.2f} + Tax: ${tax:.2f} + Comisión: ${commission_fee:.2f} = Total: ${total:.2f}. Saldo: ${new_balance:.2f}")
+        "Nueva compra registrada",
+        (
+            f"Producto: {purchase_data.item_name}\n"
+            f"Tienda: {purchase_data.store or '—'}\n"
+            f"Precio: ${purchase_data.price:.2f}"
+            + (f" + Tax ${tax:.2f}" if tax else "")
+            + (f" + Comisión ${commission_fee:.2f}" if commission_fee else "")
+            + f"\nTotal: ${total:.2f}\nSaldo actual: ${new_balance:.2f}"
+        ))
     await check_low_balance(tid, user["id"], purchase_data.customer_id.upper(), new_balance)
     return {
         "message": "Compra registrada", "purchase_id": purchase_dict["id"], "price": purchase_data.price,

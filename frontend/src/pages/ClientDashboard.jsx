@@ -915,9 +915,9 @@ export default function ClientDashboard() {
                           <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
                             <Bell className="h-5 w-5 text-red-600" />
                           </div>
-                          <div>
-                            <p className="font-bold text-slate-800">{notif.title}</p>
-                            <p className="text-sm text-gray-600 mt-1">{notif.message}</p>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-bold text-slate-800 break-words">{notif.title}</p>
+                            <p className="text-sm text-gray-600 mt-1 whitespace-pre-line break-words">{notif.message}</p>
                             <p className="text-xs text-gray-400 mt-2">
                               {new Date(notif.created_at).toLocaleDateString('es-ES', {
                                 day: 'numeric',
