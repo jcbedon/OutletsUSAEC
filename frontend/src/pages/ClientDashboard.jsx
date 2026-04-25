@@ -71,6 +71,7 @@ export default function ClientDashboard() {
   const [clientInvoices, setClientInvoices] = useState([]);
   const [downloadingPDF, setDownloadingPDF] = useState(null);
   const [expandedWeek, setExpandedWeek] = useState(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   
   const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
 
@@ -512,10 +513,18 @@ export default function ClientDashboard() {
               </Dialog>
             </div>
 
-            <div className="mt-4 pt-4 border-t border-white/20">
+            <div className="mt-4 pt-4 border-t border-white/20 flex items-center justify-between gap-2">
               <p className="text-white/70 text-xs">
                 Hola, <span className="font-bold text-white">{user?.name}</span>
               </p>
+              <button
+                type="button"
+                onClick={() => setDetailsOpen(true)}
+                className="text-[11px] px-2.5 py-1 rounded-full bg-white/15 hover:bg-white/25 text-white font-semibold transition-colors"
+                data-testid="open-details-btn"
+              >
+                Detalles
+              </button>
             </div>
           </CardContent>
         </Card>
@@ -1002,6 +1011,103 @@ export default function ClientDashboard() {
         products={shipmentProducts}
         backendUrl={backendUrl}
       />
+
+      {/* Details Dialog: Invoices + Recharges breakdown */}
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="rounded-2xl max-w-md w-[95vw] max-h-[85vh] overflow-y-auto" data-testid="details-dialog">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              <FileText className="h-5 w-5 text-slate-700" />
+              Mi Detalle
+            </DialogTitle>
+          </DialogHeader>
+
+          {(() => {
+            const totalFacturado = (clientInvoices || [])
+              .filter(i => !i.is_annulled)
+              .reduce((s, i) => s + (i.total || 0) + (i.shipping_cost || 0), 0);
+            const recargasAprobadas = (transactions || []).filter(
+              t => t.type === "deposit" && t.status === "approved" && !t.is_deleted
+            );
+            const totalRecargado = recargasAprobadas.reduce((s, t) => s + (t.amount || 0), 0);
+            return (
+              <div className="space-y-4 pt-2 text-sm">
+                {/* Top summary */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-xl bg-blue-50 border border-blue-100 p-3" data-testid="summary-invoices">
+                    <p className="text-[11px] uppercase font-semibold text-blue-700">Total Facturado</p>
+                    <p className="text-lg font-extrabold text-blue-900">${totalFacturado.toFixed(2)}</p>
+                    <p className="text-[10px] text-blue-700/70 mt-0.5">{(clientInvoices || []).filter(i => !i.is_annulled).length} factura(s)</p>
+                  </div>
+                  <div className="rounded-xl bg-green-50 border border-green-100 p-3" data-testid="summary-recharges">
+                    <p className="text-[11px] uppercase font-semibold text-green-700">Total Recargado</p>
+                    <p className="text-lg font-extrabold text-green-900">${totalRecargado.toFixed(2)}</p>
+                    <p className="text-[10px] text-green-700/70 mt-0.5">{recargasAprobadas.length} recarga(s)</p>
+                  </div>
+                </div>
+
+                {/* Invoices list */}
+                <div>
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Facturas compradas</p>
+                  {(clientInvoices || []).length === 0 ? (
+                    <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 text-center">Aún no tienes facturas.</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {clientInvoices.map((inv) => {
+                        const total = (inv.total || 0) + (inv.shipping_cost || 0);
+                        return (
+                          <div key={inv.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-3 py-2" data-testid="details-invoice-row">
+                            <div className="min-w-0 flex-1">
+                              <p className={`font-bold truncate ${inv.is_annulled ? 'line-through text-red-500' : 'text-slate-800'}`}>
+                                {inv.invoice_number}
+                              </p>
+                              <p className="text-[10px] text-gray-500">
+                                {new Date(inv.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                {inv.is_annulled ? ' · ANULADA' : ''}
+                              </p>
+                            </div>
+                            <p className={`font-extrabold ml-2 ${inv.is_annulled ? 'line-through text-red-400' : 'text-slate-900'}`}>
+                              ${total.toFixed(2)}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Recharges list */}
+                <div>
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Recargas realizadas</p>
+                  {recargasAprobadas.length === 0 ? (
+                    <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 text-center">Aún no tienes recargas aprobadas.</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {recargasAprobadas.map((tx) => (
+                        <div key={tx.id} className="flex items-center justify-between text-xs bg-green-50/60 rounded-lg px-3 py-2" data-testid="details-recharge-row">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-green-800">
+                              {tx.reference_number ? `Ref. ${tx.reference_number}` : 'Recarga'}
+                            </p>
+                            <p className="text-[10px] text-green-700/70">
+                              {tx.approved_at
+                                ? new Date(tx.approved_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })
+                                : new Date(tx.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </p>
+                          </div>
+                          <p className="font-extrabold text-green-700 ml-2">
+                            +${(tx.amount || 0).toFixed(2)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
