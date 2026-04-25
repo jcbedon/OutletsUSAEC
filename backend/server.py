@@ -3968,7 +3968,6 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
     invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid}, {"_id": 0})
     if not invoice:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
-    
     # Client can only see their own invoices
     if current_user["role"] == "client":
         user = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0, "customer_id": 1})
@@ -4077,6 +4076,99 @@ async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_c
         "tenant": tenant,
         "shipment": shipment
     }
+
+
+@api_router.get("/invoices/{invoice_id}/audit")
+async def audit_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
+    """Audit an invoice's applied_deposits in real time:
+    - Verify each deposit_id references an existing transaction
+    - Verify the transaction is approved and not soft-deleted
+    Returns a list of issues + the recomputed `applied_deposits` snapshot
+    so the caller knows whether a recalc is needed.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    invoice = await db.invoices.find_one(
+        {"id": invoice_id, "tenant_id": tid},
+        {"_id": 0, "id": 1, "invoice_number": 1, "applied_deposits": 1, "deposits_applied": 1, "customer_id": 1, "is_annulled": 1, "total_a_pagar": 1, "saldo_a_favor": 1}
+    )
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+    issues = []
+    valid_amount = 0.0
+    for dep in invoice.get("applied_deposits", []) or []:
+        dep_id = dep.get("deposit_id")
+        amount = dep.get("amount_applied", 0) or 0
+        if not dep_id:
+            issues.append({"type": "missing_id", "amount": amount, "description": dep.get("description") or ""})
+            continue
+        tx = await db.wallet_transactions.find_one(
+            {"id": dep_id, "tenant_id": tid},
+            {"_id": 0, "id": 1, "status": 1, "is_deleted": 1, "amount": 1}
+        )
+        if not tx:
+            issues.append({"type": "tx_not_found", "deposit_id": dep_id, "amount": amount})
+            continue
+        if tx.get("is_deleted"):
+            issues.append({"type": "tx_deleted", "deposit_id": dep_id, "amount": amount, "tx_status": tx.get("status")})
+            continue
+        if tx.get("status") != "approved":
+            issues.append({"type": "tx_not_approved", "deposit_id": dep_id, "amount": amount, "tx_status": tx.get("status")})
+            continue
+        if abs((tx.get("amount") or 0) - amount) > 0.01:
+            issues.append({"type": "amount_mismatch", "deposit_id": dep_id, "stored": amount, "actual": tx.get("amount")})
+            valid_amount += tx.get("amount") or 0
+            continue
+        valid_amount += amount
+
+    return {
+        "invoice_id": invoice_id,
+        "invoice_number": invoice.get("invoice_number"),
+        "is_annulled": bool(invoice.get("is_annulled")),
+        "deposits_applied_stored": round(invoice.get("deposits_applied", 0) or 0, 2),
+        "valid_deposits_amount": round(valid_amount, 2),
+        "issues": issues,
+        "needs_recalc": len(issues) > 0,
+    }
+
+
+@api_router.post("/invoices/{invoice_id}/recalc")
+async def recalc_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
+    """Run the deposit-assignment recalculation for the customer that owns this invoice.
+    Note: the chain is recalculated client-wide because deposits cascade, but the
+    caller's intent here is to repair this specific invoice's stale numbers."""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    invoice = await db.invoices.find_one(
+        {"id": invoice_id, "tenant_id": tid},
+        {"_id": 0, "id": 1, "customer_id": 1, "invoice_number": 1}
+    )
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    customer_id = invoice.get("customer_id")
+    if not customer_id:
+        raise HTTPException(status_code=400, detail="Factura sin customer_id, no se puede recalcular")
+
+    await recalculate_client_invoices(tid, customer_id)
+
+    refreshed = await db.invoices.find_one(
+        {"id": invoice_id, "tenant_id": tid},
+        {"_id": 0, "id": 1, "invoice_number": 1, "deposits_applied": 1, "total_a_pagar": 1, "saldo_a_favor": 1}
+    )
+    return {
+        "message": "Factura recalculada",
+        "invoice_id": invoice_id,
+        "invoice_number": invoice.get("invoice_number"),
+        "deposits_applied": (refreshed or {}).get("deposits_applied", 0),
+        "total_a_pagar": (refreshed or {}).get("total_a_pagar", 0),
+        "saldo_a_favor": (refreshed or {}).get("saldo_a_favor", 0),
+    }
+
 
 @api_router.put("/invoices/{invoice_id}/remove-item")
 async def remove_item_from_invoice(invoice_id: str, data: dict, current_user: dict = Depends(get_current_user)):

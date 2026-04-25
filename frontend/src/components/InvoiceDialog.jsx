@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, getClientAvailableDeposits, annulInvoice, updateInvoiceSaldoPendiente, updatePurchase, getTenantSettings } from "@/lib/api";
+import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, getClientAvailableDeposits, annulInvoice, updateInvoiceSaldoPendiente, updatePurchase, getTenantSettings, auditInvoice, recalcInvoice } from "@/lib/api";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info, Save, X } from "lucide-react";
+import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info, Save, X, ShieldCheck } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import QRCode from "qrcode";
@@ -50,6 +50,10 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
   const [invoices, setInvoices] = useState([]);
   const [viewMode, setViewMode] = useState("create"); // create, view, history
   const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [auditing, setAuditing] = useState(false);
+  const [auditResult, setAuditResult] = useState(null); // null | { issues, needs_recalc, ... }
+  const [auditDialogOpen, setAuditDialogOpen] = useState(false);
+  const [recalcing, setRecalcing] = useState(false);
   const [showShipmentPrompt, setShowShipmentPrompt] = useState(false);
   const [saldoPendiente, setSaldoPendiente] = useState("");
   const [autoPendingBalance, setAutoPendingBalance] = useState(0);
@@ -457,6 +461,40 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       console.error("PDF generation error:", error);
     } finally {
       setGeneratingPDF(false);
+    }
+  };
+
+  const handleAuditInvoice = async () => {
+    if (!currentInvoice) return;
+    setAuditing(true);
+    try {
+      const res = await auditInvoice(currentInvoice.id);
+      setAuditResult(res.data);
+      setAuditDialogOpen(true);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al auditar factura");
+    } finally {
+      setAuditing(false);
+    }
+  };
+
+  const handleRecalcInvoice = async () => {
+    if (!currentInvoice) return;
+    setRecalcing(true);
+    try {
+      await recalcInvoice(currentInvoice.id);
+      // Refresh invoice in-place so the UI shows corrected numbers immediately
+      try {
+        const fresh = await getInvoiceDetail(currentInvoice.id);
+        setCurrentInvoice(fresh.data);
+      } catch (_) { /* ignore refresh errors, we'll still close */ }
+      toast.success("Factura recalculada correctamente");
+      setAuditDialogOpen(false);
+      setAuditResult(null);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al recalcular");
+    } finally {
+      setRecalcing(false);
     }
   };
 
@@ -1402,6 +1440,21 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                     </>
                   )}
                 </Button>
+                <Button
+                  onClick={handleAuditInvoice}
+                  disabled={auditing}
+                  variant="ghost"
+                  size="icon"
+                  className="h-12 w-12 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  title="Auditar depósitos aplicados"
+                  data-testid="audit-invoice-btn"
+                >
+                  {auditing ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="h-5 w-5" />
+                  )}
+                </Button>
                 {currentInvoice.status === "approved" ? (
                   <Button
                     onClick={handleReopenInvoice}
@@ -1543,6 +1596,74 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                 </Button>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Audit Result Dialog */}
+        <Dialog open={auditDialogOpen} onOpenChange={setAuditDialogOpen}>
+          <DialogContent className="rounded-2xl max-w-md w-[95vw]" data-testid="audit-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ShieldCheck className={`h-5 w-5 ${auditResult?.needs_recalc ? 'text-amber-600' : 'text-green-600'}`} />
+                Auditoría de Factura
+              </DialogTitle>
+            </DialogHeader>
+            {auditResult ? (
+              <div className="space-y-3 pt-2 text-sm">
+                <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-slate-500">Almacenado</p>
+                    <p className="text-base font-extrabold text-slate-800">${(auditResult.deposits_applied_stored || 0).toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase font-semibold text-slate-500">Válido (real)</p>
+                    <p className={`text-base font-extrabold ${auditResult.needs_recalc ? 'text-amber-700' : 'text-green-700'}`}>
+                      ${(auditResult.valid_deposits_amount || 0).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+
+                {auditResult.needs_recalc ? (
+                  <>
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-amber-900">
+                      <p className="font-bold text-sm">{auditResult.issues.length} inconsistencia(s) detectada(s)</p>
+                      <ul className="text-xs mt-2 space-y-1 list-disc pl-4">
+                        {auditResult.issues.slice(0, 6).map((iss, idx) => {
+                          const labels = {
+                            tx_not_found: "Transacción no existe",
+                            tx_deleted: "Recarga eliminada",
+                            tx_not_approved: "No aprobada",
+                            amount_mismatch: "Monto diferente",
+                            missing_id: "Sin ID de depósito",
+                          };
+                          return (
+                            <li key={idx} data-testid="audit-issue">
+                              {labels[iss.type] || iss.type}
+                              {iss.amount != null ? ` — $${Number(iss.amount).toFixed(2)}` : ''}
+                              {iss.tx_status ? ` (${iss.tx_status})` : ''}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                    <Button
+                      onClick={handleRecalcInvoice}
+                      disabled={recalcing}
+                      className="w-full h-11 rounded-xl font-bold"
+                      style={{ background: '#1E3A5F', color: 'white' }}
+                      data-testid="audit-recalc-btn"
+                    >
+                      {recalcing ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />Recalculando...</>) : (<><RefreshCw className="h-4 w-4 mr-2" />Recalcular esta factura</>)}
+                    </Button>
+                  </>
+                ) : (
+                  <div className="rounded-xl bg-green-50 border border-green-200 p-3 text-green-900 text-sm font-semibold flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5" />
+                    Todo en orden — no se detectaron inconsistencias.
+                  </div>
+                )}
+              </div>
+            ) : null}
           </DialogContent>
         </Dialog>
       </DialogContent>
