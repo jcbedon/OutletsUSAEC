@@ -73,6 +73,7 @@ export default function AdminShipments() {
   const hasPermission = isAdmin || permissions.manage_shipments === true;
   
   const [shipments, setShipments] = useState([]);
+  const [customerFilter, setCustomerFilter] = useState("");
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [weekFilter, setWeekFilter] = useState("all");
@@ -577,7 +578,19 @@ export default function AdminShipments() {
     if (status !== "all") {
       filtered = filtered.filter(s => s.status === status);
     }
+    const code = customerFilter.trim().toUpperCase();
+    if (code) {
+      filtered = filtered.filter(s => (s.customer_id || "").toUpperCase().includes(code));
+    }
     return filtered;
+  };
+
+  // Total package count for a given filtered list (respects shipping_mode)
+  const sumPackages = (list) => {
+    return list.reduce((sum, s) => {
+      const qty = Number(s.package_count) || 0;
+      return sum + qty;
+    }, 0);
   };
 
   if (loading) {
@@ -1169,6 +1182,47 @@ export default function AdminShipments() {
             </>
           );
         })()}
+
+        {/* Customer filter — sticks to all status tabs */}
+        <div className="mb-4">
+          <div className="relative">
+            <Input
+              type="text"
+              value={customerFilter}
+              onChange={(e) => setCustomerFilter(e.target.value)}
+              placeholder="Filtrar por código de cliente (ej: J2934)"
+              className="h-11 rounded-xl pl-10 pr-24 bg-white border-slate-200 uppercase"
+              data-testid="shipments-customer-filter"
+            />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            {customerFilter.trim() && (
+              <button
+                type="button"
+                onClick={() => setCustomerFilter("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-500 hover:text-slate-800 px-2 py-1 rounded-md bg-slate-100"
+                data-testid="shipments-customer-filter-clear"
+              >
+                Limpiar
+              </button>
+            )}
+          </div>
+          {customerFilter.trim() && (() => {
+            const code = customerFilter.trim().toUpperCase();
+            const allForCustomer = shipments.filter(s => (s.customer_id || "").toUpperCase().includes(code));
+            const totalPkg = sumPackages(allForCustomer);
+            const mode = tenantSettings?.shipping_mode === "pounds" ? "lb" : "paq.";
+            return (
+              <div className="mt-2 rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 flex items-center justify-between" data-testid="shipments-customer-filter-summary">
+                <p className="text-xs text-blue-800">
+                  Cliente <span className="font-bold">{code}</span> · {allForCustomer.length} envío(s)
+                </p>
+                <p className="text-xs font-extrabold text-blue-900">
+                  {Number(totalPkg).toFixed(tenantSettings?.shipping_mode === "pounds" ? 1 : 0)} {mode}
+                </p>
+              </div>
+            );
+          })()}
+        </div>
 
         {/* Tabs */}
         <Tabs defaultValue="all" className="w-full">
