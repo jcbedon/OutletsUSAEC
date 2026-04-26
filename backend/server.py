@@ -1878,9 +1878,23 @@ async def request_deposit_with_proof(
 
     proof_url = None
     if file and file.filename:
-        file_data = await file.read()
-        obj_path = object_store.upload_file(file_data, file.filename, "proofs")
-        proof_url = f"/api/uploads/{obj_path}"
+        try:
+            file_data = await file.read()
+        except Exception as e:
+            logger.error(f"Failed to read uploaded proof file: {e}")
+            raise HTTPException(status_code=400, detail="No se pudo leer la imagen del comprobante. Intenta de nuevo o usa otra foto.")
+        # Reject obviously broken files (HEIC sometimes yields 0 bytes after iOS conversion)
+        if not file_data or len(file_data) < 100:
+            raise HTTPException(status_code=400, detail="El archivo del comprobante está vacío o dañado. Adjunta otra imagen.")
+        # Reject files larger than 10MB to keep the proxy from rejecting them silently
+        if len(file_data) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="La imagen es demasiado grande (máximo 10MB). Comprime la foto e intenta de nuevo.")
+        try:
+            obj_path = object_store.upload_file(file_data, file.filename, "proofs")
+            proof_url = f"/api/uploads/{obj_path}"
+        except Exception as e:
+            logger.error(f"Object store upload_file failed: {e}")
+            raise HTTPException(status_code=500, detail="No se pudo guardar el comprobante en el almacenamiento. Reintenta en unos segundos.")
 
     transaction = WalletTransaction(
         tenant_id=tid, user_id=user_id, customer_id=wallet["customer_id"],

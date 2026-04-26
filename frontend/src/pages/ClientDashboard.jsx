@@ -145,7 +145,21 @@ export default function ClientDashboard() {
       setDepositProofPreview(null);
       loadData();
     } catch (error) {
-      const msg = error.response?.data?.detail || "Error al enviar la solicitud";
+      console.error("[deposit-request] error:", error);
+      const detail = error.response?.data?.detail;
+      const status = error.response?.status;
+      let msg = detail;
+      if (!msg) {
+        if (status === 413 || error.message?.includes("size")) {
+          msg = "La imagen es demasiado grande (máx 10MB). Comprime la foto e intenta de nuevo.";
+        } else if (status === 401 || status === 403) {
+          msg = "Tu sesión expiró. Vuelve a iniciar sesión y reintenta.";
+        } else if (!error.response) {
+          msg = "Sin conexión al servidor. Revisa tu internet y reintenta.";
+        } else {
+          msg = "Error al enviar la solicitud. Inténtalo de nuevo.";
+        }
+      }
       toast.error(msg);
     } finally {
       setDepositSubmitting(false);
