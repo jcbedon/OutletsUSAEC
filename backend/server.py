@@ -1661,17 +1661,25 @@ async def get_pending_deposits(current_user: dict = Depends(get_current_user)):
     return result
 
 @api_router.get("/wallet/all-deposits")
-async def get_all_deposits(current_user: dict = Depends(get_current_user)):
+async def get_all_deposits(include_deleted: bool = False, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
-    transactions = await db.wallet_transactions.find(
-        {"type": "deposit", "tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}
-    ).sort("created_at", -1).to_list(500)
+    query = {"type": "deposit", "tenant_id": tid}
+    if not include_deleted:
+        query["is_deleted"] = {"$ne": True}
+    transactions = await db.wallet_transactions.find(query, {"_id": 0}).sort("created_at", -1).to_list(2000)
     result = []
     for t in transactions:
         user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
-        result.append({**t, "user_name": user["name"] if user else "Unknown"})
+        result.append({
+            **t,
+            "user_name": user["name"] if user else "Unknown",
+            # `customer_id` lookup goes through the user; expose it directly so the frontend
+            # can filter/search on it without an extra round-trip. RECARGAS view used this
+            # field but it was missing — caused customer-code searches to return zero matches.
+            "customer_id": user["customer_id"] if user else None,
+        })
     return result
 
 @api_router.get("/wallet/deleted-deposits")

@@ -31,6 +31,7 @@ export default function AdminWallet() {
   const [scanningDeposit, setScanningDeposit] = useState(null);
   const [scanResults, setScanResults] = useState({}); // {depositId: {detected_reference_number, detected_amount, matches_reference, ...}}
   const [allDeposits, setAllDeposits] = useState([]);
+  const [includeDeleted, setIncludeDeleted] = useState(false);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [approving, setApproving] = useState(null);
@@ -83,13 +84,13 @@ export default function AdminWallet() {
 
   useEffect(() => { 
     loadData(); 
-  }, []);
+  }, [includeDeleted]);
 
   const loadData = async () => {
     try {
       const [pendingRes, allRes, clientsRes, deletedRes] = await Promise.all([
         getPendingDeposits(),
-        getAllDeposits(),
+        getAllDeposits(includeDeleted),
         getAllClients(),
         getDeletedDeposits().catch(() => ({ data: [] }))
       ]);
@@ -835,28 +836,39 @@ export default function AdminWallet() {
 
         {/* History Filters */}
         {showHistory && (
-          <div className="flex gap-3 mb-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input 
-                placeholder="Buscar por nombre o ID..."
-                value={historySearch}
-                onChange={(e) => setHistorySearch(e.target.value)}
-                className="pl-9 rounded-xl"
-                data-testid="history-search-input"
-              />
+          <div className="space-y-3 mb-4">
+            <div className="flex gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input 
+                  placeholder="Buscar por nombre o ID..."
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  className="pl-9 rounded-xl"
+                  data-testid="history-search-input"
+                />
+              </div>
+              <Select value={historyFilter} onValueChange={setHistoryFilter}>
+                <SelectTrigger className="w-40 rounded-xl" data-testid="history-filter-trigger">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="approved">Aprobados</SelectItem>
+                  <SelectItem value="pending">Pendientes</SelectItem>
+                  <SelectItem value="rejected">Rechazados</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <Select value={historyFilter} onValueChange={setHistoryFilter}>
-              <SelectTrigger className="w-40 rounded-xl" data-testid="history-filter-trigger">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                <SelectItem value="approved">Aprobados</SelectItem>
-                <SelectItem value="pending">Pendientes</SelectItem>
-                <SelectItem value="rejected">Rechazados</SelectItem>
-              </SelectContent>
-            </Select>
+            <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none" data-testid="history-include-deleted-toggle">
+              <input
+                type="checkbox"
+                checked={includeDeleted}
+                onChange={(e) => setIncludeDeleted(e.target.checked)}
+                className="rounded border-slate-300"
+              />
+              Incluir recargas eliminadas en el listado (las verás marcadas)
+            </label>
           </div>
         )}
 
@@ -1078,14 +1090,17 @@ export default function AdminWallet() {
                 {filteredHistory.map((deposit) => {
                   const proofUrl = getProofUrl(deposit);
                   return (
-                    <Card key={deposit.id} className="rounded-xl" data-testid="history-deposit-item">
+                    <Card key={deposit.id} className={`rounded-xl ${deposit.is_deleted ? 'opacity-70 border-dashed border-2 border-red-200' : ''}`} data-testid="history-deposit-item">
                       <CardContent className="p-4">
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <Badge variant="outline" className="font-bold text-xs">#{deposit.customer_id}</Badge>
                               <span className="font-semibold text-slate-800">{deposit.user_name}</span>
                               {getStatusBadge(deposit.status)}
+                              {deposit.is_deleted && (
+                                <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px] uppercase font-bold" data-testid="deposit-deleted-badge">Eliminada</Badge>
+                              )}
                             </div>
                             <p className="text-sm text-gray-500">{deposit.description}</p>
                             <p className="text-xs text-gray-400 mt-1">
