@@ -686,6 +686,45 @@ async def register_user(data: UserRegister):
         "tenant_logo": tenant.get("logo_url")
     }
 
+@api_router.get("/auth/me")
+async def auth_me(current_user: dict = Depends(get_current_user)):
+    """Return the freshest version of the authenticated user's profile.
+    Used by the frontend to refresh cached permissions when an admin updates them
+    server-side after the employee has already logged in."""
+    role = current_user.get("role")
+    profile = None
+    if role == "employee":
+        profile = await db.employees.find_one(
+            {"id": current_user["user_id"]},
+            {"_id": 0, "password_hash": 0}
+        )
+    if not profile:
+        profile = await db.users.find_one(
+            {"id": current_user["user_id"]},
+            {"_id": 0, "password_hash": 0}
+        )
+    if not profile:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    tenant_name = None
+    tenant_logo = None
+    if profile.get("tenant_id"):
+        tenant = await db.tenants.find_one({"id": profile["tenant_id"]}, {"_id": 0, "business_name": 1, "logo_url": 1})
+        if tenant:
+            tenant_name = tenant.get("business_name")
+            tenant_logo = tenant.get("logo_url")
+    return {
+        "user_id": profile["id"],
+        "name": profile.get("name"),
+        "role": role or profile.get("role"),
+        "tenant_id": profile.get("tenant_id"),
+        "tenant_name": tenant_name,
+        "tenant_logo": tenant_logo,
+        "permissions": profile.get("permissions") or {},
+        "customer_id": profile.get("customer_id"),
+        "email": profile.get("email"),
+    }
+
+
 @api_router.post("/auth/login")
 async def login_user(login_data: UserLogin):
     identifier = login_data.identifier.strip()

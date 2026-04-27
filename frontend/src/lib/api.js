@@ -49,6 +49,7 @@ export const setDepositAmount = (transactionId, amount) => api.put(`/wallet/depo
 export const scanDepositProof = (transactionId) => api.post(`/wallet/deposit/${transactionId}/scan-proof`);
 export const rejectDeposit = (transactionId) => api.post(`/wallet/reject-deposit/${transactionId}`);
 export const getAllDeposits = (includeDeleted = false) => api.get(`/wallet/all-deposits?include_deleted=${includeDeleted ? 'true' : 'false'}`);
+export const authMe = () => api.get("/auth/me");
 export const adminBalanceAdjustment = (data) => api.post("/wallet/admin-adjustment", data);
 export const adminCreateRecharge = (formData) => api.post("/wallet/admin-recharge", formData, { headers: { "Content-Type": "multipart/form-data" } });
 export const getRechargeReport = () => api.get("/wallet/recharge-report");

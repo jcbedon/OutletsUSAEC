@@ -34,7 +34,22 @@ const AuthProvider = ({ children }) => {
   useEffect(() => {
     const storedUser = localStorage.getItem("outletsusa_user");
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      const parsed = JSON.parse(storedUser);
+      setUser(parsed);
+      // Refresh permissions and profile from server in the background.
+      // Fixes stale localStorage when an admin updates an employee's permissions
+      // while their session is still active.
+      import("@/lib/api").then(({ authMe }) => {
+        authMe()
+          .then((res) => {
+            const fresh = { ...parsed, ...res.data };
+            // Preserve token (not returned by /auth/me)
+            if (parsed.token) fresh.token = parsed.token;
+            setUser(fresh);
+            localStorage.setItem("outletsusa_user", JSON.stringify(fresh));
+          })
+          .catch(() => {/* keep cached user if refresh fails (offline, expired token, etc.) */});
+      });
     }
     setLoading(false);
   }, []);
