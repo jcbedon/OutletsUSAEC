@@ -20,6 +20,7 @@ import AdminStats from "@/pages/AdminStats";
 import AdminEmployees from "@/pages/AdminEmployees";
 import AdminAuditLog from "@/pages/AdminAuditLog";
 import AdminInvoices from "@/pages/AdminInvoices";
+import AdminPackagesReport from "@/pages/AdminPackagesReport";
 import SuperadminDashboard from "@/pages/SuperadminDashboard";
 
 const AuthContext = createContext(null);
@@ -111,6 +112,7 @@ function App() {
           <Route path="/admin/employees" element={<ProtectedRoute allowedRoles={["admin"]}><AdminEmployees /></ProtectedRoute>} />
           <Route path="/admin/audit" element={<ProtectedRoute allowedRoles={["admin"]}><AdminAuditLog /></ProtectedRoute>} />
           <Route path="/admin/invoices" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminInvoices /></ProtectedRoute>} />
+          <Route path="/admin/packages-report" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminPackagesReport /></ProtectedRoute>} />
 
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />

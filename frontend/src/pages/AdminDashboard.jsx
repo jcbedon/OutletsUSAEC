@@ -230,10 +230,10 @@ export default function AdminDashboard() {
             { key: "sales", icon: DollarSign, value: `$${summary?.total_sales?.toFixed(0) || 0}`, label: "Ventas", bg: "bg-green-50", iconBg: "rgba(46,204,113,0.1)", iconColor: "#2ECC71", prefix: "" },
             { key: "commissions", icon: TrendingUp, value: `$${summary?.total_commissions?.toFixed(0) || 0}`, label: "Comisiones", bg: "bg-yellow-50", iconBg: "rgba(234,179,8,0.1)", iconColor: "#ca8a04", prefix: "" },
             { key: "shipments", icon: Truck, value: `$${summary?.total_shipping?.toFixed(0) || 0}`, label: "Envios", bg: "bg-purple-50", iconBg: "rgba(147,51,234,0.1)", iconColor: "#9333ea", prefix: "" },
-            { key: "packages", icon: Package, value: summary?.total_packages || 0, label: "Paquetes", bg: "bg-orange-50", iconBg: "rgba(249,115,22,0.1)", iconColor: "#ea580c", prefix: "" },
+            { key: "packages", icon: Package, value: summary?.total_packages || 0, label: "Paquetes", bg: "bg-orange-50", iconBg: "rgba(249,115,22,0.1)", iconColor: "#ea580c", prefix: "", onClick: () => navigate("/admin/packages-report") },
             { key: "buyers", icon: ShoppingBag, value: summary?.buyers_count || 0, label: "Compraron", bg: "bg-teal-50", iconBg: "rgba(20,184,166,0.1)", iconColor: "#0d9488", prefix: "", onClick: openBuyersReport },
           ].map((stat) => (
-            <div key={stat.key} className={`${stat.bg} rounded-xl p-3 text-center ${stat.onClick ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-teal-300 transition-all' : ''}`} data-testid={`stat-${stat.key}`} onClick={stat.onClick}>
+            <div key={stat.key} className={`${stat.bg} rounded-xl p-3 text-center ${stat.onClick ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-slate-300 transition-all' : ''}`} data-testid={`stat-${stat.key}`} onClick={stat.onClick}>
               <div className="w-8 h-8 rounded-lg flex items-center justify-center mx-auto mb-1.5" style={{ background: stat.iconBg }}>
                 <stat.icon className="h-4 w-4" style={{ color: stat.iconColor }} />
               </div>
