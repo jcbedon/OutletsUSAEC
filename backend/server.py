@@ -5082,6 +5082,28 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         {"$group": {"_id": "$customer_id", "total_saldo": {"$sum": "$saldo_pendiente"}}}
     ]).to_list(len(cust_ids) or 1)
     saldo_pend_dict = {s["_id"]: s["total_saldo"] for s in saldo_pend_agg}
+
+    # Latest non-annulled invoice per customer (date + total_a_pagar of just that invoice).
+    # We use this so the debts table can show "deuda según la última factura" instead of
+    # the cumulative pendiente, which is what the user requested.
+    last_inv_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": {"$in": cust_ids}, "is_annulled": {"$ne": True}}},
+        {"$sort": {"created_at": -1}},
+        {"$group": {
+            "_id": "$customer_id",
+            "last_date": {"$first": "$created_at"},
+            "last_total_a_pagar": {"$first": "$total_a_pagar"},
+            "last_invoice_number": {"$first": "$invoice_number"},
+        }}
+    ]).to_list(len(cust_ids) or 1)
+    last_inv_dict = {
+        x["_id"]: {
+            "date": x.get("last_date"),
+            "amount": float(x.get("last_total_a_pagar") or 0),
+            "number": x.get("last_invoice_number"),
+        }
+        for x in last_inv_agg
+    }
     
     for client in clients:
         uid = client["id"]
@@ -5116,7 +5138,12 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
             "pending_balance": pending_balance,
             "debt_amount": debt_amount,
             "purchase_count": purch["purchase_count"],
-            "shipment_count": ship["shipment_count"]
+            "shipment_count": ship["shipment_count"],
+            # Per-customer latest invoice info — used by the debts table
+            # to show "what is owed on the last invoice" rather than a cumulative figure.
+            "last_invoice_date": (last_inv_dict.get(client.get("customer_id")) or {}).get("date"),
+            "last_invoice_amount": (last_inv_dict.get(client.get("customer_id")) or {}).get("amount", 0),
+            "last_invoice_number": (last_inv_dict.get(client.get("customer_id")) or {}).get("number"),
         })
     
     # Sort by debt amount (highest first), then by pending_balance (most negative first)

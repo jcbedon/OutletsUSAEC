@@ -110,10 +110,14 @@ export default function AdminStats() {
       let comparison = 0;
       switch (sortBy) {
         case "debt":
-          comparison = b.debt_amount - a.debt_amount;
+          // Highest debt first: use last_invoice_amount fallback to debt_amount
+          comparison = (b.last_invoice_amount || b.debt_amount || 0) - (a.last_invoice_amount || a.debt_amount || 0);
           break;
         case "name":
           comparison = a.name.localeCompare(b.name);
+          break;
+        case "code":
+          comparison = (a.customer_id || "").localeCompare(b.customer_id || "");
           break;
         case "date":
           comparison = new Date(b.created_at) - new Date(a.created_at);
@@ -121,6 +125,13 @@ export default function AdminStats() {
         case "balance":
           comparison = a.pending_balance - b.pending_balance;
           break;
+        case "days_unpaid": {
+          // Most days without paying first.
+          const dA = a.last_invoice_date ? Math.floor((Date.now() - new Date(a.last_invoice_date)) / 86400000) : -1;
+          const dB = b.last_invoice_date ? Math.floor((Date.now() - new Date(b.last_invoice_date)) / 86400000) : -1;
+          comparison = dB - dA;
+          break;
+        }
         default:
           comparison = b.debt_amount - a.debt_amount;
       }
@@ -539,12 +550,23 @@ export default function AdminStats() {
               {/* Clients Table with sortable headers */}
               <Card className="rounded-xl">
                 <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <CardTitle className="text-lg flex items-center gap-2">
                       <Users className="h-5 w-5 text-slate-600" />
                       Detalle de Clientes
                     </CardTitle>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value)}
+                        className="border rounded-md px-2 py-1 text-sm bg-white"
+                        data-testid="debts-sort-select"
+                      >
+                        <option value="days_unpaid">Días sin pagar</option>
+                        <option value="debt">Deuda más grande</option>
+                        <option value="name">Nombre (A-Z)</option>
+                        <option value="code">Código (A-Z)</option>
+                      </select>
                       <span className="text-sm text-gray-500">Mostrar:</span>
                       <select
                         value={tableLimit}
@@ -560,57 +582,83 @@ export default function AdminStats() {
                       </select>
                     </div>
                   </div>
+                  <div className="mt-3">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="Filtrar por código de cliente o nombre"
+                        className="h-9 rounded-lg pl-9 text-sm"
+                        data-testid="debts-customer-filter"
+                      />
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b bg-gray-50">
-                          <th 
-                            className="text-left p-2 font-medium cursor-pointer hover:bg-gray-100"
-                            onClick={() => handleSort("name")}
-                          >
-                            Cliente <SortIcon column="name" />
-                          </th>
+                          <th className="text-left p-2 font-medium">Cliente</th>
                           <th className="text-left p-2 font-medium">ID</th>
-                          <th 
-                            className="text-left p-2 font-medium hidden md:table-cell cursor-pointer hover:bg-gray-100"
-                            onClick={() => handleSort("date")}
-                          >
-                            Registrado <SortIcon column="date" />
-                          </th>
-                          <th className="text-right p-2 font-medium">Wallet</th>
-                          <th className="text-right p-2 font-medium">Envios</th>
-                          <th 
-                            className="text-right p-2 font-medium cursor-pointer hover:bg-gray-100"
-                            onClick={() => handleSort("balance")}
-                          >
-                            Balance <SortIcon column="balance" />
-                          </th>
+                          <th className="text-right p-2 font-medium">Última Factura</th>
+                          <th className="text-right p-2 font-medium">Fecha</th>
+                          <th className="text-right p-2 font-medium">Estado</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredClients.slice(0, tableLimit).map((client) => (
-                          <tr key={client.id} className={`border-b hover:bg-gray-50 ${client.debt_amount > 0 ? 'bg-red-50/50' : ''}`}>
-                            <td className="p-2">
-                              <div className="font-medium text-slate-800">{client.name}</div>
-                              <div className="text-xs text-gray-500">{client.whatsapp}</div>
-                            </td>
-                            <td className="p-2">
-                              <Badge variant="outline" className="text-xs">{client.customer_id}</Badge>
-                            </td>
-                            <td className="p-2 text-gray-600 hidden md:table-cell">
-                              {client.created_at ? new Date(client.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
-                            </td>
-                            <td className="p-2 text-right font-medium text-blue-600">{formatMoney(client.wallet_balance)}</td>
-                            <td className="p-2 text-right font-medium text-purple-600">{formatMoney(client.total_shipping)}</td>
-                            <td className="p-2 text-right">
-                              <span className={`font-bold ${client.pending_balance < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                {client.pending_balance < 0 ? `-${formatMoney(Math.abs(client.pending_balance))}` : formatMoney(client.pending_balance)}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
+                        {filteredClients.slice(0, tableLimit).map((client) => {
+                          // "Última factura" amount — what the user wants displayed:
+                          // total_a_pagar of just the last non-annulled invoice.
+                          const lastAmount = Number(client.last_invoice_amount || 0);
+                          const lastDateStr = client.last_invoice_date;
+                          const daysUnpaid = lastDateStr
+                            ? Math.floor((Date.now() - new Date(lastDateStr)) / 86400000)
+                            : null;
+                          let statusLabel = "Sin factura";
+                          let statusClass = "text-slate-400";
+                          if (daysUnpaid !== null && lastAmount > 0) {
+                            if (daysUnpaid > 5) {
+                              statusLabel = `Más de 5 días sin pagar — LIQUIDAR (${daysUnpaid}d)`;
+                              statusClass = "text-red-600 font-bold";
+                            } else if (daysUnpaid > 2) {
+                              statusLabel = `Más de 2 días sin pagar (${daysUnpaid}d)`;
+                              statusClass = "text-orange-600 font-semibold";
+                            } else {
+                              statusLabel = `Menos de 2 días sin pagar (${daysUnpaid}d)`;
+                              statusClass = "text-green-600 font-semibold";
+                            }
+                          } else if (daysUnpaid !== null && lastAmount === 0) {
+                            statusLabel = "Al día";
+                            statusClass = "text-green-600 font-semibold";
+                          }
+                          return (
+                            <tr key={client.id} className={`border-b hover:bg-gray-50 ${lastAmount > 0 && daysUnpaid !== null && daysUnpaid > 5 ? 'bg-red-50/50' : ''}`} data-testid={`debts-row-${client.customer_id}`}>
+                              <td className="p-2">
+                                <div className="font-medium text-slate-800">{client.name}</div>
+                                <div className="text-xs text-gray-500">{client.whatsapp}</div>
+                              </td>
+                              <td className="p-2">
+                                <Badge variant="outline" className="text-xs">{client.customer_id}</Badge>
+                              </td>
+                              <td className="p-2 text-right">
+                                <span className={`font-bold ${lastAmount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                  {formatMoney(lastAmount)}
+                                </span>
+                                {client.last_invoice_number && (
+                                  <div className="text-[10px] text-gray-400">{client.last_invoice_number}</div>
+                                )}
+                              </td>
+                              <td className="p-2 text-right text-gray-600">
+                                {lastDateStr ? new Date(lastDateStr).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                              </td>
+                              <td className={`p-2 text-right text-xs ${statusClass}`} data-testid={`debts-status-${client.customer_id}`}>
+                                {statusLabel}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                     {filteredClients.length > tableLimit && (
