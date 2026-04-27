@@ -5024,6 +5024,71 @@ async def get_all_purchases_report(current_user: dict = Depends(get_current_user
 
 # ==================== CLIENT DEBTS REPORT ====================
 
+@api_router.get("/admin/reports/invoices-without-shipment")
+async def get_invoices_without_shipment(current_user: dict = Depends(get_current_user)):
+    """List invoices that don't have an assigned shipment yet, grouped by client.
+    Used by the Envíos card on the dashboard to surface invoices that still need
+    a shipment created (i.e., shipping cost not yet charged)."""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    # Find invoices in tenant that are not annulled and have neither a shipment_id
+    # nor a recorded shipping_cost. shipping_cost > 0 means a shipment was already
+    # assigned at some point (covers legacy data where shipment_id was dropped).
+    invoices = await db.invoices.find(
+        {
+            "tenant_id": tid,
+            "is_annulled": {"$ne": True},
+            "$and": [
+                {"$or": [{"shipment_id": None}, {"shipment_id": {"$exists": False}}]},
+                {"$or": [{"shipping_cost": 0}, {"shipping_cost": None}, {"shipping_cost": {"$exists": False}}]},
+            ],
+        },
+        {"_id": 0, "id": 1, "invoice_number": 1, "customer_id": 1, "total": 1, "total_a_pagar": 1, "created_at": 1, "status": 1}
+    ).sort("created_at", -1).to_list(2000)
+
+    if not invoices:
+        return {"clients": [], "invoices_count": 0, "clients_count": 0}
+
+    # Resolve customer names from users collection in one pass
+    cust_ids = list({inv.get("customer_id") for inv in invoices if inv.get("customer_id")})
+    users = await db.users.find(
+        {"customer_id": {"$in": cust_ids}, "tenant_id": tid, "role": "client"},
+        {"_id": 0, "customer_id": 1, "name": 1, "whatsapp": 1}
+    ).to_list(len(cust_ids) or 1)
+    name_map = {u["customer_id"]: u for u in users}
+
+    grouped: dict[str, dict] = {}
+    for inv in invoices:
+        cid = inv.get("customer_id") or "—"
+        if cid not in grouped:
+            u = name_map.get(cid, {})
+            grouped[cid] = {
+                "customer_id": cid,
+                "name": u.get("name", ""),
+                "whatsapp": u.get("whatsapp", ""),
+                "invoices": [],
+                "total_pending": 0.0,
+            }
+        grouped[cid]["invoices"].append({
+            "id": inv["id"],
+            "invoice_number": inv.get("invoice_number"),
+            "total": float(inv.get("total") or 0),
+            "total_a_pagar": float(inv.get("total_a_pagar") or 0),
+            "created_at": inv.get("created_at"),
+            "status": inv.get("status"),
+        })
+        grouped[cid]["total_pending"] += float(inv.get("total_a_pagar") or 0)
+
+    clients_list = sorted(grouped.values(), key=lambda c: len(c["invoices"]), reverse=True)
+    return {
+        "clients": clients_list,
+        "invoices_count": len(invoices),
+        "clients_count": len(clients_list),
+    }
+
+
 @api_router.get("/admin/reports/clients-debts")
 async def get_clients_debts_report(current_user: dict = Depends(get_current_user)):
     """Get detailed report of client debts including creation date and pending balance"""

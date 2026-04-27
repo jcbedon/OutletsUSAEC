@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/App";
 import { searchInvoices, annulInvoice, getInvoiceDetail, getAllClients, getMyTenant, recalculateAllInvoices } from "@/lib/api";
 import { toast } from "sonner";
@@ -33,6 +33,7 @@ const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo
 
 export default function AdminInvoices() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const logoUrl = user?.tenant_logo || DEFAULT_LOGO;
   const [loading, setLoading] = useState(false);
@@ -70,6 +71,26 @@ export default function AdminInvoices() {
   useEffect(() => {
     loadInvoices();
   }, [activeTab]);
+
+  // If navigated here with ?invoice_id=..., auto-open that invoice once loaded.
+  useEffect(() => {
+    const invoiceId = searchParams.get("invoice_id");
+    if (!invoiceId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await getInvoiceDetail(invoiceId);
+        if (cancelled) return;
+        setExistingInvoiceToView(res.data);
+        setSelectedClientForInvoice(null);
+        setInvoiceDialogOpen(true);
+      } catch (_) {
+        // Silent: if the invoice can't be opened, stay on the list.
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.get("invoice_id")]);
 
   const loadInvoices = async (query = searchQuery) => {
     try {

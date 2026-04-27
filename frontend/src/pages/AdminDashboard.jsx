@@ -229,7 +229,7 @@ export default function AdminDashboard() {
             { key: "clients", icon: Users, value: summary?.client_count || 0, label: "Clientes", bg: "bg-slate-50", iconBg: "rgba(30,58,95,0.1)", iconColor: "#1E3A5F", prefix: "" },
             { key: "sales", icon: DollarSign, value: `$${summary?.total_sales?.toFixed(0) || 0}`, label: "Ventas", bg: "bg-green-50", iconBg: "rgba(46,204,113,0.1)", iconColor: "#2ECC71", prefix: "" },
             { key: "commissions", icon: TrendingUp, value: `$${summary?.total_commissions?.toFixed(0) || 0}`, label: "Comisiones", bg: "bg-yellow-50", iconBg: "rgba(234,179,8,0.1)", iconColor: "#ca8a04", prefix: "" },
-            { key: "shipments", icon: Truck, value: `$${summary?.total_shipping?.toFixed(0) || 0}`, label: "Envios", bg: "bg-purple-50", iconBg: "rgba(147,51,234,0.1)", iconColor: "#9333ea", prefix: "" },
+            { key: "shipments", icon: Truck, value: `$${summary?.total_shipping?.toFixed(0) || 0}`, label: "Envios", bg: "bg-purple-50", iconBg: "rgba(147,51,234,0.1)", iconColor: "#9333ea", prefix: "", onClick: () => navigate("/admin/pending-shipments") },
             { key: "packages", icon: Package, value: summary?.total_packages || 0, label: "Paquetes", bg: "bg-orange-50", iconBg: "rgba(249,115,22,0.1)", iconColor: "#ea580c", prefix: "", onClick: () => navigate("/admin/packages-report") },
             { key: "buyers", icon: ShoppingBag, value: summary?.buyers_count || 0, label: "Compraron", bg: "bg-teal-50", iconBg: "rgba(20,184,166,0.1)", iconColor: "#0d9488", prefix: "", onClick: openBuyersReport },
           ].map((stat) => (
