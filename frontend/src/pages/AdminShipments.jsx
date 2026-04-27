@@ -1131,7 +1131,7 @@ export default function AdminShipments() {
                         <SelectItem value="all">Todas las semanas</SelectItem>
                         {weekList.map(([key, w]) => (
                           <SelectItem key={key} value={key} className="text-xs">
-                            {w.label} ({w.count}) · ${w.total.toFixed(0)}
+                            {w.label} ({w.count})
                           </SelectItem>
                         ))}
                       </SelectContent>
