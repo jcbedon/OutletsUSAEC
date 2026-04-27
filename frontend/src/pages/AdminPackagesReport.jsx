@@ -10,6 +10,9 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
   ArrowLeft, Package, Search, Users, Layers, DollarSign,
 } from "lucide-react";
 
@@ -50,6 +53,8 @@ export default function AdminPackagesReport() {
   const [weekFilter, setWeekFilter] = useState("all");
   const [customerFilter, setCustomerFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [customerListDialog, setCustomerListDialog] = useState(null); // {label, customers: [{customer_id, name}]}
+  const [detailCustomerFilter, setDetailCustomerFilter] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -119,17 +124,22 @@ export default function AdminPackagesReport() {
       if (custName && !byCustomer[custId].name) byCustomer[custId].name = custName;
 
       // by category
-      if (!byCategory[catKey]) byCategory[catKey] = { key: catKey, label: cat?.label || catKey, qty: 0, cost: 0, customers: new Set() };
+      if (!byCategory[catKey]) byCategory[catKey] = { key: catKey, label: cat?.label || catKey, qty: 0, cost: 0, customers: new Map() };
       byCategory[catKey].qty += qty;
       byCategory[catKey].cost += cost;
-      byCategory[catKey].customers.add(custId);
+      // Map customer_id -> name (stored once per category) so we can show the list later.
+      if (!byCategory[catKey].customers.has(custId)) byCategory[catKey].customers.set(custId, custName || "");
     });
 
     return {
       grandQty,
       grandCost,
       byCustomer: Object.values(byCustomer).sort((a, b) => b.total_qty - a.total_qty),
-      byCategory: Object.values(byCategory).map((c) => ({ ...c, customer_count: c.customers.size })).sort((a, b) => b.qty - a.qty),
+      byCategory: Object.values(byCategory).map((c) => ({
+        ...c,
+        customer_count: c.customers.size,
+        customers_list: Array.from(c.customers.entries()).map(([id, name]) => ({ customer_id: id, name })).sort((a, b) => a.customer_id.localeCompare(b.customer_id)),
+      })).sort((a, b) => b.qty - a.qty),
     };
   }, [filtered, categories]);
 
@@ -260,22 +270,33 @@ export default function AdminPackagesReport() {
               <p className="text-xs text-slate-500 text-center py-4">Sin datos para esta semana.</p>
             ) : (
               <div className="space-y-2">
+                {/* Header */}
+                <div className="grid grid-cols-12 gap-2 px-3 py-2 text-[10px] uppercase font-bold text-slate-500 border-b border-slate-200">
+                  <div className="col-span-5">Categoría</div>
+                  <div className="col-span-2 text-center">Cant. de Paquetes</div>
+                  <div className="col-span-2 text-center">Cant. de Clientes</div>
+                  <div className="col-span-3 text-right">Total a Pagar</div>
+                </div>
                 {summary.byCategory.map((cat) => (
                   <div key={cat.key} className="grid grid-cols-12 gap-2 items-center bg-slate-50 rounded-xl px-3 py-2 text-xs" data-testid={`cat-row-${cat.key}`}>
-                    <div className="col-span-5 min-w-0">
-                      <Badge variant="outline" className="font-mono mr-1">{cat.key}</Badge>
-                      <span className="text-slate-700 font-semibold truncate">{cat.label}</span>
+                    <div className="col-span-5 min-w-0 flex items-center gap-2">
+                      <Badge variant="outline" className="font-mono">{cat.key}</Badge>
+                      <span className="text-slate-700 font-semibold whitespace-normal">{cat.label}</span>
                     </div>
                     <div className="col-span-2 text-center">
-                      <p className="text-[9px] uppercase text-slate-500">Cant.</p>
                       <p className="font-extrabold text-slate-800">{fmtQty(cat.qty)}</p>
                     </div>
                     <div className="col-span-2 text-center">
-                      <p className="text-[9px] uppercase text-slate-500">Clientes</p>
-                      <p className="font-extrabold text-slate-800">{cat.customer_count}</p>
+                      <button
+                        type="button"
+                        onClick={() => setCustomerListDialog({ label: cat.label, customers: cat.customers_list })}
+                        className="font-extrabold text-blue-700 hover:underline"
+                        data-testid={`cat-${cat.key}-clients-btn`}
+                      >
+                        {cat.customer_count}
+                      </button>
                     </div>
                     <div className="col-span-3 text-right">
-                      <p className="text-[9px] uppercase text-slate-500">Total</p>
                       <p className="font-extrabold text-purple-700">${cat.cost.toFixed(2)}</p>
                     </div>
                   </div>
@@ -288,45 +309,88 @@ export default function AdminPackagesReport() {
         {/* By Customer */}
         <Card className="rounded-2xl">
           <CardContent className="p-4">
-            <h2 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-              <Users className="h-4 w-4" /> Detalle por Cliente
-            </h2>
-            {summary.byCustomer.length === 0 ? (
-              <p className="text-xs text-slate-500 text-center py-4">Sin datos para esta semana.</p>
-            ) : (
-              <div className="space-y-3">
-                {summary.byCustomer.map((cust) => (
-                  <div key={cust.customer_id} className="rounded-xl border border-slate-100 bg-white" data-testid={`cust-row-${cust.customer_id}`}>
-                    <div className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-t-xl">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <Badge variant="outline" className="font-mono">{cust.customer_id}</Badge>
-                        <span className="text-xs font-semibold text-slate-700 truncate">{cust.name || ""}</span>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[10px] uppercase font-bold text-slate-500">Total</p>
-                        <p className="text-sm font-extrabold text-purple-700">${cust.total_cost.toFixed(2)} · {fmtQty(cust.total_qty)} {unitLabel}</p>
-                      </div>
-                    </div>
-                    <div className="px-3 py-2 space-y-1.5">
-                      {Object.entries(cust.by_cat).map(([catKey, c]) => (
-                        <div key={catKey} className="flex items-center justify-between text-xs" data-testid={`cust-${cust.customer_id}-cat-${catKey}`}>
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Badge variant="outline" className="font-mono text-[10px]">{catKey}</Badge>
-                            <span className="text-slate-600 truncate">{c.label}</span>
-                          </div>
-                          <div className="flex items-center gap-3 flex-shrink-0">
-                            <span className="text-slate-700 font-bold">{fmtQty(c.qty)} {unitLabel}</span>
-                            <span className="text-purple-700 font-extrabold">${c.cost.toFixed(2)}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <Users className="h-4 w-4" /> Detalle por Cliente
+              </h2>
+              <div className="relative w-full sm:w-56">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <Input
+                  value={detailCustomerFilter}
+                  onChange={(e) => setDetailCustomerFilter(e.target.value)}
+                  placeholder="Filtrar por código"
+                  className="h-9 rounded-xl pl-8 text-xs uppercase"
+                  data-testid="detail-customer-filter"
+                />
               </div>
-            )}
+            </div>
+            {(() => {
+              const code = detailCustomerFilter.trim().toUpperCase();
+              const list = code
+                ? summary.byCustomer.filter((c) => c.customer_id.includes(code))
+                : summary.byCustomer;
+              if (list.length === 0) {
+                return <p className="text-xs text-slate-500 text-center py-4">Sin datos para esta búsqueda.</p>;
+              }
+              return (
+                <div className="space-y-3">
+                  {list.map((cust) => (
+                    <div key={cust.customer_id} className="rounded-xl border border-slate-100 bg-white" data-testid={`cust-row-${cust.customer_id}`}>
+                      <div className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-t-xl">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Badge variant="outline" className="font-mono">{cust.customer_id}</Badge>
+                          <span className="text-xs font-bold text-slate-800 truncate" data-testid={`cust-${cust.customer_id}-name`}>
+                            {cust.name || "Sin nombre"}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] uppercase font-bold text-slate-500">Total</p>
+                          <p className="text-sm font-extrabold text-purple-700">${cust.total_cost.toFixed(2)} · {fmtQty(cust.total_qty)} {unitLabel}</p>
+                        </div>
+                      </div>
+                      <div className="px-3 py-2 space-y-1.5">
+                        {Object.entries(cust.by_cat).map(([catKey, c]) => (
+                          <div key={catKey} className="flex items-center justify-between text-xs" data-testid={`cust-${cust.customer_id}-cat-${catKey}`}>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <Badge variant="outline" className="font-mono text-[10px]">{catKey}</Badge>
+                              <span className="text-slate-600 truncate">{c.label}</span>
+                            </div>
+                            <div className="flex items-center gap-3 flex-shrink-0">
+                              <span className="text-slate-700 font-bold">{fmtQty(c.qty)} {unitLabel}</span>
+                              <span className="text-purple-700 font-extrabold">${c.cost.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
+
+        {/* Customers per Category Dialog */}
+        <Dialog open={!!customerListDialog} onOpenChange={(open) => !open && setCustomerListDialog(null)}>
+          <DialogContent className="rounded-2xl max-w-md w-[95vw] max-h-[80vh] overflow-y-auto" data-testid="customers-by-category-dialog">
+            <DialogHeader>
+              <DialogTitle className="text-base">
+                Clientes en {customerListDialog?.label || ""}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-1.5 mt-2">
+              {(customerListDialog?.customers || []).map((c) => (
+                <div key={c.customer_id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-xs" data-testid={`dialog-customer-${c.customer_id}`}>
+                  <Badge variant="outline" className="font-mono">{c.customer_id}</Badge>
+                  <span className="text-slate-700 font-semibold ml-3 text-right truncate">{c.name || "Sin nombre"}</span>
+                </div>
+              ))}
+              {(customerListDialog?.customers || []).length === 0 && (
+                <p className="text-xs text-slate-500 text-center py-4">Sin clientes.</p>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
