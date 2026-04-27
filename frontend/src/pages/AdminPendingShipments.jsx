@@ -7,14 +7,47 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   ArrowLeft, Truck, Search, ChevronRight, FileText, Users, AlertCircle,
 } from "lucide-react";
+
+// Week boundary helper: Monday 12:00 local → next Monday 11:59:59 local.
+// Returns an ISO date string (yyyy-mm-dd) of the start-Monday at noon as a stable bucket key.
+function getWeekKey(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "";
+  const day = d.getDay();
+  const daysSinceMonday = (day - 1 + 7) % 7;
+  const candidate = new Date(d);
+  candidate.setDate(d.getDate() - daysSinceMonday);
+  candidate.setHours(12, 0, 0, 0);
+  if (candidate > d) candidate.setDate(candidate.getDate() - 7);
+  return candidate.toISOString().slice(0, 10);
+}
+
+// Compact label, e.g. "10–17 Feb" or "27 Ene–3 Feb" when months differ.
+function getWeekLabelShort(weekKey) {
+  const start = new Date(`${weekKey}T12:00:00`);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  const monthShort = (dt) => {
+    const m = dt.toLocaleDateString("es-ES", { month: "short" }).replace(".", "");
+    return m.charAt(0).toUpperCase() + m.slice(1);
+  };
+  const sameMonth = start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+  if (sameMonth) return `${start.getDate()}–${end.getDate()} ${monthShort(start)}`;
+  return `${start.getDate()} ${monthShort(start)}–${end.getDate()} ${monthShort(end)}`;
+}
 
 export default function AdminPendingShipments() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ clients: [], invoices_count: 0, clients_count: 0 });
   const [filter, setFilter] = useState("");
+  const [weekFilter, setWeekFilter] = useState("all");
 
   useEffect(() => {
     (async () => {
@@ -29,14 +62,44 @@ export default function AdminPendingShipments() {
     })();
   }, []);
 
+  // Every Monday-bucket present across all pending invoices, desc.
+  const weekOptions = useMemo(() => {
+    const set = new Set();
+    (data.clients || []).forEach((c) => {
+      (c.invoices || []).forEach((inv) => {
+        const wk = getWeekKey(inv.created_at);
+        if (wk) set.add(wk);
+      });
+    });
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
+  }, [data.clients]);
+
+  // Apply week filter to invoices first, then drop empty clients, then text filter.
   const filteredClients = useMemo(() => {
     const code = filter.trim().toUpperCase();
-    if (!code) return data.clients;
-    return data.clients.filter((c) =>
-      (c.customer_id || "").toUpperCase().includes(code) ||
-      (c.name || "").toUpperCase().includes(code)
-    );
-  }, [data.clients, filter]);
+    let clients = data.clients || [];
+    if (weekFilter !== "all") {
+      clients = clients
+        .map((c) => ({
+          ...c,
+          invoices: (c.invoices || []).filter((inv) => getWeekKey(inv.created_at) === weekFilter),
+        }))
+        .filter((c) => c.invoices.length > 0);
+    }
+    if (code) {
+      clients = clients.filter((c) =>
+        (c.customer_id || "").toUpperCase().includes(code) ||
+        (c.name || "").toUpperCase().includes(code)
+      );
+    }
+    return clients;
+  }, [data.clients, filter, weekFilter]);
+
+  // KPIs reflect the week filter (and text filter) so totals match what the user sees.
+  const visibleInvoicesCount = useMemo(
+    () => filteredClients.reduce((acc, c) => acc + (c.invoices?.length || 0), 0),
+    [filteredClients]
+  );
 
   if (loading) {
     return (
@@ -57,7 +120,7 @@ export default function AdminPendingShipments() {
             </Button>
             <div>
               <h1 className="text-xl font-extrabold text-slate-800">Envíos Pendientes</h1>
-              <p className="text-xs text-slate-500">Facturas sin envío asignado</p>
+              <p className="text-xs text-slate-500">Corte semanal: lunes 12:00 → lunes 12:00</p>
             </div>
           </div>
           <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
@@ -72,7 +135,7 @@ export default function AdminPendingShipments() {
               <div className="flex items-center gap-2 text-purple-700 text-[10px] uppercase font-bold">
                 <Users className="h-3.5 w-3.5" /> Clientes
               </div>
-              <p className="text-2xl font-extrabold text-purple-900 mt-1">{data.clients_count}</p>
+              <p className="text-2xl font-extrabold text-purple-900 mt-1">{filteredClients.length}</p>
               <p className="text-[10px] text-purple-700/70">con envíos sin cobrar</p>
             </CardContent>
           </Card>
@@ -81,7 +144,7 @@ export default function AdminPendingShipments() {
               <div className="flex items-center gap-2 text-amber-700 text-[10px] uppercase font-bold">
                 <FileText className="h-3.5 w-3.5" /> Facturas
               </div>
-              <p className="text-2xl font-extrabold text-amber-900 mt-1">{data.invoices_count}</p>
+              <p className="text-2xl font-extrabold text-amber-900 mt-1">{visibleInvoicesCount}</p>
               <p className="text-[10px] text-amber-700/70">faltan asignar envío</p>
             </CardContent>
           </Card>
@@ -89,16 +152,31 @@ export default function AdminPendingShipments() {
 
         {/* Filter */}
         <Card className="rounded-2xl mb-4">
-          <CardContent className="p-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="Filtrar por código o nombre"
-                className="h-10 rounded-xl pl-9 uppercase"
-                data-testid="pending-shipments-filter"
-              />
+          <CardContent className="p-3 space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-2">
+              <Select value={weekFilter} onValueChange={setWeekFilter}>
+                <SelectTrigger className="h-10 rounded-xl bg-white" data-testid="pending-shipments-week-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las semanas</SelectItem>
+                  {weekOptions.map((wk) => (
+                    <SelectItem key={wk} value={wk} data-testid={`week-option-${wk}`}>
+                      {getWeekLabelShort(wk)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  placeholder="Filtrar por código o nombre"
+                  className="h-10 rounded-xl pl-9 uppercase"
+                  data-testid="pending-shipments-filter"
+                />
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -109,7 +187,11 @@ export default function AdminPendingShipments() {
             <CardContent className="p-8 text-center text-slate-500">
               <AlertCircle className="h-10 w-10 mx-auto mb-2 text-slate-300" />
               <p className="text-sm font-semibold">
-                {data.clients_count === 0 ? "Todos los envíos están asignados ✓" : "Sin resultados para este filtro"}
+                {data.clients_count === 0
+                  ? "Todos los envíos están asignados ✓"
+                  : weekFilter !== "all"
+                  ? "Sin envíos pendientes en esta semana"
+                  : "Sin resultados para este filtro"}
               </p>
             </CardContent>
           </Card>
