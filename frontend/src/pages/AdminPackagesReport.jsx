@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { getAllShipments, getTenantSettings } from "@/lib/api";
+import { getAllShipments, getTenantSettings, getAllClients } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -48,6 +48,7 @@ export default function AdminPackagesReport() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [shipments, setShipments] = useState([]);
+  const [clientsByCode, setClientsByCode] = useState({}); // customer_id (UPPER) -> name
   const [categories, setCategories] = useState([]); // [{key, label, value_packages, value_pounds}]
   const [shippingMode, setShippingMode] = useState("packages");
   const [weekFilter, setWeekFilter] = useState("all");
@@ -59,9 +60,10 @@ export default function AdminPackagesReport() {
   useEffect(() => {
     (async () => {
       try {
-        const [shipsRes, tenantRes] = await Promise.all([
+        const [shipsRes, tenantRes, clientsRes] = await Promise.all([
           getAllShipments(),
           getTenantSettings(),
+          getAllClients(),
         ]);
         setShipments(shipsRes.data || []);
         const cats = (tenantRes.data?.shipping_categories || []).map((c) => ({
@@ -71,6 +73,12 @@ export default function AdminPackagesReport() {
         }));
         setCategories(cats);
         setShippingMode(tenantRes.data?.shipping_mode === "pounds" ? "pounds" : "packages");
+        // Build customer_id -> name lookup so we can resolve missing names on shipments.
+        const lookup = {};
+        (clientsRes.data || []).forEach((c) => {
+          if (c.customer_id) lookup[String(c.customer_id).toUpperCase()] = c.name || "";
+        });
+        setClientsByCode(lookup);
       } catch (e) {
         toast.error("No se pudo cargar el reporte de paquetes");
       } finally {
@@ -105,7 +113,8 @@ export default function AdminPackagesReport() {
 
     filtered.forEach((s) => {
       const custId = (s.customer_id || "—").toUpperCase();
-      const custName = s.customer_name || "";
+      // Prefer the shipment's own field; fallback to the live client lookup.
+      const custName = s.customer_name || clientsByCode[custId] || "";
       const catKey = (s.shipping_category || "OTHER").toUpperCase();
       const cat = categories.find((c) => c.key === catKey);
       const qty = Number(s.package_count) || 0;
@@ -115,13 +124,13 @@ export default function AdminPackagesReport() {
 
       // by customer
       if (!byCustomer[custId]) byCustomer[custId] = { customer_id: custId, name: custName, total_qty: 0, total_cost: 0, by_cat: {} };
+      // Update the name if we just got a non-empty one and previously stored an empty one.
+      if (custName && !byCustomer[custId].name) byCustomer[custId].name = custName;
       byCustomer[custId].total_qty += qty;
       byCustomer[custId].total_cost += cost;
       if (!byCustomer[custId].by_cat[catKey]) byCustomer[custId].by_cat[catKey] = { qty: 0, cost: 0, label: cat?.label || catKey };
       byCustomer[custId].by_cat[catKey].qty += qty;
       byCustomer[custId].by_cat[catKey].cost += cost;
-      // also keep most recent name
-      if (custName && !byCustomer[custId].name) byCustomer[custId].name = custName;
 
       // by category
       if (!byCategory[catKey]) byCategory[catKey] = { key: catKey, label: cat?.label || catKey, qty: 0, cost: 0, customers: new Map() };
@@ -141,7 +150,7 @@ export default function AdminPackagesReport() {
         customers_list: Array.from(c.customers.entries()).map(([id, name]) => ({ customer_id: id, name })).sort((a, b) => a.customer_id.localeCompare(b.customer_id)),
       })).sort((a, b) => b.qty - a.qty),
     };
-  }, [filtered, categories]);
+  }, [filtered, categories, clientsByCode]);
 
   const isPounds = shippingMode === "pounds";
   const unitLabel = isPounds ? "lb" : "paq.";
