@@ -17,7 +17,8 @@ import {
   updatePurchase,
   deletePurchase,
   getTenantSettings,
-  getLive
+  getLive,
+  getClientsDebtsReport
 } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -129,13 +130,19 @@ export default function AdminLive() {
   // Tax options from tenant settings
   const [taxOptions, setTaxOptions] = useState(DEFAULT_TAX_OPTIONS);
 
+  // Debt status per customer_id (UPPER) -> { color, label, days, amount }
+  // Used to surface a colored dot next to the client name in the quick-register form
+  // and to gate the submission with a confirmation when the client is in "red" status.
+  const [debtStatusMap, setDebtStatusMap] = useState({});
+  const [debtConfirmDialog, setDebtConfirmDialog] = useState(null); // {client, status, onConfirm}
+
   const customerIdRef = useRef(null);
 
   // Filter clients for autocomplete - now more permissive
   const filteredClients = useMemo(() => {
     if (!clientSearchValue || clientSearchValue.length < 1) return [];
     const search = clientSearchValue.toLowerCase().trim();
-    
+
     // Simple search: match if name or customer_id contains the search string
     return activeClients.filter(c => {
       const name = c.name?.toLowerCase() || "";
@@ -143,6 +150,14 @@ export default function AdminLive() {
       return name.includes(search) || customerId.includes(search);
     }).slice(0, 8); // Limit to 8 suggestions
   }, [activeClients, clientSearchValue]);
+
+  // Color mapping for debt-status dots used in the live quick-register form.
+  const debtDotClass = (color) => {
+    if (color === "red") return "bg-red-500";
+    if (color === "orange") return "bg-orange-500";
+    if (color === "green") return "bg-green-500";
+    return "";
+  };
 
   // Calculate actual tax rate from selected option
   const getEffectiveTaxRate = (taxOption, customTax) => {
@@ -158,6 +173,25 @@ export default function AdminLive() {
       if (res.data?.tax_options && res.data.tax_options.length > 0) {
         setTaxOptions(res.data.tax_options);
       }
+    }).catch(() => {});
+    // Load debt status so we can show colored dots and gate red-status submissions.
+    getClientsDebtsReport().then(res => {
+      const map = {};
+      (res.data?.clients || []).forEach((c) => {
+        const lastDate = c.last_invoice_date;
+        const lastAmount = Number(c.last_invoice_amount || 0);
+        let color = null, label = null, days = null;
+        if (lastDate && lastAmount > 0) {
+          days = Math.floor((Date.now() - new Date(lastDate)) / 86400000);
+          if (days > 5) { color = "red"; label = `${days} días sin pagar — LIQUIDAR`; }
+          else if (days > 2) { color = "orange"; label = `${days} días sin pagar`; }
+          else { color = "green"; label = `${days} día(s) sin pagar`; }
+        }
+        if (color) {
+          map[String(c.customer_id || "").toUpperCase()] = { color, label, days, amount: lastAmount };
+        }
+      });
+      setDebtStatusMap(map);
     }).catch(() => {});
   }, []);
 
@@ -392,7 +426,7 @@ export default function AdminLive() {
 
   const handleSubmitPurchase = async (e) => {
     e.preventDefault();
-    
+
     if (!purchaseForm.customer_id || !purchaseForm.item_name || !purchaseForm.price) {
       toast.error("Completa todos los campos");
       return;
@@ -410,6 +444,27 @@ export default function AdminLive() {
       return;
     }
 
+    // Block-and-confirm if the client is in "red" debt status. We surface
+    // the days unpaid + last invoice amount so the admin makes an informed call.
+    const debtKey = String(purchaseForm.customer_id || "").toUpperCase();
+    const dbt = debtStatusMap[debtKey];
+    if (dbt && dbt.color === "red") {
+      setDebtConfirmDialog({
+        client: selectedCustomer || { customer_id: purchaseForm.customer_id, name: "" },
+        status: dbt,
+        proceed: () => {
+          setDebtConfirmDialog(null);
+          // Re-enter submission flow but skip the gate this time.
+          actuallySubmitPurchase();
+        },
+      });
+      return;
+    }
+    actuallySubmitPurchase();
+  };
+
+  const actuallySubmitPurchase = async () => {
+    const price = parseFloat(purchaseForm.price);
     setSubmitting(true);
 
     try {
@@ -889,7 +944,9 @@ export default function AdminLive() {
                         {/* Autocomplete Dropdown */}
                         {clientSearchOpen && filteredClients.length > 0 && (
                           <div className="absolute z-50 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-                            {filteredClients.map((client) => (
+                            {filteredClients.map((client) => {
+                              const dbt = debtStatusMap[String(client.customer_id || "").toUpperCase()];
+                              return (
                               <button
                                 key={client.id}
                                 type="button"
@@ -897,29 +954,47 @@ export default function AdminLive() {
                                 className="w-full px-4 py-3 text-left hover:bg-blue-50 flex items-center justify-between border-b border-gray-100 last:border-0"
                                 data-testid={`client-suggestion-${client.customer_id}`}
                               >
-                                <div>
-                                  <span className="font-bold text-blue-600">#{client.customer_id}</span>
-                                  <span className="ml-2 text-gray-800">{client.name}</span>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="font-bold text-blue-600 flex-shrink-0">#{client.customer_id}</span>
+                                  <span className="text-gray-800 truncate">{client.name}</span>
+                                  {dbt && (
+                                    <span
+                                      title={dbt.label}
+                                      className={`inline-block w-2.5 h-2.5 rounded-full ${debtDotClass(dbt.color)} flex-shrink-0`}
+                                      data-testid={`client-debt-dot-${client.customer_id}-${dbt.color}`}
+                                    />
+                                  )}
                                 </div>
-                                <Badge className="bg-gray-100 text-gray-600">
+                                <Badge className="bg-gray-100 text-gray-600 flex-shrink-0">
                                   ${(client.wallet_balance || 0).toFixed(2)}
                                 </Badge>
                               </button>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
-                      {selectedCustomer && (
+                      {selectedCustomer && (() => {
+                        const dbt = debtStatusMap[String(selectedCustomer.customer_id || "").toUpperCase()];
+                        return (
                         <div className="mt-2 p-3 bg-green-50 rounded-xl flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <CheckCircle className="h-5 w-5 text-green-600" />
                             <span className="font-medium text-green-800">{selectedCustomer.name}</span>
+                            {dbt && (
+                              <span
+                                title={dbt.label}
+                                className={`inline-block w-2.5 h-2.5 rounded-full ${debtDotClass(dbt.color)}`}
+                                data-testid={`selected-client-debt-dot-${dbt.color}`}
+                              />
+                            )}
                           </div>
                           <Badge className="bg-green-600 text-white">
                             ${customerWallet?.available?.toFixed(2) || '0.00'}
                           </Badge>
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
 
                     {/* Item Name */}
@@ -1347,6 +1422,51 @@ export default function AdminLive() {
                   data-testid="save-edit-live-btn"
                 >
                   Guardar Cambios
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Debt-status confirmation: gate sales for clients in "red" status */}
+        <Dialog open={!!debtConfirmDialog} onOpenChange={(open) => !open && setDebtConfirmDialog(null)}>
+          <DialogContent className="rounded-2xl max-w-md" data-testid="debt-confirm-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-red-600">
+                <AlertTriangle className="h-5 w-5" />
+                Cliente con deuda crítica
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 pt-2">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                <p className="text-sm font-bold text-red-900">
+                  {debtConfirmDialog?.client?.name || debtConfirmDialog?.client?.customer_id}
+                </p>
+                <p className="text-xs text-red-800 mt-1">
+                  Tiene <span className="font-extrabold">{debtConfirmDialog?.status?.days || 0} día(s) sin pagar</span>.
+                </p>
+                <p className="text-xs text-red-800">
+                  Última factura pendiente: <span className="font-extrabold">${(debtConfirmDialog?.status?.amount || 0).toFixed(2)}</span>
+                </p>
+              </div>
+              <p className="text-sm text-slate-700">
+                ¿Quieres continuar registrando esta compra?
+              </p>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  onClick={() => setDebtConfirmDialog(null)}
+                  className="flex-1 h-11 rounded-xl"
+                  data-testid="debt-confirm-cancel"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={() => debtConfirmDialog?.proceed?.()}
+                  className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold"
+                  data-testid="debt-confirm-continue"
+                >
+                  Continuar
                 </Button>
               </div>
             </div>
