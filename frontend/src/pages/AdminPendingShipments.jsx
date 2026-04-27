@@ -130,7 +130,7 @@ export default function AdminPendingShipments() {
                       <button
                         key={inv.id}
                         type="button"
-                        onClick={() => navigate(`/admin/invoices?invoice_id=${inv.id}`)}
+                        onClick={() => navigate(`/admin/invoices?invoice_id=${inv.id}&back=/admin/pending-shipments`)}
                         className="w-full flex items-center justify-between gap-2 bg-slate-50 hover:bg-slate-100 transition-colors rounded-xl px-3 py-2 text-left"
                         data-testid={`pending-invoice-${inv.invoice_number}`}
                       >

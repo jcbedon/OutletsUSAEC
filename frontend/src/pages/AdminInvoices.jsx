@@ -830,7 +830,14 @@ export default function AdminInvoices() {
           setInvoiceDialogOpen(open);
           if (!open) {
             setExistingInvoiceToView(null); // Clear when closing
-            loadInvoices(); // Reload invoices when dialog closes
+            // If we got here from a deep-link with a `back` param (e.g. pending-shipments
+            // report), return there instead of reloading the invoice list.
+            const back = searchParams.get("back");
+            if (back) {
+              navigate(back);
+            } else {
+              loadInvoices();
+            }
           }
         }}
         client={selectedClientForInvoice}
