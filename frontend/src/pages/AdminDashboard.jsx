@@ -473,10 +473,11 @@ export default function AdminDashboard() {
           ) : salesDetail ? (
             <div className="pt-2 space-y-3">
               {/* KPI tabs */}
-              <div className="grid grid-cols-2 gap-2" role="tablist" data-testid="sales-detail-tabs">
+              <div className="grid grid-cols-3 gap-2" role="tablist" data-testid="sales-detail-tabs">
                 {[
                   { key: "buyers", label: "Compraron", count: salesDetail.buyers_count, color: "blue" },
                   { key: "invoiced", label: "Con factura", count: salesDetail.invoiced_count, color: "green" },
+                  { key: "pending", label: "Sin factura", count: salesDetail.pending_count, color: "amber" },
                 ].map((t) => {
                   const active = salesDetailTab === t.key;
                   const cls = active
@@ -513,7 +514,9 @@ export default function AdminDashboard() {
               {(() => {
                 const list = salesDetailTab === "buyers"
                   ? salesDetail.buyers
-                  : salesDetail.invoiced_customers;
+                  : salesDetailTab === "invoiced"
+                    ? salesDetail.invoiced_customers
+                    : salesDetail.pending_customers;
                 const code = salesDetailFilter.trim().toUpperCase();
                 const filtered = code
                   ? list.filter((c) =>
@@ -526,12 +529,39 @@ export default function AdminDashboard() {
                 }
                 return (
                   <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
-                    {filtered.map((c) => (
-                      <div key={c.customer_id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-xs gap-2" data-testid={`sales-detail-row-${c.customer_id}`}>
-                        <Badge variant="outline" className="font-mono flex-shrink-0">{c.customer_id}</Badge>
-                        <span className="text-slate-700 font-semibold truncate flex-1">{c.name || "Sin nombre"}</span>
-                      </div>
-                    ))}
+                    {filtered.map((c) => {
+                      const isPendingTab = salesDetailTab === "pending";
+                      const rowProps = isPendingTab
+                        ? {
+                            as: "button",
+                            type: "button",
+                            onClick: () => {
+                              setSalesDetailOpen(false);
+                              navigate(`/admin/invoices?customer_id=${encodeURIComponent(c.customer_id)}&back=/admin`);
+                            },
+                            className: "w-full text-left flex items-center justify-between bg-amber-50 hover:bg-amber-100 rounded-lg px-3 py-2 text-xs gap-2 transition-colors",
+                          }
+                        : {
+                            className: "flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-xs gap-2",
+                          };
+                      const Wrapper = isPendingTab ? "button" : "div";
+                      return (
+                        <Wrapper
+                          key={c.customer_id}
+                          {...(isPendingTab ? { type: "button", onClick: rowProps.onClick } : {})}
+                          className={rowProps.className}
+                          data-testid={`sales-detail-row-${c.customer_id}`}
+                        >
+                          <Badge variant="outline" className="font-mono flex-shrink-0">{c.customer_id}</Badge>
+                          <span className={`font-semibold truncate flex-1 ${isPendingTab ? "text-amber-900" : "text-slate-700"}`}>
+                            {c.name || "Sin nombre"}
+                          </span>
+                          {isPendingTab && (
+                            <span className="text-[10px] uppercase font-bold text-amber-700 flex-shrink-0">Generar →</span>
+                          )}
+                        </Wrapper>
+                      );
+                    })}
                   </div>
                 );
               })()}

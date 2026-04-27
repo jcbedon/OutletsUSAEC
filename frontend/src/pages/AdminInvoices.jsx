@@ -73,24 +73,36 @@ export default function AdminInvoices() {
   }, [activeTab]);
 
   // If navigated here with ?invoice_id=..., auto-open that invoice once loaded.
+  // If navigated with ?customer_id=..., auto-open the create-invoice flow for that client.
   useEffect(() => {
     const invoiceId = searchParams.get("invoice_id");
-    if (!invoiceId) return;
+    const customerId = searchParams.get("customer_id");
+    if (!invoiceId && !customerId) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await getInvoiceDetail(invoiceId);
-        if (cancelled) return;
-        setExistingInvoiceToView(res.data);
-        setSelectedClientForInvoice(null);
-        setInvoiceDialogOpen(true);
+        if (invoiceId) {
+          const res = await getInvoiceDetail(invoiceId);
+          if (cancelled) return;
+          setExistingInvoiceToView(res.data);
+          setSelectedClientForInvoice(null);
+          setInvoiceDialogOpen(true);
+        } else if (customerId) {
+          // Find the client in the loaded clients list, then trigger the same flow
+          // the manual selector uses (loads tenant info + opens dialog with pending purchases).
+          const upper = customerId.toUpperCase();
+          const c = clients.find(x => (x.customer_id || "").toUpperCase() === upper);
+          if (c) {
+            await handleSelectClientForInvoice(c);
+          }
+        }
       } catch (_) {
-        // Silent: if the invoice can't be opened, stay on the list.
+        // Silent: if it can't be opened, stay on the list.
       }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams.get("invoice_id")]);
+  }, [searchParams.get("invoice_id"), searchParams.get("customer_id"), clients.length]);
 
   const loadInvoices = async (query = searchQuery) => {
     try {
