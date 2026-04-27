@@ -473,11 +473,10 @@ export default function AdminDashboard() {
           ) : salesDetail ? (
             <div className="pt-2 space-y-3">
               {/* KPI tabs */}
-              <div className="grid grid-cols-3 gap-2" role="tablist" data-testid="sales-detail-tabs">
+              <div className="grid grid-cols-2 gap-2" role="tablist" data-testid="sales-detail-tabs">
                 {[
                   { key: "buyers", label: "Compraron", count: salesDetail.buyers_count, color: "blue" },
                   { key: "invoiced", label: "Con factura", count: salesDetail.invoiced_count, color: "green" },
-                  { key: "pending", label: "Sin factura", count: salesDetail.pending_count, color: "amber" },
                 ].map((t) => {
                   const active = salesDetailTab === t.key;
                   const cls = active
@@ -514,9 +513,7 @@ export default function AdminDashboard() {
               {(() => {
                 const list = salesDetailTab === "buyers"
                   ? salesDetail.buyers
-                  : salesDetailTab === "invoiced"
-                    ? salesDetail.invoiced_customers
-                    : salesDetail.pending_customers;
+                  : salesDetail.invoiced_customers;
                 const code = salesDetailFilter.trim().toUpperCase();
                 const filtered = code
                   ? list.filter((c) =>
