@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings } from "@/lib/api";
+import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings, getClientPassword } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,6 +41,12 @@ export default function AdminClients() {
   const [allowCustomClientId, setAllowCustomClientId] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showEditPassword, setShowEditPassword] = useState(false);
+  // Current plain-text password fetched from backend for the client being edited.
+  // Value of `undefined` means "not fetched yet", `null` means "not available" (legacy client),
+  // and a string is the actual password to show to the admin.
+  const [currentClientPassword, setCurrentClientPassword] = useState(undefined);
+  const [loadingCurrentPassword, setLoadingCurrentPassword] = useState(false);
+  const [currentPasswordCopied, setCurrentPasswordCopied] = useState(false);
   const [createdClientInfo, setCreatedClientInfo] = useState(null);
   const [copied, setCopied] = useState(false);
   
@@ -133,7 +139,36 @@ export default function AdminClients() {
       commission_fee: client.commission_fee?.toString() || "3",
       customer_id: client.customer_id || ""
     });
+    // Reset current-password viewer every time the dialog is (re)opened
+    setCurrentClientPassword(undefined);
+    setCurrentPasswordCopied(false);
     setEditDialogOpen(true);
+  };
+
+  const handleShowCurrentPassword = async () => {
+    if (!editingClient?.id) return;
+    setLoadingCurrentPassword(true);
+    try {
+      const res = await getClientPassword(editingClient.id);
+      // Backend returns { password_plain: string | null, available: boolean }
+      setCurrentClientPassword(res.data?.password_plain || null);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "No se pudo obtener la contraseña");
+      setCurrentClientPassword(null);
+    } finally {
+      setLoadingCurrentPassword(false);
+    }
+  };
+
+  const handleCopyCurrentPassword = async () => {
+    if (!currentClientPassword) return;
+    try {
+      await navigator.clipboard.writeText(currentClientPassword);
+      setCurrentPasswordCopied(true);
+      setTimeout(() => setCurrentPasswordCopied(false), 2000);
+    } catch (e) {
+      toast.error("No se pudo copiar al portapapeles");
+    }
   };
 
   const handleSaveClient = async () => {
@@ -810,6 +845,69 @@ https://outletsusaec.shop/`;
                 </p>
               </div>
               
+              {/* Current Password Viewer */}
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <Key className="h-4 w-4 text-slate-500" />
+                    <Label className="text-slate-700 font-medium">Contraseña actual</Label>
+                  </div>
+                  {currentClientPassword === undefined ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleShowCurrentPassword}
+                      disabled={loadingCurrentPassword}
+                      className="h-8 rounded-lg"
+                      data-testid="show-current-password-btn"
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      {loadingCurrentPassword ? "Cargando..." : "Mostrar"}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => { setCurrentClientPassword(undefined); setCurrentPasswordCopied(false); }}
+                      className="h-8 rounded-lg text-slate-500"
+                      data-testid="hide-current-password-btn"
+                    >
+                      <EyeOff className="h-4 w-4 mr-1" /> Ocultar
+                    </Button>
+                  )}
+                </div>
+                {currentClientPassword === undefined && (
+                  <p className="text-xs text-gray-500" data-testid="current-password-hint">
+                    Presiona "Mostrar" para ver la contraseña actual del cliente.
+                  </p>
+                )}
+                {currentClientPassword === null && (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800" data-testid="current-password-unavailable">
+                    Contraseña no disponible: este cliente se registró antes de que pudiéramos mostrarla. Asigna una nueva abajo para poder verla.
+                  </div>
+                )}
+                {typeof currentClientPassword === "string" && currentClientPassword && (
+                  <div className="flex items-center gap-2 rounded-xl bg-slate-50 border border-slate-200 p-3">
+                    <code className="flex-1 font-mono text-sm break-all text-slate-800" data-testid="current-password-value">
+                      {currentClientPassword}
+                    </code>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={handleCopyCurrentPassword}
+                      className="h-8 w-8 p-0 text-slate-500 hover:text-slate-800"
+                      data-testid="copy-current-password-btn"
+                      title="Copiar al portapapeles"
+                    >
+                      {currentPasswordCopied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                )}
+              </div>
+
               {/* Change Password Section */}
               <div className="border-t pt-4">
                 <div className="flex items-center gap-2 mb-2">

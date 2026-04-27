@@ -100,6 +100,10 @@ class User(BaseModel):
     email: Optional[str] = None
     whatsapp_consent: bool = False
     password_hash: str
+    # Shadow copy of the password in plain text so admin can view the current
+    # client password from the Edit Client screen. Only set for passwords
+    # captured after this feature was introduced (older clients will be None).
+    password_plain: Optional[str] = None
     role: str = "client"
     is_active: bool = True
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -665,7 +669,8 @@ async def register_user(data: UserRegister):
         customer_id = generate_customer_id(data.name)
     user = User(tenant_id=tenant_id, customer_id=customer_id, referral_code=customer_id, referred_by=referred_by,
         name=data.name, country=data.country, whatsapp=data.whatsapp, email=data.email,
-        whatsapp_consent=data.whatsapp_consent, password_hash=hash_password(data.password), role="client")
+        whatsapp_consent=data.whatsapp_consent, password_hash=hash_password(data.password),
+        password_plain=data.password, role="client")
     await db.users.insert_one(user.model_dump())
     wallet = Wallet(tenant_id=tenant_id, user_id=user.id, customer_id=customer_id)
     await db.wallets.insert_one(wallet.model_dump())
@@ -1352,7 +1357,7 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
     elif status == "inactive":
         query["is_active"] = False
     
-    users = await db.users.find(query, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(1000)
+    users = await db.users.find(query, {"_id": 0, "password_hash": 0, "password_plain": 0}).sort("created_at", -1).to_list(1000)
     
     if not users:
         return []
@@ -1498,7 +1503,8 @@ async def admin_create_client(data: AdminClientCreate, current_user: dict = Depe
     user = User(tenant_id=tid, customer_id=customer_id, referral_code=customer_id,
         commission_fee=data.commission_fee, name=data.name, country=data.country,
         whatsapp=data.whatsapp, email=data.email, whatsapp_consent=True,
-        password_hash=hash_password(data.password), role="client", is_active=True)
+        password_hash=hash_password(data.password), password_plain=data.password,
+        role="client", is_active=True)
     await db.users.insert_one(user.model_dump())
     wallet = Wallet(tenant_id=tid, user_id=user.id, customer_id=customer_id, available=data.initial_balance)
     await db.wallets.insert_one(wallet.model_dump())
@@ -1653,6 +1659,7 @@ async def update_client(user_id: str, data: ClientUpdate, current_user: dict = D
         updates["commission_fee"] = data.commission_fee
     if data.new_password:
         updates["password_hash"] = hash_password(data.new_password)
+        updates["password_plain"] = data.new_password
     if data.customer_id:
         new_cid = data.customer_id.strip().upper()
         if new_cid != user.get("customer_id"):
@@ -1670,15 +1677,41 @@ async def update_client(user_id: str, data: ClientUpdate, current_user: dict = D
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         await db.users.update_one({"id": user_id, "tenant_id": tid}, {"$set": updates})
     
-    updated_user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0, "password_hash": 0})
+    updated_user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0, "password_hash": 0, "password_plain": 0})
     return {"message": "Cliente actualizado exitosamente", "user": updated_user}
+
+@api_router.get("/admin/clients/{user_id}/password")
+async def get_client_password(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Return the plain-text password for a client so the admin can share it.
+
+    Security notes:
+    - Only admin/employee roles can call this endpoint.
+    - Passwords are only available for clients whose password was set/changed AFTER
+      the plain-shadow feature was introduced. Older clients will return None, and
+      the admin must use "Cambiar contraseña" to set a new one.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    user = await db.users.find_one(
+        {"id": user_id, "tenant_id": tid, "role": "client"},
+        {"_id": 0, "password_plain": 1, "customer_id": 1, "name": 1}
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    return {
+        "customer_id": user.get("customer_id"),
+        "name": user.get("name"),
+        "password_plain": user.get("password_plain"),
+        "available": bool(user.get("password_plain")),
+    }
 
 @api_router.get("/admin/clients/{customer_id}/info")
 async def get_client_info(customer_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
-    user = await db.users.find_one({"customer_id": customer_id.upper(), "tenant_id": tid}, {"_id": 0, "password_hash": 0})
+    user = await db.users.find_one({"customer_id": customer_id.upper(), "tenant_id": tid}, {"_id": 0, "password_hash": 0, "password_plain": 0})
     if not user:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     wallet = await db.wallets.find_one({"user_id": user["id"], "tenant_id": tid}, {"_id": 0})
