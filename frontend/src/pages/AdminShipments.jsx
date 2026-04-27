@@ -1077,8 +1077,13 @@ export default function AdminShipments() {
             }
             const endMonday = new Date(startMonday);
             endMonday.setDate(startMonday.getDate() + 7);
-            const fmt = (dt) => dt.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
-            return `${fmt(startMonday)} 12:00 - ${fmt(endMonday)} 12:00`;
+            const fmt = (dt) => {
+              const day = dt.getDate();
+              const monthRaw = dt.toLocaleDateString('es-ES', { month: 'long' });
+              const month = monthRaw.charAt(0).toUpperCase() + monthRaw.slice(1);
+              return `${day}-${month}`;
+            };
+            return `Lunes ${fmt(startMonday)} - Lunes ${fmt(endMonday)}`;
           };
 
           const weeks = {};
