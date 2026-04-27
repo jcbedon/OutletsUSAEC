@@ -4599,13 +4599,12 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
     import math
     date_filter = {}
     if period == "week":
-        # Week = current Monday 01:00 (tenant local, UTC-5 Ecuador) → next Monday 00:59:59
-        # In UTC that is Monday 06:00 → next Monday 05:59:59.
+        # Week = current Monday 12:00 (tenant local, UTC-5 Ecuador) → next Monday 11:59:59.
+        # In UTC that is Monday 17:00 → next Monday 16:59:59.
         now = datetime.now(timezone.utc)
-        # Monday = weekday 0
         days_since_monday = now.weekday()
-        candidate_start = (now - timedelta(days=days_since_monday)).replace(hour=6, minute=0, second=0, microsecond=0)
-        # If we're before Monday 06:00 UTC (i.e. before local Monday 01:00), the active week
+        candidate_start = (now - timedelta(days=days_since_monday)).replace(hour=17, minute=0, second=0, microsecond=0)
+        # If we're before Monday 17:00 UTC (i.e. before local Monday 12:00 noon), the active week
         # is the previous one — push the start back 7 days.
         if now < candidate_start:
             candidate_start = candidate_start - timedelta(days=7)
@@ -4681,11 +4680,11 @@ async def get_buyers_report(period: str = "week", current_user: dict = Depends(g
     # Date filter
     date_filter = {}
     if period == "week":
-        # Week = current Monday 01:00 local (UTC-5 Ecuador) → next Monday 00:59:59 local
-        # In UTC: Monday 06:00 → next Monday 05:59:59
+        # Week = current Monday 12:00 local (UTC-5 Ecuador) → next Monday 11:59:59 local
+        # In UTC: Monday 17:00 → next Monday 16:59:59
         now = datetime.now(timezone.utc)
         days_since_monday = now.weekday()
-        candidate_start = (now - timedelta(days=days_since_monday)).replace(hour=6, minute=0, second=0, microsecond=0)
+        candidate_start = (now - timedelta(days=days_since_monday)).replace(hour=17, minute=0, second=0, microsecond=0)
         if now < candidate_start:
             candidate_start = candidate_start - timedelta(days=7)
         week_start = candidate_start
