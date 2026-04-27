@@ -965,9 +965,6 @@ export default function AdminLive() {
                                     />
                                   )}
                                 </div>
-                                <Badge className="bg-gray-100 text-gray-600 flex-shrink-0">
-                                  ${(client.wallet_balance || 0).toFixed(2)}
-                                </Badge>
                               </button>
                               );
                             })}
@@ -977,21 +974,16 @@ export default function AdminLive() {
                       {selectedCustomer && (() => {
                         const dbt = debtStatusMap[String(selectedCustomer.customer_id || "").toUpperCase()];
                         return (
-                        <div className="mt-2 p-3 bg-green-50 rounded-xl flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle className="h-5 w-5 text-green-600" />
-                            <span className="font-medium text-green-800">{selectedCustomer.name}</span>
-                            {dbt && (
-                              <span
-                                title={dbt.label}
-                                className={`inline-block w-2.5 h-2.5 rounded-full ${debtDotClass(dbt.color)}`}
-                                data-testid={`selected-client-debt-dot-${dbt.color}`}
-                              />
-                            )}
-                          </div>
-                          <Badge className="bg-green-600 text-white">
-                            ${customerWallet?.available?.toFixed(2) || '0.00'}
-                          </Badge>
+                        <div className="mt-2 p-3 bg-green-50 rounded-xl flex items-center gap-2">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                          <span className="font-medium text-green-800">{selectedCustomer.name}</span>
+                          {dbt && (
+                            <span
+                              title={dbt.label}
+                              className={`inline-block w-2.5 h-2.5 rounded-full ${debtDotClass(dbt.color)}`}
+                              data-testid={`selected-client-debt-dot-${dbt.color}`}
+                            />
+                          )}
                         </div>
                         );
                       })()}
