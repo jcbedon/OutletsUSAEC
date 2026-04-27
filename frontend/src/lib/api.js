@@ -170,6 +170,7 @@ export const getClientPurchaseHistory = (customerId) => api.get(`/invoices/clien
 export const annulInvoice = (invoiceId, password) => api.put(`/invoices/${invoiceId}/annul`, { password });
 export const recalculateAllInvoices = () => api.post("/admin/recalculate-all-invoices");
 export const getInvoicesWithoutShipment = () => api.get("/admin/reports/invoices-without-shipment");
+export const getSalesDetail = (start, end) => api.get("/admin/reports/sales-detail", { params: { start, end } });
 export const auditInvoice = (invoiceId) => api.get(`/invoices/${invoiceId}/audit`);
 export const recalcInvoice = (invoiceId) => api.post(`/invoices/${invoiceId}/recalc`);
 export const searchInvoices = (query, statusFilter = "all") => api.get(`/invoices/search?q=${encodeURIComponent(query)}&status_filter=${statusFilter}`);

@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/App";
 import { useNavigate, Link } from "react-router-dom";
-import { getReportsSummary, getActiveLive, getBuyersReport } from "@/lib/api";
+import { getReportsSummary, getActiveLive, getBuyersReport, getSalesDetail } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +32,32 @@ import { uploadTenantLogo } from "@/lib/api";
 
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
+// Week boundary: Monday 12:00 local → next Monday 11:59:59 local.
+// Returns { startISO, endISO, label } for `weeksBack` weeks ago (0 = current week).
+function getWeekRange(weeksBack = 0) {
+  const now = new Date();
+  const day = now.getDay(); // 0 Sun .. 6 Sat
+  const daysSinceMonday = (day - 1 + 7) % 7;
+  const start = new Date(now);
+  start.setDate(now.getDate() - daysSinceMonday);
+  start.setHours(12, 0, 0, 0);
+  if (start > now) start.setDate(start.getDate() - 7); // before noon Monday → previous week
+  start.setDate(start.getDate() - weeksBack * 7);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 7);
+  const fmt = (dt) => {
+    const d = dt.getDate();
+    const monthRaw = dt.toLocaleDateString("es-ES", { month: "short" });
+    const month = monthRaw.charAt(0).toUpperCase() + monthRaw.slice(1).replace(".", "");
+    return `${d}-${month}`;
+  };
+  return {
+    startISO: start.toISOString(),
+    endISO: end.toISOString(),
+    label: `${fmt(start)} → ${fmt(end)}`,
+  };
+}
+
 export default function AdminDashboard() {
   const { user, logout, updateTenantLogo } = useAuth();
   const logoUrl = user?.tenant_logo || DEFAULT_LOGO;
@@ -38,7 +65,12 @@ export default function AdminDashboard() {
   const [summary, setSummary] = useState(null);
   const [activeLive, setActiveLive] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [dashPeriod, setDashPeriod] = useState("week");
+  const [dashPeriod, setDashPeriod] = useState("week"); // "week" (current) | "all" | "wN" where N is weeksBack
+  const [salesDetailOpen, setSalesDetailOpen] = useState(false);
+  const [salesDetailLoading, setSalesDetailLoading] = useState(false);
+  const [salesDetail, setSalesDetail] = useState(null);
+  const [salesDetailTab, setSalesDetailTab] = useState("buyers"); // buyers | invoiced | pending
+  const [salesDetailFilter, setSalesDetailFilter] = useState("");
   const [buyersOpen, setBuyersOpen] = useState(false);
   const [buyersData, setBuyersData] = useState([]);
   const [buyersFilter, setBuyersFilter] = useState("");
@@ -48,11 +80,24 @@ export default function AdminDashboard() {
     loadData();
   }, []);
 
+  // Resolve the active period into either "week"/"all" (for legacy summary endpoint)
+  // or {startISO, endISO} for explicit week ranges.
+  const resolveRange = (p) => {
+    if (typeof p === "string" && p.startsWith("w")) {
+      const n = Number(p.slice(1)) || 0;
+      return getWeekRange(n);
+    }
+    return null; // null means use legacy mode (week or all)
+  };
+
   const loadData = async (period) => {
     try {
       const p = period || dashPeriod;
+      // For specific weeks (w0, w1, ...), still call summary with period="week"
+      // but the buyers report and sales detail use the explicit range.
+      const summaryPeriod = (typeof p === "string" && p.startsWith("w")) ? "week" : p;
       const [summaryRes, activeLiveRes] = await Promise.all([
-        getReportsSummary(p),
+        getReportsSummary(summaryPeriod),
         getActiveLive()
       ]);
       setSummary(summaryRes.data);
@@ -67,6 +112,26 @@ export default function AdminDashboard() {
   const handleDashPeriod = (p) => {
     setDashPeriod(p);
     loadData(p);
+  };
+
+  // Open sales detail dialog for the current period selection.
+  const openSalesDetail = async () => {
+    setSalesDetailOpen(true);
+    setSalesDetailFilter("");
+    setSalesDetailTab("buyers");
+    setSalesDetailLoading(true);
+    try {
+      const range = resolveRange(dashPeriod);
+      const start = range?.startISO;
+      const end = range?.endISO;
+      const res = await getSalesDetail(start, end);
+      setSalesDetail(res.data);
+    } catch (e) {
+      toast.error("No se pudo cargar el detalle");
+      setSalesDetail(null);
+    } finally {
+      setSalesDetailLoading(false);
+    }
   };
 
   const openBuyersReport = async () => {
@@ -203,31 +268,31 @@ export default function AdminDashboard() {
         )}
 
         {/* Period Filter + Stats Grid */}
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 gap-2">
           <p className="text-sm font-medium text-gray-500">
-            {dashPeriod === "week" ? "Esta semana" : "Todo el tiempo"}
+            {dashPeriod === "all"
+              ? "Todo el tiempo"
+              : dashPeriod === "week"
+                ? `Esta semana · ${getWeekRange(0).label}`
+                : (resolveRange(dashPeriod)?.label || "")}
           </p>
-          <div className="flex bg-gray-100 rounded-lg p-0.5" data-testid="dash-period-toggle">
-            <button
-              onClick={() => handleDashPeriod("week")}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${dashPeriod === "week" ? 'bg-white shadow text-slate-800' : 'text-gray-500'}`}
-              data-testid="dash-period-week"
-            >
-              Semana
-            </button>
-            <button
-              onClick={() => handleDashPeriod("all")}
-              className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${dashPeriod === "all" ? 'bg-white shadow text-slate-800' : 'text-gray-500'}`}
-              data-testid="dash-period-all"
-            >
-              Total
-            </button>
-          </div>
+          <select
+            value={dashPeriod}
+            onChange={(e) => handleDashPeriod(e.target.value)}
+            className="border rounded-lg px-2 py-1 text-xs font-medium bg-white text-slate-700 focus:outline-none"
+            data-testid="dash-period-select"
+          >
+            <option value="week">Esta semana</option>
+            {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+              <option key={n} value={`w${n}`}>{getWeekRange(n).label}</option>
+            ))}
+            <option value="all">Total</option>
+          </select>
         </div>
         <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-6">
           {[
             { key: "clients", icon: Users, value: summary?.client_count || 0, label: "Clientes", bg: "bg-slate-50", iconBg: "rgba(30,58,95,0.1)", iconColor: "#1E3A5F", prefix: "" },
-            { key: "sales", icon: DollarSign, value: `$${summary?.total_sales?.toFixed(0) || 0}`, label: "Ventas", bg: "bg-green-50", iconBg: "rgba(46,204,113,0.1)", iconColor: "#2ECC71", prefix: "" },
+            { key: "sales", icon: DollarSign, value: `$${summary?.total_sales?.toFixed(0) || 0}`, label: "Ventas", bg: "bg-green-50", iconBg: "rgba(46,204,113,0.1)", iconColor: "#2ECC71", prefix: "", onClick: openSalesDetail },
             { key: "commissions", icon: TrendingUp, value: `$${summary?.total_commissions?.toFixed(0) || 0}`, label: "Comisiones", bg: "bg-yellow-50", iconBg: "rgba(234,179,8,0.1)", iconColor: "#ca8a04", prefix: "" },
             { key: "shipments", icon: Truck, value: `$${summary?.total_shipping?.toFixed(0) || 0}`, label: "Envios", bg: "bg-purple-50", iconBg: "rgba(147,51,234,0.1)", iconColor: "#9333ea", prefix: "", onClick: () => navigate("/admin/pending-shipments") },
             { key: "packages", icon: Package, value: summary?.total_packages || 0, label: "Paquetes", bg: "bg-orange-50", iconBg: "rgba(249,115,22,0.1)", iconColor: "#ea580c", prefix: "", onClick: () => navigate("/admin/packages-report") },
@@ -383,6 +448,98 @@ export default function AdminDashboard() {
               </div>
             )}
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sales Detail Dialog (clicking on the Ventas card) */}
+      <Dialog open={salesDetailOpen} onOpenChange={setSalesDetailOpen}>
+        <DialogContent className="rounded-2xl max-w-md w-[95vw] max-h-[85vh] overflow-y-auto" data-testid="sales-detail-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-green-600" />
+              Detalle de Ventas
+            </DialogTitle>
+            <p className="text-xs text-slate-500">
+              {dashPeriod === "all"
+                ? "Todo el tiempo"
+                : (dashPeriod === "week" ? `Esta semana · ${getWeekRange(0).label}` : (resolveRange(dashPeriod)?.label || ""))}
+            </p>
+          </DialogHeader>
+
+          {salesDetailLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-4 border-green-500 border-t-transparent" />
+            </div>
+          ) : salesDetail ? (
+            <div className="pt-2 space-y-3">
+              {/* KPI tabs */}
+              <div className="grid grid-cols-3 gap-2" role="tablist" data-testid="sales-detail-tabs">
+                {[
+                  { key: "buyers", label: "Compraron", count: salesDetail.buyers_count, color: "blue" },
+                  { key: "invoiced", label: "Con factura", count: salesDetail.invoiced_count, color: "green" },
+                  { key: "pending", label: "Sin factura", count: salesDetail.pending_count, color: "amber" },
+                ].map((t) => {
+                  const active = salesDetailTab === t.key;
+                  const cls = active
+                    ? `bg-${t.color}-50 border-${t.color}-200 text-${t.color}-900`
+                    : "bg-white border-slate-200 text-slate-500";
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => setSalesDetailTab(t.key)}
+                      className={`rounded-xl border p-2 text-left transition-colors ${cls}`}
+                      data-testid={`sales-detail-tab-${t.key}`}
+                    >
+                      <p className="text-[10px] uppercase font-bold opacity-80">{t.label}</p>
+                      <p className="text-2xl font-extrabold">{t.count}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Filter */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                <Input
+                  value={salesDetailFilter}
+                  onChange={(e) => setSalesDetailFilter(e.target.value)}
+                  placeholder="Filtrar por código o nombre"
+                  className="h-10 rounded-xl pl-9"
+                  data-testid="sales-detail-filter"
+                />
+              </div>
+
+              {/* List */}
+              {(() => {
+                const list = salesDetailTab === "buyers"
+                  ? salesDetail.buyers
+                  : salesDetailTab === "invoiced"
+                    ? salesDetail.invoiced_customers
+                    : salesDetail.pending_customers;
+                const code = salesDetailFilter.trim().toUpperCase();
+                const filtered = code
+                  ? list.filter((c) =>
+                      c.customer_id.toUpperCase().includes(code) ||
+                      (c.name || "").toUpperCase().includes(code)
+                    )
+                  : list;
+                if (filtered.length === 0) {
+                  return <p className="text-xs text-slate-500 text-center py-4">Sin clientes en esta categoría.</p>;
+                }
+                return (
+                  <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+                    {filtered.map((c) => (
+                      <div key={c.customer_id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-xs gap-2" data-testid={`sales-detail-row-${c.customer_id}`}>
+                        <Badge variant="outline" className="font-mono flex-shrink-0">{c.customer_id}</Badge>
+                        <span className="text-slate-700 font-semibold truncate flex-1">{c.name || "Sin nombre"}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

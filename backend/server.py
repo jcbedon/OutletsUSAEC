@@ -5089,6 +5089,87 @@ async def get_invoices_without_shipment(current_user: dict = Depends(get_current
     }
 
 
+@api_router.get("/admin/reports/sales-detail")
+async def get_sales_detail(start: str | None = None, end: str | None = None, current_user: dict = Depends(get_current_user)):
+    """Sales-detail report for the dashboard "Ventas" card.
+
+    - `buyers`: distinct customers that registered purchases in [start, end].
+    - `invoiced_customers`: subset of `buyers` whose purchases are tied to a non-annulled invoice.
+    - `pending_customers`: subset of `buyers` whose purchases are NOT yet in any invoice.
+
+    Each list contains `{customer_id, name}`. Counts are returned alongside.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    purchase_match: dict = {"tenant_id": tid}
+    if start and end:
+        purchase_match["created_at"] = {"$gte": start, "$lte": end}
+
+    # All purchases in the window. Each purchase carries customer_id and
+    # an optional invoice_id (set when the purchase was billed).
+    purchases = await db.purchases.find(
+        purchase_match,
+        {"_id": 0, "customer_id": 1, "invoice_id": 1, "id": 1}
+    ).to_list(20000)
+
+    # Build sets
+    buyers_set: set[str] = set()
+    invoiced_set: set[str] = set()
+    pending_set: set[str] = set()
+
+    # We also need to ensure invoice is non-annulled. Collect all distinct
+    # invoice ids referenced by these purchases, look them up in one pass.
+    inv_ids = {p.get("invoice_id") for p in purchases if p.get("invoice_id")}
+    annulled_inv_ids: set[str] = set()
+    if inv_ids:
+        ann_invs = await db.invoices.find(
+            {"id": {"$in": list(inv_ids)}, "tenant_id": tid, "is_annulled": True},
+            {"_id": 0, "id": 1}
+        ).to_list(len(inv_ids))
+        annulled_inv_ids = {i["id"] for i in ann_invs}
+
+    for p in purchases:
+        cid = (p.get("customer_id") or "").upper()
+        if not cid:
+            continue
+        buyers_set.add(cid)
+        inv_id = p.get("invoice_id")
+        if inv_id and inv_id not in annulled_inv_ids:
+            invoiced_set.add(cid)
+        else:
+            pending_set.add(cid)
+
+    # Compute "purely pending" (customers with NO billed purchase in the window).
+    purely_pending = pending_set - invoiced_set
+
+    # Resolve customer names in one query.
+    cust_ids = list(buyers_set)
+    users = await db.users.find(
+        {"customer_id": {"$in": cust_ids}, "tenant_id": tid, "role": "client"},
+        {"_id": 0, "customer_id": 1, "name": 1}
+    ).to_list(len(cust_ids) or 1)
+    name_map = {u["customer_id"].upper(): u.get("name", "") for u in users}
+
+    def to_list(s: set[str]) -> list[dict]:
+        return sorted(
+            [{"customer_id": cid, "name": name_map.get(cid, "")} for cid in s],
+            key=lambda x: (x.get("name") or "").lower() or x["customer_id"],
+        )
+
+    return {
+        "buyers": to_list(buyers_set),
+        "invoiced_customers": to_list(invoiced_set),
+        "pending_customers": to_list(purely_pending),
+        "buyers_count": len(buyers_set),
+        "invoiced_count": len(invoiced_set),
+        "pending_count": len(purely_pending),
+        "start": start,
+        "end": end,
+    }
+
+
 @api_router.get("/admin/reports/clients-debts")
 async def get_clients_debts_report(current_user: dict = Depends(get_current_user)):
     """Get detailed report of client debts including creation date and pending balance"""
