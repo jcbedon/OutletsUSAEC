@@ -136,8 +136,11 @@ export default function AdminPackagesReport() {
       if (!byCategory[catKey]) byCategory[catKey] = { key: catKey, label: cat?.label || catKey, qty: 0, cost: 0, customers: new Map() };
       byCategory[catKey].qty += qty;
       byCategory[catKey].cost += cost;
-      // Map customer_id -> name (stored once per category) so we can show the list later.
-      if (!byCategory[catKey].customers.has(custId)) byCategory[catKey].customers.set(custId, custName || "");
+      // Map customer_id -> { name, qty } so we can show quantity-per-customer in the dialog.
+      const prev = byCategory[catKey].customers.get(custId) || { name: custName || "", qty: 0 };
+      prev.qty += qty;
+      if (custName && !prev.name) prev.name = custName;
+      byCategory[catKey].customers.set(custId, prev);
     });
 
     return {
@@ -147,7 +150,9 @@ export default function AdminPackagesReport() {
       byCategory: Object.values(byCategory).map((c) => ({
         ...c,
         customer_count: c.customers.size,
-        customers_list: Array.from(c.customers.entries()).map(([id, name]) => ({ customer_id: id, name })).sort((a, b) => a.customer_id.localeCompare(b.customer_id)),
+        customers_list: Array.from(c.customers.entries())
+          .map(([id, info]) => ({ customer_id: id, name: info.name, qty: info.qty }))
+          .sort((a, b) => b.qty - a.qty || a.customer_id.localeCompare(b.customer_id)),
       })).sort((a, b) => b.qty - a.qty),
     };
   }, [filtered, categories, clientsByCode]);
@@ -389,9 +394,14 @@ export default function AdminPackagesReport() {
             </DialogHeader>
             <div className="space-y-1.5 mt-2">
               {(customerListDialog?.customers || []).map((c) => (
-                <div key={c.customer_id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-xs" data-testid={`dialog-customer-${c.customer_id}`}>
-                  <Badge variant="outline" className="font-mono">{c.customer_id}</Badge>
-                  <span className="text-slate-700 font-semibold ml-3 text-right truncate">{c.name || "Sin nombre"}</span>
+                <div key={c.customer_id} className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2 text-xs gap-2" data-testid={`dialog-customer-${c.customer_id}`}>
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <Badge variant="outline" className="font-mono flex-shrink-0">{c.customer_id}</Badge>
+                    <span className="text-slate-700 font-semibold truncate">{c.name || "Sin nombre"}</span>
+                  </div>
+                  <span className="text-purple-700 font-extrabold flex-shrink-0">
+                    {fmtQty(c.qty)} {unitLabel}
+                  </span>
                 </div>
               ))}
               {(customerListDialog?.customers || []).length === 0 && (
