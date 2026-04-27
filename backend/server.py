@@ -5141,8 +5141,9 @@ async def get_sales_detail(start: str | None = None, end: str | None = None, cur
         else:
             pending_set.add(cid)
 
-    # Compute "purely pending" (customers with NO billed purchase in the window).
-    purely_pending = pending_set - invoiced_set
+    # "Sin factura" = anyone with AT LEAST ONE unbilled purchase in the window,
+    # even if they also have other purchases already billed.
+    purely_pending = pending_set
 
     # Resolve customer names in one query.
     cust_ids = list(buyers_set)
