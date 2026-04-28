@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
 import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings, getClientPassword } from "@/lib/api";
+import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -86,6 +87,9 @@ export default function AdminClients() {
   };
 
   useEffect(() => { loadClients(); }, []);
+
+  // Refresh whenever the user comes back to this tab.
+  useRefreshOnTabFocus(() => loadClients());
 
   useEffect(() => {
     if (search) {

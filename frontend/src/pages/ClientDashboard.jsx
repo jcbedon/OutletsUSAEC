@@ -12,6 +12,7 @@ import {
   getInvoiceDetail
 } from "@/lib/api";
 import { generateInvoicePDF } from "@/lib/invoicePDF";
+import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -80,6 +81,9 @@ export default function ClientDashboard() {
       loadData();
     }
   }, [user]);
+
+  // Refresh whenever the user comes back to this tab.
+  useRefreshOnTabFocus(() => { if (user) loadData(); });
 
   const loadData = async () => {
     try {

@@ -12,6 +12,7 @@ import { ArrowLeft, DollarSign, TrendingUp, TrendingDown, Wallet, Store, Radio, 
 import { SalesTrendChart, StoreBarChart, ProfitPieChart, LiveBarChart, ClientsDebtsChart, ClientsDebtsPieChart, ClientsByDateChart } from "@/components/StatsCharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import StoreProfitsReport from "@/components/StoreProfitsReport";
+import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 
 function formatMoney(n) {
   return "$" + (n || 0).toFixed(2);
@@ -76,6 +77,9 @@ export default function AdminStats() {
   useEffect(() => {
     loadStats();
   }, []);
+
+  // Refresh whenever the user comes back to this tab.
+  useRefreshOnTabFocus(() => loadStats());
 
   const handlePeriodChange = (newPeriod) => {
     setPeriod(newPeriod);

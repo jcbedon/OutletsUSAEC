@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { getEmployees, createEmployee, updateEmployee, deleteEmployee, getEmployeeDetail } from "@/lib/api";
+import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Users, Plus, Edit, Trash2, Eye, EyeOff, Shield, UserCheck, UserX, ArrowLeft } from "lucide-react";
 
@@ -48,6 +49,9 @@ export default function AdminEmployees() {
   useEffect(() => {
     loadEmployees();
   }, []);
+
+  // Refresh whenever the user comes back to this tab.
+  useRefreshOnTabFocus(() => loadEmployees());
 
   const loadEmployees = async () => {
     try {

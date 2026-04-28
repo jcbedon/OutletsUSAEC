@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/App";
 import { searchInvoices, annulInvoice, getInvoiceDetail, getAllClients, getMyTenant, recalculateAllInvoices } from "@/lib/api";
+import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +72,9 @@ export default function AdminInvoices() {
   useEffect(() => {
     loadInvoices();
   }, [activeTab]);
+
+  // Refresh whenever the user comes back to this tab.
+  useRefreshOnTabFocus(() => loadInvoices());
 
   // If navigated here with ?invoice_id=..., auto-open that invoice once loaded.
   // If navigated with ?customer_id=..., auto-open the create-invoice flow for that client.

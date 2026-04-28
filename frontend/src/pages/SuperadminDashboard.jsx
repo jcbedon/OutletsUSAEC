@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/App";
 import { useNavigate } from "react-router-dom";
 import { listTenants, createTenant, updateTenantStatus, getSuperadminStats, updateTenantTaxOptionsSuperadmin, updateTenantTrackingUrl, resetTenantAdminPassword, getTenantAdminInfo, updateTenantSettings, updateShippingCategoriesSuperadmin } from "@/lib/api";
+import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,6 +66,9 @@ export default function SuperadminDashboard() {
   ];
 
   useEffect(() => { loadData(); }, []);
+
+  // Refresh whenever the user comes back to this tab.
+  useRefreshOnTabFocus(() => loadData());
 
   const loadData = async () => {
     try {

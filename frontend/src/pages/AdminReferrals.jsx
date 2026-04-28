@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
 import { getReferralBonus, setReferralBonus, getReferralStats } from "@/lib/api";
+import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,22 +44,26 @@ export default function AdminReferrals() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  const loadData = async () => {
+    try {
+      const bonusRes = await getReferralBonus();
+      const statsRes = await getReferralStats();
+      setCurrentBonus(bonusRes.data.referral_bonus);
+      setNewBonus(bonusRes.data.referral_bonus.toString());
+      setStats(statsRes.data);
+    } catch (error) {
+      toast.error("Error al cargar datos");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const bonusRes = await getReferralBonus();
-        const statsRes = await getReferralStats();
-        setCurrentBonus(bonusRes.data.referral_bonus);
-        setNewBonus(bonusRes.data.referral_bonus.toString());
-        setStats(statsRes.data);
-      } catch (error) {
-        toast.error("Error al cargar datos");
-      } finally {
-        setLoading(false);
-      }
-    };
     loadData();
   }, []);
+
+  // Refresh whenever the user comes back to this tab.
+  useRefreshOnTabFocus(() => loadData());
 
   const handleSaveBonus = async () => {
     const amount = parseFloat(newBonus);

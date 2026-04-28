@@ -31,6 +31,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import StoreInvoiceSection from "@/components/StoreInvoiceSection";
 import PurchaseItem from "@/components/live/PurchaseItem";
+import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { Checkbox } from "@/components/ui/checkbox";
 import { 
   Radio, 
@@ -194,6 +195,9 @@ export default function AdminLive() {
       setDebtStatusMap(map);
     }).catch(() => {});
   }, []);
+
+  // Refresh whenever the user comes back to this tab.
+  useRefreshOnTabFocus(() => loadData(true));
 
   const loadData = async (preserveSelection = false) => {
     try {

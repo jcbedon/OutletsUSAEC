@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { getAuditLogs, getAuditUsers, getAuditActions } from "@/lib/api";
+import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { FileText, Search, User, Calendar, Filter, ChevronLeft, ChevronRight, Clock, Activity, ArrowLeft } from "lucide-react";
 
@@ -62,6 +63,9 @@ export default function AdminAuditLog() {
   useEffect(() => {
     loadLogs();
   }, [page, filters]);
+
+  // Refresh whenever the user comes back to this tab.
+  useRefreshOnTabFocus(() => loadLogs());
 
   const loadInitialData = async () => {
     try {

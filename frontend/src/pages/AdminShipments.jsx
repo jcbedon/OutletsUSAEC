@@ -18,6 +18,7 @@ import {
   attachSessionFilesToShipment
 } from "@/lib/api";
 import { toast } from "sonner";
+import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -162,6 +163,9 @@ export default function AdminShipments() {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Refresh whenever the user comes back to this tab.
+  useRefreshOnTabFocus(() => loadData());
 
   // Auto-select client when coming from invoice
   useEffect(() => {

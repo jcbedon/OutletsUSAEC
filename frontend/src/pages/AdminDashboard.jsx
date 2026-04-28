@@ -29,6 +29,7 @@ import {
   ShoppingBag
 } from "lucide-react";
 import { uploadTenantLogo } from "@/lib/api";
+import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
@@ -79,6 +80,9 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Refresh whenever the user comes back to this tab.
+  useRefreshOnTabFocus(() => loadData());
 
   // Resolve the active period into either "week"/"all" (for legacy summary endpoint)
   // or {startISO, endISO} for explicit week ranges.
