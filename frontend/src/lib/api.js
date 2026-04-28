@@ -192,6 +192,7 @@ export const deleteEmployee = (employeeId) => api.delete(`/admin/employees/${emp
 export const getAuditLogs = (params) => api.get("/admin/audit-logs", { params });
 export const getAuditUsers = () => api.get("/admin/audit-logs/users");
 export const getAuditActions = () => api.get("/admin/audit-logs/actions");
+export const getAuditHistory = (days = 7) => api.get(`/admin/audit-logs/history?days=${days}`);
 
 // Superadmin - Tenant Settings
 export const updateTenantTaxOptionsSuperadmin = (tenantId, taxOptions) => 

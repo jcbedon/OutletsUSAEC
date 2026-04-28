@@ -3125,6 +3125,45 @@ async def delete_purchase(purchase_id: str, current_user: dict = Depends(get_cur
     # Adjust live totals
     await db.lives.update_one({"id": purchase["live_id"], "tenant_id": tid},
         {"$inc": {"total_sales": -purchase.get("price_with_tax", 0), "total_commissions": -purchase["commission"], "purchase_count": -1}})
+    # Get user info for audit
+    actor = await db.users.find_one({"id": current_user["user_id"], "tenant_id": tid}, {"_id": 0, "name": 1, "email": 1, "role": 1})
+    if not actor:
+        actor = await db.employees.find_one({"id": current_user["user_id"], "tenant_id": tid}, {"_id": 0, "name": 1, "email": 1})
+    actor_name = (actor or {}).get("name") or (actor or {}).get("email") or "—"
+    actor_role = (actor or {}).get("role") or current_user.get("role")
+
+    # Get linked client name & live title for richer audit context.
+    client_doc = await db.users.find_one({"id": purchase["user_id"], "tenant_id": tid}, {"_id": 0, "name": 1, "customer_id": 1})
+    live_doc = await db.lives.find_one({"id": purchase.get("live_id"), "tenant_id": tid}, {"_id": 0, "title": 1})
+
+    # Snapshot the deleted purchase BEFORE the actual delete so the audit trail
+    # always knows which client/store/live the item came from, even after the
+    # purchase document is removed.
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=actor_name,
+        user_role=actor_role,
+        action="delete_purchase",
+        entity_type="purchase",
+        entity_id=purchase_id,
+        entity_name=purchase.get("item_name"),
+        details={
+            "item_name": purchase.get("item_name"),
+            "store": purchase.get("store"),
+            "price": purchase.get("price"),
+            "tax": purchase.get("tax", 0),
+            "commission": purchase.get("commission", 0),
+            "total": purchase.get("total"),
+            "customer_id": purchase.get("customer_id"),
+            "customer_name": (client_doc or {}).get("name"),
+            "live_id": purchase.get("live_id"),
+            "live_title": (live_doc or {}).get("title"),
+            "invoice_id": purchase.get("invoice_id"),
+            "purchase_created_at": purchase.get("created_at"),
+        }
+    )
+
     await db.purchases.delete_one({"id": purchase_id, "tenant_id": tid})
     return {"message": "Compra eliminada y saldo reembolsado"}
 
@@ -5785,10 +5824,15 @@ async def get_audit_logs(
     tid = current_user["tenant_id"]
     
     query = {"tenant_id": tid}
+    # Login events are intentionally hidden from the audit feed — they create noise
+    # and are not actionable. They remain stored in the DB for forensic forensics
+    # purposes but are filtered out at the API level.
+    query["action"] = {"$ne": "login"}
     
     if user_id:
         query["user_id"] = user_id
     if action:
+        # Allow explicit filter to override the global login exclusion only when needed.
         query["action"] = action
     if entity_type:
         query["entity_type"] = entity_type
@@ -5839,9 +5883,8 @@ async def get_audit_actions(current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     
-    # Return predefined action types
+    # Return predefined action types (excluding "login" which is hidden from the feed)
     return [
-        {"value": "login", "label": "Inicio de sesión"},
         {"value": "create_client", "label": "Crear cliente"},
         {"value": "update_client", "label": "Editar cliente"},
         {"value": "delete_client", "label": "Eliminar cliente"},
@@ -5850,13 +5893,16 @@ async def get_audit_actions(current_user: dict = Depends(get_current_user)):
         {"value": "delete_purchase", "label": "Eliminar compra"},
         {"value": "approve_recharge", "label": "Aprobar recarga"},
         {"value": "reject_recharge", "label": "Rechazar recarga"},
+        {"value": "delete_recharge", "label": "Eliminar recarga"},
         {"value": "adjust_wallet", "label": "Ajustar saldo"},
+        {"value": "create_recharge", "label": "Crear recarga"},
         {"value": "create_shipment", "label": "Crear envío"},
         {"value": "update_shipment", "label": "Editar envío"},
         {"value": "delete_shipment", "label": "Eliminar envío"},
         {"value": "create_invoice", "label": "Crear factura"},
         {"value": "approve_invoice", "label": "Aprobar factura"},
         {"value": "reopen_invoice", "label": "Reabrir factura"},
+        {"value": "invoice_annulled", "label": "Anular factura"},
         {"value": "create_live", "label": "Crear live"},
         {"value": "start_live", "label": "Iniciar live"},
         {"value": "end_live", "label": "Finalizar live"},
@@ -5866,6 +5912,171 @@ async def get_audit_actions(current_user: dict = Depends(get_current_user)):
     ]
 
 # ==================== HEALTH ====================
+
+@api_router.get("/admin/audit-logs/history")
+async def get_audit_history(days: int = 7, current_user: dict = Depends(get_current_user)):
+    """Aggregated 'last N days' history for sensitive actions:
+    - Productos eliminados (with full client/store/live snapshot when available)
+    - Facturas anuladas
+    - Recargas aprobadas
+
+    For deletions logged BEFORE the audit-rich version of `delete_purchase` was
+    deployed, we fall back to the auto-created refund wallet_transaction so the
+    user can still see "what was deleted yesterday" (cliente + ítem + monto).
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    days = max(1, min(int(days or 7), 90))
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+    # 1) Audit-tracked deletions (rich data: store + live)
+    audit_deletes_raw = await db.audit_logs.find(
+        {"tenant_id": tid, "action": "delete_purchase", "created_at": {"$gte": since}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+
+    deleted_purchases = []
+    seen_purchase_ids = set()
+    for log in audit_deletes_raw:
+        det = log.get("details") or {}
+        seen_purchase_ids.add(log.get("entity_id"))
+        deleted_purchases.append({
+            "source": "audit",
+            "deleted_at": log.get("created_at"),
+            "deleted_by": log.get("user_name"),
+            "item_name": det.get("item_name") or log.get("entity_name"),
+            "store": det.get("store"),
+            "live_title": det.get("live_title"),
+            "customer_id": det.get("customer_id"),
+            "customer_name": det.get("customer_name"),
+            "total": det.get("total"),
+        })
+
+    # 2) Legacy fallback — refund wallet transactions auto-created by delete_purchase.
+    # Description format: "Reembolso: {item_name} eliminado".
+    refund_txs = await db.wallet_transactions.find(
+        {"tenant_id": tid, "type": "refund",
+         "description": {"$regex": "^Reembolso:.*eliminado", "$options": "i"},
+         "created_at": {"$gte": since}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+
+    # Build customer_id -> name lookup once.
+    cust_ids = list({tx.get("customer_id") for tx in refund_txs if tx.get("customer_id")})
+    cust_lookup = {}
+    if cust_ids:
+        cust_docs = await db.users.find(
+            {"customer_id": {"$in": cust_ids}, "tenant_id": tid},
+            {"_id": 0, "customer_id": 1, "name": 1}
+        ).to_list(len(cust_ids))
+        cust_lookup = {c["customer_id"]: c.get("name") for c in cust_docs}
+
+    for tx in refund_txs:
+        # Skip if we already have an audit log entry that covers this delete.
+        # We can't directly correlate by id, but if a refund's created_at is within
+        # 5 seconds of an audit log we trust the audit log instead.
+        tx_time = tx.get("created_at", "")
+        is_dupe = False
+        for d in deleted_purchases:
+            if d["source"] != "audit": continue
+            if d.get("customer_id") != tx.get("customer_id"): continue
+            if d.get("total") != tx.get("amount"): continue
+            try:
+                t1 = datetime.fromisoformat(tx_time.replace("Z", "+00:00"))
+                t2 = datetime.fromisoformat(d["deleted_at"].replace("Z", "+00:00"))
+                if abs((t1 - t2).total_seconds()) <= 10:
+                    is_dupe = True
+                    break
+            except Exception:
+                pass
+        if is_dupe:
+            continue
+        # Extract item name from description
+        desc = tx.get("description") or ""
+        item_name = desc.replace("Reembolso:", "").replace("eliminado", "").strip()
+        deleted_purchases.append({
+            "source": "refund",  # legacy fallback (no store/live info)
+            "deleted_at": tx_time,
+            "deleted_by": None,
+            "item_name": item_name or "(sin nombre)",
+            "store": None,
+            "live_title": None,
+            "customer_id": tx.get("customer_id"),
+            "customer_name": cust_lookup.get(tx.get("customer_id")),
+            "total": tx.get("amount"),
+        })
+
+    # Sort all deletions desc by date
+    deleted_purchases.sort(key=lambda x: x.get("deleted_at") or "", reverse=True)
+
+    # 3) Annulled invoices
+    annulled_logs = await db.audit_logs.find(
+        {"tenant_id": tid, "action": "invoice_annulled", "created_at": {"$gte": since}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    annulled_invoices = []
+    for log in annulled_logs:
+        # Pull invoice for customer info if we still have it
+        inv = await db.invoices.find_one(
+            {"id": log.get("entity_id"), "tenant_id": tid},
+            {"_id": 0, "invoice_number": 1, "customer_id": 1, "total": 1, "total_a_pagar": 1}
+        )
+        cust_name = None
+        if inv and inv.get("customer_id"):
+            cust = await db.users.find_one(
+                {"customer_id": inv["customer_id"], "tenant_id": tid},
+                {"_id": 0, "name": 1}
+            )
+            cust_name = (cust or {}).get("name")
+        annulled_invoices.append({
+            "annulled_at": log.get("created_at"),
+            "annulled_by": log.get("user_name"),
+            "invoice_id": log.get("entity_id"),
+            "invoice_number": (inv or {}).get("invoice_number"),
+            "customer_id": (inv or {}).get("customer_id"),
+            "customer_name": cust_name,
+            "total": (inv or {}).get("total"),
+        })
+
+    # 4) Approved recharges (from wallet_transactions to be exhaustive — audit may
+    # have started later, but wallet_transactions are always created on approve).
+    approved_recharges_raw = await db.wallet_transactions.find(
+        {"tenant_id": tid,
+         "type": {"$in": ["deposit", "initial_balance", "referral_bonus"]},
+         "status": "approved",
+         "is_deleted": {"$ne": True},
+         "approved_at": {"$gte": since}},
+        {"_id": 0}
+    ).sort("approved_at", -1).to_list(500)
+
+    rc_cust_ids = list({tx.get("customer_id") for tx in approved_recharges_raw if tx.get("customer_id")})
+    rc_cust_lookup = {}
+    if rc_cust_ids:
+        cust_docs = await db.users.find(
+            {"customer_id": {"$in": rc_cust_ids}, "tenant_id": tid},
+            {"_id": 0, "customer_id": 1, "name": 1}
+        ).to_list(len(rc_cust_ids))
+        rc_cust_lookup = {c["customer_id"]: c.get("name") for c in cust_docs}
+
+    approved_recharges = [{
+        "approved_at": tx.get("approved_at") or tx.get("created_at"),
+        "customer_id": tx.get("customer_id"),
+        "customer_name": rc_cust_lookup.get(tx.get("customer_id")),
+        "amount": tx.get("amount"),
+        "description": tx.get("description"),
+        "type": tx.get("type"),
+    } for tx in approved_recharges_raw]
+
+    return {
+        "since": since,
+        "days": days,
+        "deleted_purchases": deleted_purchases,
+        "annulled_invoices": annulled_invoices,
+        "approved_recharges": approved_recharges,
+    }
+
 
 @api_router.get("/")
 async def root():

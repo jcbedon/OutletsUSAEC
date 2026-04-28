@@ -34,6 +34,11 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
 - **[27-feb]** Backend: `NoCacheMiddleware` agregado antes de `CORSMiddleware` → todas las respuestas `/api/*` traen `Cache-Control: no-store`, `Pragma: no-cache`, `Expires: 0`.
 - **[27-feb]** **Permisos de empleado en vivo VERIFICADO**: `/auth/me` devuelve permisos frescos para empleado y admin; al refrescar la página, la UI hidrata las nuevas tarjetas (Facturas/Envíos) sin re-login. Confirmado E2E con screenshots.
 - **[28-feb]** **Auto-refresh on tab focus**: nuevo hook `useRefreshOnTabFocus` cableado a las 12 páginas principales (AdminDashboard, AdminStats, AdminLive, AdminShipments, AdminWallet, AdminInvoices, AdminClients, AdminEmployees, AdminAuditLog, AdminReferrals, ClientDashboard, SuperadminDashboard). Cuando el usuario regresa a la pestaña, la página recarga su data automáticamente. Verificado E2E disparando `visibilitychange` (pasó de 4 → 6 fetches a `/api/admin/clients`).
+- **[28-feb]** **Audit + Historial**:
+  - `delete_purchase` ahora registra audit log con snapshot completo (cliente, tienda, live, ítem, monto, quién eliminó). Se guarda **antes** del delete para preservar el contexto.
+  - Eventos `login` ocultos del feed de auditoría (siguen en BD para forensics).
+  - Nueva pestaña **Historial** en `/admin/audit`: 3 secciones (Productos Eliminados, Facturas Anuladas, Recargas Aprobadas) con rango 7/14/30/60/90 días, KPIs y filtro de texto unificado. Para deletes anteriores al fix se muestra un fallback desde `wallet_transactions` tipo refund (etiquetado `legacy`, sin tienda/live).
+  - Endpoint `GET /admin/audit-logs/history?days=N`.
 
 ## Roadmap
 ### P0 técnico
