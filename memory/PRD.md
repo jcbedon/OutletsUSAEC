@@ -39,6 +39,8 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
   - Eventos `login` ocultos del feed de auditoría (siguen en BD para forensics).
   - Nueva pestaña **Historial** en `/admin/audit`: 3 secciones (Productos Eliminados, Facturas Anuladas, Recargas Aprobadas) con rango 7/14/30/60/90 días, KPIs y filtro de texto unificado. Para deletes anteriores al fix se muestra un fallback desde `wallet_transactions` tipo refund (etiquetado `legacy`, sin tienda/live).
   - Endpoint `GET /admin/audit-logs/history?days=N`.
+- **[28-feb]** **Restaurar producto eliminado**: endpoint `POST /admin/audit-logs/restore-purchase/{audit_log_id}` que recrea el `purchase` desde el snapshot, revierte el reembolso (`wallet_transactions` is_deleted + `wallets.available -= amount`), restaura totales del live y dispara `recalculate_client_invoices`. Marca el audit log original como `restored=true` para evitar doble-restore. Verificado E2E: balance vuelve a su estado original ($17.24 → $99.74 → $17.24).
+- **[28-feb]** **`delete_purchase` ahora actualiza la factura asociada**: si el producto pertenece a una factura, se quita del `purchase_ids`, se recalculan `subtotal/total_tax/total_commission/total` (mismo patrón que `remove_item_from_invoice`) y se llama a `recalculate_client_invoices` para mantener saldos consistentes en toda la cadena. Verificado E2E: factura 2-items → eliminar 1 → factura queda con 1-item, totales correctos, saldo a favor del cliente actualizado.
 
 ## Roadmap
 ### P0 técnico

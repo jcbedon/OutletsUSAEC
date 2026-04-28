@@ -3164,7 +3164,46 @@ async def delete_purchase(purchase_id: str, current_user: dict = Depends(get_cur
         }
     )
 
+    # If the purchase was attached to an invoice, also detach it from the
+    # invoice and recalculate the invoice totals (mirroring the logic of
+    # remove_item_from_invoice). This guarantees that deleting a purchase
+    # never leaves orphan ids in `invoice.purchase_ids` and that subtotal,
+    # total_tax, total_commission and total stay consistent across the chain.
+    invoice_id = purchase.get("invoice_id")
+    if invoice_id:
+        invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid}, {"_id": 0})
+        if invoice and purchase_id in (invoice.get("purchase_ids") or []):
+            new_purchase_ids = [pid for pid in invoice["purchase_ids"] if pid != purchase_id]
+            remaining_purchases = await db.purchases.find(
+                {"id": {"$in": new_purchase_ids}, "tenant_id": tid}, {"_id": 0}
+            ).to_list(len(new_purchase_ids)) if new_purchase_ids else []
+
+            new_subtotal = sum(p["price"] for p in remaining_purchases)
+            new_total_tax = sum(p.get("tax", 0) for p in remaining_purchases)
+            new_total_commission = sum(p.get("commission", 0) for p in remaining_purchases)
+            new_total = sum(p["total"] for p in remaining_purchases)
+
+            await db.invoices.update_one(
+                {"id": invoice_id, "tenant_id": tid},
+                {"$set": {
+                    "purchase_ids": new_purchase_ids,
+                    "subtotal": round(new_subtotal, 2),
+                    "total_tax": round(new_total_tax, 2),
+                    "total_commission": round(new_total_commission, 2),
+                    "total": round(new_total, 2),
+                }}
+            )
+
     await db.purchases.delete_one({"id": purchase_id, "tenant_id": tid})
+
+    # Recalculate the client's full invoice chain so saldo_pendiente,
+    # saldo_a_favor, total_a_pagar and deposits_applied stay consistent.
+    if invoice_id and purchase.get("customer_id"):
+        try:
+            await recalculate_client_invoices(tid, purchase["customer_id"])
+        except Exception as _re_err:
+            logger.error(f"Error recalculating after delete_purchase: {_re_err}")
+
     return {"message": "Compra eliminada y saldo reembolsado"}
 
 # ==================== SHIPMENT ENDPOINTS ====================
@@ -5943,6 +5982,8 @@ async def get_audit_history(days: int = 7, current_user: dict = Depends(get_curr
         det = log.get("details") or {}
         seen_purchase_ids.add(log.get("entity_id"))
         deleted_purchases.append({
+            "audit_log_id": log.get("id"),
+            "restored": bool(log.get("restored")),
             "source": "audit",
             "deleted_at": log.get("created_at"),
             "deleted_by": log.get("user_name"),
@@ -5997,6 +6038,8 @@ async def get_audit_history(days: int = 7, current_user: dict = Depends(get_curr
         desc = tx.get("description") or ""
         item_name = desc.replace("Reembolso:", "").replace("eliminado", "").strip()
         deleted_purchases.append({
+            "audit_log_id": None,
+            "restored": False,
             "source": "refund",  # legacy fallback (no store/live info)
             "deleted_at": tx_time,
             "deleted_by": None,
@@ -6075,6 +6118,144 @@ async def get_audit_history(days: int = 7, current_user: dict = Depends(get_curr
         "deleted_purchases": deleted_purchases,
         "annulled_invoices": annulled_invoices,
         "approved_recharges": approved_recharges,
+    }
+
+
+@api_router.post("/admin/audit-logs/restore-purchase/{audit_log_id}")
+async def restore_deleted_purchase(audit_log_id: str, current_user: dict = Depends(get_current_user)):
+    """Restore a previously-deleted purchase from its audit-log snapshot.
+
+    Steps:
+    1) Look up the audit log (must be action=delete_purchase, same tenant).
+    2) Refuse if no rich snapshot, already restored, or purchase already exists.
+    3) Recreate the purchase document from the snapshot.
+    4) Reverse the auto-created refund wallet_transaction (soft-delete) so the
+       client's wallet returns to its pre-delete state.
+    5) Mark the original audit log as restored, and log a new `restore_purchase`
+       action for traceability.
+    6) Trigger client invoice recalculation if the restored purchase was linked
+       to an invoice.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    log = await db.audit_logs.find_one(
+        {"id": audit_log_id, "tenant_id": tid, "action": "delete_purchase"},
+        {"_id": 0}
+    )
+    if not log:
+        raise HTTPException(status_code=404, detail="Registro de eliminación no encontrado")
+    if log.get("restored"):
+        raise HTTPException(status_code=400, detail="Esta eliminación ya fue restaurada")
+
+    details = log.get("details") or {}
+    purchase_id = log.get("entity_id")
+    if not purchase_id or not details.get("item_name") or details.get("total") is None:
+        raise HTTPException(status_code=400, detail="No hay suficiente información para restaurar este producto")
+
+    existing = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0, "id": 1})
+    if existing:
+        raise HTTPException(status_code=400, detail="El producto ya existe en el sistema")
+
+    # Resolve user_id from customer_id when needed.
+    customer_id = details.get("customer_id")
+    user_doc = await db.users.find_one(
+        {"customer_id": customer_id, "tenant_id": tid, "role": "client"},
+        {"_id": 0, "id": 1}
+    ) if customer_id else None
+    if not user_doc:
+        raise HTTPException(status_code=400, detail="El cliente original ya no existe — no se puede restaurar")
+
+    # Recreate the purchase row with original id and snapshot fields.
+    restored_purchase = {
+        "id": purchase_id,
+        "tenant_id": tid,
+        "user_id": user_doc["id"],
+        "customer_id": customer_id,
+        "live_id": details.get("live_id"),
+        "item_name": details.get("item_name"),
+        "store": details.get("store"),
+        "price": details.get("price") or 0,
+        "tax": details.get("tax") or 0,
+        "commission": details.get("commission") or 0,
+        "total": details.get("total") or 0,
+        "invoice_id": details.get("invoice_id"),
+        "created_at": details.get("purchase_created_at") or datetime.now(timezone.utc).isoformat(),
+        "restored_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.purchases.insert_one(restored_purchase)
+
+    # Re-credit the live totals that delete_purchase decremented.
+    if restored_purchase.get("live_id"):
+        await db.lives.update_one(
+            {"id": restored_purchase["live_id"], "tenant_id": tid},
+            {"$inc": {
+                "total_sales": float(details.get("price") or 0) + float(details.get("tax") or 0),
+                "total_commissions": float(details.get("commission") or 0),
+                "purchase_count": 1,
+            }}
+        )
+
+    # Reverse the refund wallet_transaction (auto-created on delete_purchase).
+    # We match by tenant + user + amount + type=refund + customer_id, latest one.
+    refund_query = {
+        "tenant_id": tid,
+        "user_id": user_doc["id"],
+        "type": "refund",
+        "amount": details.get("total"),
+        "is_deleted": {"$ne": True},
+    }
+    refund_tx = await db.wallet_transactions.find_one(refund_query, sort=[("created_at", -1)])
+    if refund_tx:
+        # Subtract the refunded amount back from the wallet and mark refund as deleted.
+        await db.wallet_transactions.update_one(
+            {"id": refund_tx["id"], "tenant_id": tid},
+            {"$set": {"is_deleted": True, "deleted_reason": f"Restauración de producto (audit_log {audit_log_id})", "deleted_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        # Adjust wallet `available` (the schema field used by delete_purchase).
+        await db.wallets.update_one(
+            {"user_id": user_doc["id"], "tenant_id": tid},
+            {"$inc": {"available": -float(refund_tx["amount"])},
+             "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+
+    # Mark the original audit log as restored so the UI can hide the button next time.
+    await db.audit_logs.update_one(
+        {"id": audit_log_id, "tenant_id": tid},
+        {"$set": {"restored": True, "restored_at": datetime.now(timezone.utc).isoformat(), "restored_by": current_user["user_id"]}}
+    )
+
+    # Log the restore action.
+    actor = await db.users.find_one({"id": current_user["user_id"], "tenant_id": tid}, {"_id": 0, "name": 1, "email": 1, "role": 1})
+    if not actor:
+        actor = await db.employees.find_one({"id": current_user["user_id"], "tenant_id": tid}, {"_id": 0, "name": 1, "email": 1})
+    actor_name = (actor or {}).get("name") or (actor or {}).get("email") or "—"
+    actor_role = (actor or {}).get("role") or current_user.get("role")
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=actor_name,
+        user_role=actor_role,
+        action="restore_purchase",
+        entity_type="purchase",
+        entity_id=purchase_id,
+        entity_name=details.get("item_name"),
+        details={**details, "restored_from_audit_log": audit_log_id},
+    )
+
+    # Recalculate the client's invoice chain if this purchase was attached to an invoice.
+    if restored_purchase.get("invoice_id"):
+        try:
+            await recalculate_client_invoices(tid, customer_id)
+        except Exception:
+            pass
+
+    return {
+        "message": "Producto restaurado",
+        "purchase_id": purchase_id,
+        "item_name": details.get("item_name"),
+        "customer_id": customer_id,
     }
 
 
