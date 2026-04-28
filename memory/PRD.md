@@ -31,6 +31,8 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
   - Backend: nuevo campo `password_plain` en `User` + endpoint `GET /admin/clients/{user_id}/password`.
   - Se llena al crear cliente (admin o self-register) y al cambiar la contraseña.
   - Para clientes legacy (antes de esta fecha) se muestra mensaje "No disponible — restablece la contraseña".
+- **[27-feb]** Backend: `NoCacheMiddleware` agregado antes de `CORSMiddleware` → todas las respuestas `/api/*` traen `Cache-Control: no-store`, `Pragma: no-cache`, `Expires: 0`.
+- **[27-feb]** **Permisos de empleado en vivo VERIFICADO**: `/auth/me` devuelve permisos frescos para empleado y admin; al refrescar la página, la UI hidrata las nuevas tarjetas (Facturas/Envíos) sin re-login. Confirmado E2E con screenshots.
 
 ## Roadmap
 ### P0 técnico
