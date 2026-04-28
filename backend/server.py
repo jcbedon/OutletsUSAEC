@@ -4464,16 +4464,24 @@ async def _customer_deposit_audit(tenant_id: str, customer_id: str | None) -> di
 
 @api_router.post("/invoices/{invoice_id}/recalc")
 async def recalc_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
-    """Run the deposit-assignment recalculation for the customer that owns this invoice.
-    Note: the chain is recalculated client-wide because deposits cascade, but the
-    caller's intent here is to repair this specific invoice's stale numbers."""
+    """Recompute this invoice from scratch using the current purchases attached
+    to it, then run the client-wide deposit/saldo recalculation chain.
+
+    Sequence:
+      1. Reload invoice and its purchase_ids.
+      2. Recalculate `subtotal`, `total_tax`, `total_commission`, `total` from
+         the live purchase rows (handles items deleted/edited outside this UI).
+      3. Drop ids of purchases that no longer exist (orphan ids cleanup).
+      4. Persist the new invoice header.
+      5. Trigger the client-wide chain so saldo_pendiente / saldo_a_favor /
+         total_a_pagar / deposits_applied stay consistent across siblings.
+    """
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
 
     invoice = await db.invoices.find_one(
-        {"id": invoice_id, "tenant_id": tid},
-        {"_id": 0, "id": 1, "customer_id": 1, "invoice_number": 1}
+        {"id": invoice_id, "tenant_id": tid}, {"_id": 0}
     )
     if not invoice:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
@@ -4481,19 +4489,53 @@ async def recalc_invoice(invoice_id: str, current_user: dict = Depends(get_curre
     if not customer_id:
         raise HTTPException(status_code=400, detail="Factura sin customer_id, no se puede recalcular")
 
+    purchase_ids = list(invoice.get("purchase_ids") or [])
+    purchases = await db.purchases.find(
+        {"id": {"$in": purchase_ids}, "tenant_id": tid}, {"_id": 0}
+    ).to_list(len(purchase_ids)) if purchase_ids else []
+
+    # Drop ids that no longer exist in `purchases` (e.g. hard-deleted rows).
+    live_ids = {p["id"] for p in purchases}
+    cleaned_ids = [pid for pid in purchase_ids if pid in live_ids]
+
+    new_subtotal = round(sum(float(p.get("price") or 0) for p in purchases), 2)
+    new_total_tax = round(sum(float(p.get("tax") or 0) for p in purchases), 2)
+    new_total_commission = round(sum(float(p.get("commission") or 0) for p in purchases), 2)
+    new_total = round(sum(float(p.get("total") or 0) for p in purchases), 2)
+
+    await db.invoices.update_one(
+        {"id": invoice_id, "tenant_id": tid},
+        {"$set": {
+            "purchase_ids": cleaned_ids,
+            "subtotal": new_subtotal,
+            "total_tax": new_total_tax,
+            "total_commission": new_total_commission,
+            "total": new_total,
+        }}
+    )
+
+    # Now run the client-wide chain so saldos/depósitos stay consistent.
     await recalculate_client_invoices(tid, customer_id)
 
     refreshed = await db.invoices.find_one(
         {"id": invoice_id, "tenant_id": tid},
-        {"_id": 0, "id": 1, "invoice_number": 1, "deposits_applied": 1, "total_a_pagar": 1, "saldo_a_favor": 1}
+        {"_id": 0, "id": 1, "invoice_number": 1, "deposits_applied": 1,
+         "total_a_pagar": 1, "saldo_a_favor": 1, "subtotal": 1, "total": 1,
+         "total_tax": 1, "total_commission": 1, "purchase_ids": 1}
     )
     return {
         "message": "Factura recalculada",
         "invoice_id": invoice_id,
         "invoice_number": invoice.get("invoice_number"),
+        "subtotal": (refreshed or {}).get("subtotal", 0),
+        "total": (refreshed or {}).get("total", 0),
+        "total_tax": (refreshed or {}).get("total_tax", 0),
+        "total_commission": (refreshed or {}).get("total_commission", 0),
+        "items_count": len((refreshed or {}).get("purchase_ids") or []),
         "deposits_applied": (refreshed or {}).get("deposits_applied", 0),
         "total_a_pagar": (refreshed or {}).get("total_a_pagar", 0),
         "saldo_a_favor": (refreshed or {}).get("saldo_a_favor", 0),
+        "removed_orphan_ids": len(purchase_ids) - len(cleaned_ids),
     }
 
 

@@ -482,13 +482,18 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
     if (!currentInvoice) return;
     setRecalcing(true);
     try {
-      await recalcInvoice(currentInvoice.id);
+      const res = await recalcInvoice(currentInvoice.id);
+      const d = res.data || {};
       // Refresh invoice in-place so the UI shows corrected numbers immediately
       try {
         const fresh = await getInvoiceDetail(currentInvoice.id);
         setCurrentInvoice(fresh.data);
       } catch (_) { /* ignore refresh errors, we'll still close */ }
-      toast.success("Factura recalculada correctamente");
+      const orphans = d.removed_orphan_ids || 0;
+      toast.success(
+        `Factura recalculada — Subtotal $${(d.subtotal || 0).toFixed(2)} · Total $${(d.total || 0).toFixed(2)}` +
+        (orphans > 0 ? ` · ${orphans} ítem(s) huérfano(s) limpiado(s)` : "")
+      );
       setAuditDialogOpen(false);
       setAuditResult(null);
     } catch (error) {
@@ -1610,6 +1615,25 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
             </DialogHeader>
             {auditResult ? (
               <div className="space-y-3 pt-2 text-sm">
+                {/* Always-on quick action: recompute totals/sums for THIS invoice
+                    using the live purchases and then propagate to the client chain. */}
+                <div className="rounded-xl bg-blue-50 border border-blue-200 p-3 flex items-center gap-3">
+                  <RefreshCw className="h-5 w-5 text-blue-700 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-blue-900">Recalcular factura</p>
+                    <p className="text-xs text-blue-800/80">Suma de nuevo los productos actuales y corrige Subtotal, Taxes, Comisiones, Total y los saldos del cliente.</p>
+                  </div>
+                  <Button
+                    onClick={handleRecalcInvoice}
+                    disabled={recalcing}
+                    size="sm"
+                    className="h-9 rounded-lg font-bold bg-blue-600 hover:bg-blue-700 text-white"
+                    data-testid="audit-recalc-invoice-btn"
+                  >
+                    {recalcing ? (<><Loader2 className="h-4 w-4 mr-1 animate-spin" />Recalculando…</>) : (<>Recalcular</>)}
+                  </Button>
+                </div>
+
                 <div className="rounded-xl bg-slate-50 border border-slate-100 p-3 grid grid-cols-2 gap-2">
                   <div>
                     <p className="text-[10px] uppercase font-semibold text-slate-500">Almacenado</p>
