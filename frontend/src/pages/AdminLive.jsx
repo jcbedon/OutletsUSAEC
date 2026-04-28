@@ -16,6 +16,7 @@ import {
   getClientInfo,
   updatePurchase,
   deletePurchase,
+  getDeletePurchasePreview,
   getTenantSettings,
   getLive,
   getClientsDebtsReport
@@ -28,6 +29,10 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import StoreInvoiceSection from "@/components/StoreInvoiceSection";
 import PurchaseItem from "@/components/live/PurchaseItem";
@@ -92,6 +97,11 @@ export default function AdminLive() {
   // Confirm open finalized live
   const [confirmOpenFinalizedDialog, setConfirmOpenFinalizedDialog] = useState(false);
   const [liveToOpen, setLiveToOpen] = useState(null);
+
+  // Delete purchase confirmation (with backend-computed preview).
+  const [deletePreview, setDeletePreview] = useState(null);
+  const [deletePreviewLoading, setDeletePreviewLoading] = useState(false);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   
   // Redirect if no permission
   useEffect(() => {
@@ -597,13 +607,35 @@ export default function AdminLive() {
     }
   };
 
+  // Step 1: User clicks the trash icon → fetch a preview from the backend so
+  // the confirm dialog can show "this will leave the invoice with X items / $Y".
   const handleDeletePurchase = async (purchaseId) => {
+    setDeletePreviewLoading(true);
+    setDeletePreview({ purchase_id: purchaseId }); // open dialog immediately with skeleton
     try {
-      await deletePurchase(purchaseId);
+      const res = await getDeletePurchasePreview(purchaseId);
+      setDeletePreview(res.data);
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "No se pudo cargar la vista previa");
+      setDeletePreview(null);
+    } finally {
+      setDeletePreviewLoading(false);
+    }
+  };
+
+  // Step 2: User confirms in the dialog → actually delete.
+  const confirmDeletePurchase = async () => {
+    if (!deletePreview?.purchase_id) return;
+    setDeleteSubmitting(true);
+    try {
+      await deletePurchase(deletePreview.purchase_id);
       toast.success("Compra eliminada y saldo reembolsado");
+      setDeletePreview(null);
       loadData(true); // Preserve selection to stay on current Live
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al eliminar");
+    } finally {
+      setDeleteSubmitting(false);
     }
   };
 
@@ -1506,6 +1538,70 @@ export default function AdminLive() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Delete purchase confirmation with backend-computed preview */}
+        <AlertDialog open={!!deletePreview} onOpenChange={(open) => { if (!open && !deleteSubmitting) setDeletePreview(null); }}>
+          <AlertDialogContent data-testid="delete-purchase-preview-dialog">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2 text-red-700">
+                <Trash2 className="h-5 w-5" /> Eliminar producto
+              </AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="text-sm text-slate-600 space-y-3 pt-1">
+                  {deletePreviewLoading || !deletePreview?.item_name ? (
+                    <p className="text-slate-400">Calculando impacto…</p>
+                  ) : (
+                    <>
+                      <p>
+                        Vas a eliminar <span className="font-semibold text-slate-800">{deletePreview.item_name}</span>
+                        {deletePreview.store && (<> de <span className="font-semibold text-slate-800">{deletePreview.store}</span></>)}
+                        {deletePreview.customer_name && (
+                          <> del cliente <span className="font-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">{deletePreview.customer_id}</span> <span className="font-semibold">{deletePreview.customer_name}</span></>
+                        )}.
+                      </p>
+                      <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2.5 text-xs">
+                        <p className="font-semibold text-emerald-800">
+                          Se reembolsará <span className="font-mono">${(deletePreview.refund_amount || 0).toFixed(2)}</span> al saldo del cliente.
+                        </p>
+                      </div>
+                      {deletePreview.belongs_to_invoice ? (
+                        <div className={`rounded-lg p-2.5 border text-xs ${deletePreview.is_last_item ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200"}`} data-testid="delete-preview-invoice-block">
+                          <p className="font-semibold text-slate-800">
+                            Pertenece a la factura <span className="font-mono">{deletePreview.invoice_number}</span>
+                            {deletePreview.invoice_status === "approved" && (<> <span className="ml-1 text-[10px] uppercase font-bold text-emerald-700 bg-emerald-100 px-1 py-0.5 rounded">aprobada</span></>)}
+                          </p>
+                          {deletePreview.is_last_item ? (
+                            <p className="mt-1 text-red-700">
+                              ⚠️ Es el <strong>último ítem</strong>. La factura quedará vacía y se desmarcará.
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-slate-700">
+                              Después: <span className="font-semibold">{deletePreview.items_after_count} {deletePreview.items_after_count === 1 ? "ítem" : "ítems"}</span> · total <span className="font-mono line-through text-slate-400">${(deletePreview.current_invoice_total || 0).toFixed(2)}</span> → <span className="font-mono font-bold text-slate-900">${(deletePreview.invoice_total_after || 0).toFixed(2)}</span>
+                            </p>
+                          )}
+                          <p className="mt-1 text-[11px] text-slate-500">Los saldos del cliente se recalcularán automáticamente.</p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-slate-500">Este producto no pertenece a ninguna factura.</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="delete-purchase-cancel">Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => { e.preventDefault(); confirmDeletePurchase(); }}
+                disabled={deleteSubmitting || deletePreviewLoading || !deletePreview?.item_name}
+                className="bg-red-600 hover:bg-red-700 text-white"
+                data-testid="delete-purchase-confirm"
+              >
+                {deleteSubmitting ? "Eliminando…" : "Sí, eliminar"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

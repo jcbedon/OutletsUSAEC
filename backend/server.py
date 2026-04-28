@@ -3103,6 +3103,76 @@ async def update_purchase(purchase_id: str, data: PurchaseUpdate, current_user: 
 
     return updated
 
+@api_router.get("/purchases/{purchase_id}/delete-preview")
+async def get_delete_purchase_preview(purchase_id: str, current_user: dict = Depends(get_current_user)):
+    """Returns a summary the admin sees BEFORE confirming a delete:
+
+    - The wallet refund amount (always = purchase.total)
+    - Whether the purchase is attached to an invoice and, if so, what the
+      invoice will look like AFTER the delete (item count + new total).
+    - Customer / item context so the confirm dialog can show a clear sentence.
+
+    No state is mutated. Safe to call multiple times.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    purchase = await db.purchases.find_one(
+        {"id": purchase_id, "tenant_id": tid},
+        {"_id": 0}
+    )
+    if not purchase:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+
+    customer = await db.users.find_one(
+        {"id": purchase["user_id"], "tenant_id": tid},
+        {"_id": 0, "name": 1, "customer_id": 1}
+    ) or {}
+
+    preview = {
+        "purchase_id": purchase_id,
+        "item_name": purchase.get("item_name"),
+        "store": purchase.get("store"),
+        "refund_amount": round(float(purchase.get("total") or 0), 2),
+        "customer_id": purchase.get("customer_id"),
+        "customer_name": customer.get("name"),
+        "belongs_to_invoice": False,
+    }
+
+    invoice_id = purchase.get("invoice_id")
+    if invoice_id:
+        invoice = await db.invoices.find_one(
+            {"id": invoice_id, "tenant_id": tid},
+            {"_id": 0}
+        )
+        if invoice and purchase_id in (invoice.get("purchase_ids") or []):
+            current_items = len(invoice.get("purchase_ids") or [])
+            items_after = max(0, current_items - 1)
+
+            # Recompute the would-be invoice total after the delete.
+            remaining_ids = [pid for pid in invoice["purchase_ids"] if pid != purchase_id]
+            remaining_purchases = await db.purchases.find(
+                {"id": {"$in": remaining_ids}, "tenant_id": tid},
+                {"_id": 0, "total": 1}
+            ).to_list(len(remaining_ids)) if remaining_ids else []
+            invoice_total_after = round(sum((p.get("total") or 0) for p in remaining_purchases), 2)
+
+            preview.update({
+                "belongs_to_invoice": True,
+                "invoice_id": invoice_id,
+                "invoice_number": invoice.get("invoice_number"),
+                "invoice_status": invoice.get("status"),
+                "current_items_count": current_items,
+                "items_after_count": items_after,
+                "current_invoice_total": round(float(invoice.get("total") or 0), 2),
+                "invoice_total_after": invoice_total_after,
+                "is_last_item": items_after == 0,
+            })
+
+    return preview
+
+
 @api_router.delete("/purchases/{purchase_id}")
 async def delete_purchase(purchase_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:

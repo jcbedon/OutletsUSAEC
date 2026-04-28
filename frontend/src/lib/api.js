@@ -80,6 +80,7 @@ export const createPurchase = (data) => api.post("/purchases", data);
 export const getUserPurchases = (userId) => api.get(`/purchases/user/${userId}`);
 export const updatePurchase = (purchaseId, data) => api.put(`/purchases/${purchaseId}`, data);
 export const deletePurchase = (purchaseId) => api.delete(`/purchases/${purchaseId}`);
+export const getDeletePurchasePreview = (purchaseId) => api.get(`/purchases/${purchaseId}/delete-preview`);
 export const getLivePurchases = (liveId) => api.get(`/purchases/live/${liveId}`);
 export const getPendingShipmentPurchases = (userId) => api.get(`/purchases/pending-shipment/${userId}`);
 
