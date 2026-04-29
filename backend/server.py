@@ -155,6 +155,9 @@ class Live(BaseModel):
     # Store invoice fields (for profit calculation)
     store_invoice_amount: Optional[float] = None  # What was actually paid to the store
     store_invoice_image: Optional[str] = None     # URL of the store invoice/receipt image
+    # Total items physically purchased at the store (admin-entered, may differ
+    # from `purchase_count` which counts client-assigned items).
+    store_invoice_items_count: Optional[int] = None
     store_profit: Optional[float] = None          # Calculated profit: total_sales - store_invoice_amount
 
 class Purchase(BaseModel):
@@ -2656,22 +2659,40 @@ async def update_store_invoice(live_id: str, data: dict, current_user: dict = De
     store_amount = float(data.get("store_invoice_amount", 0))
     if store_amount < 0:
         raise HTTPException(status_code=400, detail="El monto debe ser mayor o igual a 0")
-    
+
+    # Optional: total physical items purchased at the store (admin-entered).
+    # Useful when the admin bought e.g. 30 items at the store but only 25 went to
+    # clients — this records the real basket size for store-profit reporting.
+    items_count_raw = data.get("store_invoice_items_count")
+    items_count = None
+    if items_count_raw is not None and items_count_raw != "":
+        try:
+            items_count = int(items_count_raw)
+            if items_count < 0:
+                raise HTTPException(status_code=400, detail="La cantidad debe ser mayor o igual a 0")
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Cantidad inválida")
+
     # Calculate profit: total_sales (includes taxes and commissions) - store_invoice_amount
     total_sales = live.get("total_sales", 0)
     profit = total_sales - store_amount
-    
+
+    update_set = {
+        "store_invoice_amount": store_amount,
+        "store_profit": profit,
+    }
+    if items_count is not None:
+        update_set["store_invoice_items_count"] = items_count
+
     await db.lives.update_one(
         {"id": live_id, "tenant_id": tid},
-        {"$set": {
-            "store_invoice_amount": store_amount,
-            "store_profit": profit
-        }}
+        {"$set": update_set}
     )
-    
+
     return {
         "message": "Monto actualizado",
         "store_invoice_amount": store_amount,
+        "store_invoice_items_count": items_count if items_count is not None else live.get("store_invoice_items_count"),
         "total_sales": total_sales,
         "store_profit": profit
     }

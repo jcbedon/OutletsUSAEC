@@ -16,7 +16,8 @@ import {
   TrendingDown,
   Loader2,
   Image,
-  Smartphone
+  Smartphone,
+  Package
 } from "lucide-react";
 import { updateStoreInvoice, uploadStoreInvoiceImage, generateUploadQR, checkUploadStatus } from "@/lib/api";
 import QRCode from "qrcode";
@@ -24,6 +25,9 @@ import QRCode from "qrcode";
 export default function StoreInvoiceSection({ live, onUpdate, compact = false }) {
   // Initialize with empty string - only use live value if explicitly set
   const [invoiceAmount, setInvoiceAmount] = useState("");
+  // Total physical items the admin bought at the store. Independent from
+  // `live.purchase_count` (number of items registered to clients).
+  const [invoiceItemsCount, setInvoiceItemsCount] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [showQRDialog, setShowQRDialog] = useState(false);
@@ -44,7 +48,13 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
     } else {
       setInvoiceAmount(""); // Reset to empty for new stores without invoice
     }
-  }, [live?.id, live?.store_invoice_amount]);
+    // Items count: keep stored value or reset.
+    if (live?.store_invoice_items_count !== undefined && live?.store_invoice_items_count !== null) {
+      setInvoiceItemsCount(live.store_invoice_items_count);
+    } else {
+      setInvoiceItemsCount("");
+    }
+  }, [live?.id, live?.store_invoice_amount, live?.store_invoice_items_count]);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -60,11 +70,21 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
       toast.error("Ingresa un monto válido");
       return;
     }
+    // items count is optional but must be a valid non-negative integer when provided
+    let itemsCountToSend = null;
+    if (invoiceItemsCount !== "" && invoiceItemsCount !== null && invoiceItemsCount !== undefined) {
+      const parsed = parseInt(invoiceItemsCount, 10);
+      if (Number.isNaN(parsed) || parsed < 0) {
+        toast.error("Cantidad de artículos inválida");
+        return;
+      }
+      itemsCountToSend = parsed;
+    }
 
     try {
       setSaving(true);
-      const res = await updateStoreInvoice(live.id, parseFloat(invoiceAmount));
-      toast.success("Monto de factura guardado");
+      await updateStoreInvoice(live.id, parseFloat(invoiceAmount), itemsCountToSend);
+      toast.success("Factura de tienda guardada");
       if (onUpdate) onUpdate();
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al guardar");
@@ -158,7 +178,15 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
           <div className="text-left">
             <p className="text-xs text-white/60">Factura Tienda</p>
             {hasAmount ? (
-              <p className="text-sm font-bold text-white">${storeAmount.toFixed(2)}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-bold text-white">${storeAmount.toFixed(2)}</p>
+                {live?.store_invoice_items_count != null && (
+                  <span className="text-[10px] text-white/70 flex items-center gap-0.5" data-testid="store-invoice-items-badge">
+                    <Package className="h-3 w-3" />
+                    {live.store_invoice_items_count}
+                  </span>
+                )}
+              </div>
             ) : (
               <p className="text-xs text-white/50">Sin registrar</p>
             )}
@@ -207,10 +235,38 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
                     disabled={saving}
                     className="h-12 px-6"
                     style={{ background: "#1E3A5F" }}
+                    data-testid="save-store-invoice-btn"
                   >
                     {saving ? <Loader2 className="h-5 w-5 animate-spin" /> : "Guardar"}
                   </Button>
                 </div>
+              </div>
+
+              {/* Items Count Input — admin-entered, independent from purchase_count */}
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">
+                  Cantidad de artículos comprados en la tienda
+                </label>
+                <div className="relative">
+                  <Package className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <Input
+                    type="number"
+                    step="1"
+                    min="0"
+                    placeholder="Ej: 30"
+                    value={invoiceItemsCount}
+                    onChange={(e) => setInvoiceItemsCount(e.target.value)}
+                    onWheel={(e) => e.target.blur()}
+                    className="pl-10 h-12 font-medium"
+                    data-testid="store-invoice-items-count"
+                  />
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Total real comprado en la tienda. Se guarda al presionar "Guardar" arriba.
+                  {live?.purchase_count > 0 && (
+                    <> Registrados a clientes: <span className="font-bold text-gray-700">{live.purchase_count}</span></>
+                  )}
+                </p>
               </div>
 
               {/* Profit */}
