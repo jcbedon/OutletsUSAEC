@@ -779,6 +779,15 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                                     <Radio className="h-3 w-3" />
                                     {purchase.live_title}
                                   </span>
+                                ) : purchase.live_origin === "deleted_live" && purchase.live_id ? (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 font-medium"
+                                    data-testid={`pending-purchase-origin-${purchase.id}`}
+                                    title={`Live eliminado · ID: ${purchase.live_id}`}
+                                  >
+                                    <Radio className="h-3 w-3" />
+                                    Live eliminado
+                                  </span>
                                 ) : (
                                   <span
                                     className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-medium"

@@ -86,6 +86,12 @@ export default function AdminLive() {
   const [activeClients, setActiveClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  // Synchronous re-entry guard. Plain `submitting` state isn't enough because
+  // React batches setState — a second click fired between the click handler and
+  // the next render still sees the old false value, so two `createPurchase`
+  // requests can race and create a duplicate purchase. Using a ref blocks the
+  // second call instantly without waiting for re-render.
+  const submittingRef = useRef(false);
   const [newLiveTitle, setNewLiveTitle] = useState("");
   const [newLiveStore, setNewLiveStore] = useState("");
   const [createLiveDialogOpen, setCreateLiveDialogOpen] = useState(false);
@@ -441,6 +447,9 @@ export default function AdminLive() {
   const handleSubmitPurchase = async (e) => {
     e.preventDefault();
 
+    // Synchronous re-entry guard — block double submits at the very first line.
+    if (submittingRef.current) return;
+
     if (!purchaseForm.customer_id || !purchaseForm.item_name || !purchaseForm.price) {
       toast.error("Completa todos los campos");
       return;
@@ -478,6 +487,10 @@ export default function AdminLive() {
   };
 
   const actuallySubmitPurchase = async () => {
+    // Sync guard prevents two parallel `createPurchase` calls when the form is
+    // submitted twice in quick succession (double click / Enter spam).
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     const price = parseFloat(purchaseForm.price);
     setSubmitting(true);
 
@@ -534,6 +547,7 @@ export default function AdminLive() {
       toast.error(error.response?.data?.detail || "Error al registrar compra");
     } finally {
       setSubmitting(false);
+      submittingRef.current = false;
     }
   };
 

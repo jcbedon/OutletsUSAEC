@@ -3796,9 +3796,24 @@ async def get_pending_purchases_for_invoice(customer_id: str, current_user: dict
         ).to_list(len(live_ids))
         live_lookup = {ld["id"]: ld for ld in live_docs}
     for p in purchases:
-        live = live_lookup.get(p.get("live_id"))
-        p["live_title"] = (live or {}).get("title")
-        p["live_status"] = (live or {}).get("status")
+        lid = p.get("live_id")
+        if not lid:
+            # Legitimate "no live" — purchase was created without a live attached
+            # (manual registration or pre-live-aware seed data).
+            p["live_title"] = None
+            p["live_status"] = None
+            p["live_origin"] = "no_live"
+        elif lid in live_lookup:
+            live = live_lookup[lid]
+            p["live_title"] = live.get("title")
+            p["live_status"] = live.get("status")
+            p["live_origin"] = "live"
+        else:
+            # The live id is set but the Live record is gone — most often because
+            # the admin deleted that live after it had already produced purchases.
+            p["live_title"] = None
+            p["live_status"] = None
+            p["live_origin"] = "deleted_live"
 
     return purchases
 
@@ -6445,6 +6460,58 @@ async def restore_deleted_purchase(audit_log_id: str, current_user: dict = Depen
         "item_name": details.get("item_name"),
         "customer_id": customer_id,
     }
+
+
+@api_router.get("/admin/diagnose-pending/{customer_id}")
+async def diagnose_pending_purchases(customer_id: str, current_user: dict = Depends(get_current_user)):
+    """Diagnostic endpoint: lists every pending purchase of a customer with full
+    origin metadata (live_id, whether the live exists, store, date, total).
+    Helps the admin understand why some products show "Sin live" or appear in
+    counts that don't match the active Live.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    purchases = await db.purchases.find({
+        "customer_id": customer_id.upper(),
+        "tenant_id": tid,
+        "$or": [{"invoice_id": None}, {"invoice_id": {"$exists": False}}],
+    }, {"_id": 0}).sort("created_at", 1).to_list(2000)
+
+    live_ids = {p.get("live_id") for p in purchases if p.get("live_id")}
+    live_docs = await db.lives.find(
+        {"id": {"$in": list(live_ids)}, "tenant_id": tid},
+        {"_id": 0, "id": 1, "title": 1, "status": 1, "store": 1, "created_at": 1}
+    ).to_list(len(live_ids)) if live_ids else []
+    live_lookup = {ld["id"]: ld for ld in live_docs}
+
+    rows = []
+    counts = {"with_live": 0, "deleted_live": 0, "no_live": 0}
+    for p in purchases:
+        lid = p.get("live_id")
+        if not lid:
+            origin, live_meta = "no_live", None
+            counts["no_live"] += 1
+        elif lid in live_lookup:
+            origin, live_meta = "with_live", live_lookup[lid]
+            counts["with_live"] += 1
+        else:
+            origin, live_meta = "deleted_live", None
+            counts["deleted_live"] += 1
+        rows.append({
+            "purchase_id": p.get("id"),
+            "item_name": p.get("item_name"),
+            "store": p.get("store"),
+            "total": p.get("total"),
+            "created_at": p.get("created_at"),
+            "live_id": lid,
+            "live_title": (live_meta or {}).get("title"),
+            "live_status": (live_meta or {}).get("status"),
+            "live_store": (live_meta or {}).get("store"),
+            "origin": origin,
+        })
+    return {"customer_id": customer_id.upper(), "total_pending": len(rows), "counts": counts, "rows": rows}
 
 
 @api_router.get("/")
