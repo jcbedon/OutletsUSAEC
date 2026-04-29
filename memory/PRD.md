@@ -52,6 +52,10 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
 - **[28-feb]** **Live ID parcial en badge violeta**: el badge de origen del Live ahora muestra `#xxxxxx` (los primeros 6 caracteres del UUID) además del título, para distinguir cuando dos Lives tienen el mismo nombre. Endpoint `POST /purchases/{id}/reassign-live` listo en backend para mover compras huérfanas a un Live activo (UI pendiente de cablear).
 - **[28-feb]** **🐛 BUG MAYOR FIXEADO — Live cortaba a 500 compras**: el endpoint `GET /purchases/live/{live_id}` tenía `.to_list(500)`. Para Lives de alto volumen (ej: COSTCO con 500+) las compras más antiguas no se mostraban en la vista del Live, mientras que el modal de Factura sí las traía completas (otro endpoint distinto). Esto explicaba por qué el cliente AH8 aparecía con 6 compras en el Live COSTCO pero la factura traía 11 del mismo Live. Aumentado a `.to_list(5000)`.
 - **[28-feb]** **Tarjeta Paquetes con conteo de envíos**: el endpoint `/admin/reports/summary` ahora también devuelve `shipments_count`. La tarjeta del dashboard muestra "{N} Paquetes · {M} envíos" para distinguir cajas vs documentos de envío. Soluciona la confusión cuando un envío con `package_count=22` parece "muchos envíos".
+- **[29-abr]** **Creador del envío en tarjeta + filtro semanal por defecto**:
+  - Backend: nuevos campos `created_by` y `created_by_name` en el modelo `Shipment`. Se setean al crear desde `current_user` (lookup en `users`/`employees`). El endpoint `GET /api/shipments` rellena `created_by_name` para envíos antiguos vía batch lookup.
+  - Frontend: badge azul con ícono de usuario en cada tarjeta de envío al lado de la fecha (oculto si el envío legacy no tiene creador registrado).
+  - `weekFilter` ahora arranca por defecto en la **semana actual** (lunes 12:00 → lunes 12:00) en lugar de "Todas". La semana actual siempre aparece en el dropdown aunque no haya envíos en ella.
 
 ## Roadmap
 ### P0 técnico

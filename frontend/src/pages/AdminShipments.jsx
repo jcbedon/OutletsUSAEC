@@ -77,7 +77,20 @@ export default function AdminShipments() {
   const [customerFilter, setCustomerFilter] = useState("");
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [weekFilter, setWeekFilter] = useState("all");
+  // Default week filter = current week (Monday 12:00 → next Monday 11:59:59).
+  const getCurrentWeekKey = () => {
+    const d = new Date();
+    const day = d.getDay();
+    const daysSinceMonday = (day - 1 + 7) % 7;
+    const candidate = new Date(d);
+    candidate.setDate(d.getDate() - daysSinceMonday);
+    candidate.setHours(12, 0, 0, 0);
+    if (candidate > d) {
+      candidate.setDate(candidate.getDate() - 7);
+    }
+    return candidate.toISOString().slice(0, 10);
+  };
+  const [weekFilter, setWeekFilter] = useState(() => getCurrentWeekKey());
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [trackingDialogOpen, setTrackingDialogOpen] = useState(null);
   const [trackingNumbers, setTrackingNumbers] = useState([""]);  // Array of tracking numbers
@@ -1109,6 +1122,12 @@ export default function AdminShipments() {
             weeks[key].total += s.shipping_cost || 0;
             weeks[key].count++;
           });
+          // Always include the current week so the default filter has a matching option
+          const nowIso = new Date().toISOString();
+          const currentKey = getWeekKey(nowIso);
+          if (!weeks[currentKey]) {
+            weeks[currentKey] = { label: getWeekLabel(nowIso), total: 0, count: 0 };
+          }
           const weekList = Object.entries(weeks).sort((a, b) => b[0].localeCompare(a[0]));
 
           const filtered = weekFilter === "all" ? shipments : shipments.filter(s => getWeekKey(s.created_at) === weekFilter);
@@ -1310,6 +1329,16 @@ export default function AdminShipments() {
                                     {new Date(shipment.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "2-digit" })}
                                     {" · "}
                                     {new Date(shipment.created_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                                  </span>
+                                )}
+                                {shipment.created_by_name && (
+                                  <span
+                                    className="text-[10px] text-blue-700 font-semibold bg-blue-50 border border-blue-100 px-2 py-0.5 rounded inline-flex items-center gap-1"
+                                    data-testid={`shipment-created-by-${shipment.id}`}
+                                    title={`Creado por ${shipment.created_by_name}`}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                    {shipment.created_by_name}
                                   </span>
                                 )}
                               </div>

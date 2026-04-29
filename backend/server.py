@@ -223,6 +223,8 @@ class Shipment(BaseModel):
     tracking_numbers: List[str] = []  # Multiple tracking numbers for multiple packages
     status: str = "preparing"
     attachments: List[str] = []
+    created_by: Optional[str] = None       # user_id of admin/employee who created the shipment
+    created_by_name: Optional[str] = None  # snapshot of creator name at creation time
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -3394,6 +3396,12 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
         package_count = max(int(round(package_count)), 1)
     total_cost = round(unit_cost * package_count, 2)
 
+    # Resolve creator's display name (admins are stored in `users`, employees in `employees`)
+    creator = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0, "name": 1})
+    if not creator:
+        creator = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0, "name": 1})
+    creator_name = (creator or {}).get("name") or "Sistema"
+
     shipment = Shipment(
         tenant_id=tid,
         user_id=shipment_data.user_id,
@@ -3405,7 +3413,9 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
         shipping_mode=shipping_mode,
         package_count=package_count,
         address=shipment_data.address, country=shipment_data.country, phone=shipment_data.phone,
-        additional_info=shipment_data.additional_info, invoice_id=shipment_data.invoice_id
+        additional_info=shipment_data.additional_info, invoice_id=shipment_data.invoice_id,
+        created_by=current_user["user_id"],
+        created_by_name=creator_name
     )
     await db.shipments.insert_one(shipment.model_dump())
 
@@ -3643,14 +3653,32 @@ async def get_all_shipments(status: Optional[str] = None, current_user: dict = D
     if not shipments:
         return []
     
-    # Batch fetch all users in one query instead of N queries
+    # Batch fetch all users (clients) in one query instead of N queries
     user_ids = list(set(s["user_id"] for s in shipments))
     users_list = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(user_ids))
     users_dict = {u["id"]: u["name"] for u in users_list}
-    
+
+    # Batch fetch creator names (admins/employees) for shipments missing the snapshot
+    missing_creator_ids = list({
+        s.get("created_by") for s in shipments
+        if s.get("created_by") and not s.get("created_by_name")
+    })
+    creators_dict = {}
+    if missing_creator_ids:
+        admins_list = await db.users.find({"id": {"$in": missing_creator_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(missing_creator_ids))
+        for u in admins_list:
+            creators_dict[u["id"]] = u["name"]
+        # Fill in any still missing from employees collection
+        still_missing = [cid for cid in missing_creator_ids if cid not in creators_dict]
+        if still_missing:
+            emps_list = await db.employees.find({"id": {"$in": still_missing}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(still_missing))
+            for e in emps_list:
+                creators_dict[e["id"]] = e["name"]
+
     result = []
     for s in shipments:
-        result.append({**s, "user_name": users_dict.get(s["user_id"], "Unknown")})
+        creator_name = s.get("created_by_name") or creators_dict.get(s.get("created_by") or "", "")
+        result.append({**s, "user_name": users_dict.get(s["user_id"], "Unknown"), "created_by_name": creator_name})
     return result
 
 class ShipmentUpdate(BaseModel):
