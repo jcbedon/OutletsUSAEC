@@ -6462,6 +6462,84 @@ async def restore_deleted_purchase(audit_log_id: str, current_user: dict = Depen
     }
 
 
+@api_router.post("/purchases/{purchase_id}/reassign-live")
+async def reassign_purchase_live(purchase_id: str, body: dict, current_user: dict = Depends(get_current_user)):
+    """Move an orphan purchase (one whose `live_id` points at a deleted Live, or
+    that has no `live_id` at all) into a currently-existing Live.
+
+    Body: { "live_id": "<uuid of an existing live in the same tenant>" }
+
+    The destination Live's `purchase_count`, `total_sales` and `total_commissions`
+    are incremented so the Live cards stay accurate. We don't touch the wallet
+    or invoice — those numbers stay the same.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    new_live_id = (body or {}).get("live_id")
+    if not new_live_id:
+        raise HTTPException(status_code=400, detail="live_id requerido")
+
+    purchase = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0})
+    if not purchase:
+        raise HTTPException(status_code=404, detail="Compra no encontrada")
+
+    new_live = await db.lives.find_one({"id": new_live_id, "tenant_id": tid}, {"_id": 0})
+    if not new_live:
+        raise HTTPException(status_code=404, detail="Live destino no encontrado")
+
+    old_live_id = purchase.get("live_id")
+
+    await db.purchases.update_one(
+        {"id": purchase_id, "tenant_id": tid},
+        {"$set": {"live_id": new_live_id, "reassigned_at": datetime.now(timezone.utc).isoformat(),
+                  "reassigned_from": old_live_id}}
+    )
+
+    # Bump destination Live counters.
+    await db.lives.update_one(
+        {"id": new_live_id, "tenant_id": tid},
+        {"$inc": {
+            "purchase_count": 1,
+            "total_sales": float(purchase.get("price") or 0) + float(purchase.get("tax") or 0),
+            "total_commissions": float(purchase.get("commission") or 0),
+        }}
+    )
+
+    # Audit trail so we know who moved what.
+    actor = await db.users.find_one({"id": current_user["user_id"], "tenant_id": tid}, {"_id": 0, "name": 1, "email": 1, "role": 1})
+    if not actor:
+        actor = await db.employees.find_one({"id": current_user["user_id"], "tenant_id": tid}, {"_id": 0, "name": 1, "email": 1})
+    actor_name = (actor or {}).get("name") or (actor or {}).get("email") or "—"
+    actor_role = (actor or {}).get("role") or current_user.get("role")
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=actor_name,
+        user_role=actor_role,
+        action="reassign_purchase",
+        entity_type="purchase",
+        entity_id=purchase_id,
+        entity_name=purchase.get("item_name"),
+        details={
+            "from_live_id": old_live_id,
+            "to_live_id": new_live_id,
+            "to_live_title": new_live.get("title"),
+            "customer_id": purchase.get("customer_id"),
+            "store": purchase.get("store"),
+        }
+    )
+
+    return {
+        "message": "Compra reasignada",
+        "purchase_id": purchase_id,
+        "from_live_id": old_live_id,
+        "to_live_id": new_live_id,
+        "to_live_title": new_live.get("title"),
+    }
+
+
 @api_router.get("/admin/diagnose-pending/{customer_id}")
 async def diagnose_pending_purchases(customer_id: str, current_user: dict = Depends(get_current_user)):
     """Diagnostic endpoint: lists every pending purchase of a customer with full

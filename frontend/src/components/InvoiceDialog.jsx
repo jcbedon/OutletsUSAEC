@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, getClientAvailableDeposits, annulInvoice, updateInvoiceSaldoPendiente, updatePurchase, getTenantSettings, auditInvoice, recalcInvoice } from "@/lib/api";
+import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, getClientAvailableDeposits, annulInvoice, updateInvoiceSaldoPendiente, updatePurchase, getTenantSettings, auditInvoice, recalcInvoice, getLives, reassignPurchaseLive } from "@/lib/api";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -71,6 +71,11 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
     apply_commission: true, commission: "0"
   });
   const [savingEdit, setSavingEdit] = useState(false);
+  // Active lives — used to give the admin a destination when reassigning orphan
+  // purchases (those whose original Live was deleted).
+  const [activeLives, setActiveLives] = useState([]);
+  const [reassignTargetId, setReassignTargetId] = useState(null); // purchase being reassigned
+  const [reassigning, setReassigning] = useState(false);
   const [taxOptions, setTaxOptions] = useState([
     { value: "8.25", label: "8.25%" },
     { value: "10", label: "10%" },
@@ -774,10 +779,15 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                                   <span
                                     className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 font-medium"
                                     data-testid={`pending-purchase-origin-${purchase.id}`}
-                                    title="Live de origen"
+                                    title={`Live: ${purchase.live_title}${purchase.live_id ? ` · ID: ${String(purchase.live_id).slice(0, 8)}` : ""}`}
                                   >
                                     <Radio className="h-3 w-3" />
                                     {purchase.live_title}
+                                    {purchase.live_id && (
+                                      <span className="ml-1 text-[10px] text-purple-500/70 font-mono">
+                                        #{String(purchase.live_id).slice(0, 6)}
+                                      </span>
+                                    )}
                                   </span>
                                 ) : purchase.live_origin === "deleted_live" && purchase.live_id ? (
                                   <span

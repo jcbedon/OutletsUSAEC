@@ -65,6 +65,7 @@ export const startLive = (liveId) => api.post(`/lives/${liveId}/start`);
 export const endLive = (liveId) => api.post(`/lives/${liveId}/end`);
 export const getLives = (status) => api.get("/lives", { params: { status } });
 export const getActiveLive = () => api.get("/lives/active");
+export const reassignPurchaseLive = (purchaseId, liveId) => api.post(`/purchases/${purchaseId}/reassign-live`, { live_id: liveId });
 export const getLive = (liveId) => api.get(`/lives/${liveId}`);
 export const updateStoreInvoice = (liveId, amount, itemsCount) => api.put(`/lives/${liveId}/store-invoice`, {
   store_invoice_amount: amount,
