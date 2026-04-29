@@ -1634,6 +1634,19 @@ export default function AdminShipments() {
                           <div>👤 <b>created_by</b>: {s.created_by ? <span className="text-emerald-700 font-bold">{s.created_by_resolved || s.created_by_name_in_doc || s.created_by.slice(0, 8)}</span> : <span className="text-rose-700 font-bold">NULL (legacy)</span>}</div>
                           <div>📝 <b>audit log</b>: {s.has_audit_create ? <span className="text-emerald-700 font-bold">{s.audit_create_user} @ {s.audit_create_at?.slice(0, 16).replace("T"," ")}</span> : <span className="text-rose-700 font-bold">SIN registro</span>}</div>
                         </div>
+                        {s.login_proximity && (
+                          <div className="text-[10px] bg-purple-50 border border-purple-200 rounded px-2 py-1 text-purple-900" data-testid={`diag-login-proximity-${s.id}`}>
+                            🔐 <b>Sesión activa al momento de crear:</b>{" "}
+                            <span className="font-bold">{s.login_proximity.user_name}</span>
+                            {s.login_proximity.user_role && <span className="text-purple-600"> ({s.login_proximity.user_role})</span>}
+                            <span className="text-purple-600"> · login {s.login_proximity.minutes_before} min antes ({s.login_proximity.login_at?.slice(0, 16).replace("T"," ")})</span>
+                          </div>
+                        )}
+                        {!s.login_proximity && !s.has_audit_create && (
+                          <div className="text-[10px] bg-amber-50 border border-amber-200 rounded px-2 py-1 text-amber-900">
+                            ⚠️ Sin login registrado ±2h antes — el insert puede haber sido por un script externo o un usuario con sesión muy antigua.
+                          </div>
+                        )}
                         {s.audit_log_count > 0 && (
                           <details className="text-[10px]">
                             <summary className="cursor-pointer text-blue-700 font-bold">Ver historial ({s.audit_log_count} entradas)</summary>

@@ -6984,6 +6984,50 @@ async def diagnose_shipments(
             {"_id": 0}
         ).sort("created_at", -1).to_list(5000)
 
+    # Pre-fetch all login audit logs that happened within ±15 min of any shipment's
+    # creation timestamp. This tells us WHO was authenticated when the insert ran,
+    # even if the shipment itself has no audit log (legacy code in production).
+    login_proximity_logs = {}
+    if created_in_range:
+        # Compute a global window covering all shipment creation times
+        timestamps = [s.get("created_at") for s in created_in_range if s.get("created_at")]
+        if timestamps:
+            min_ts = min(timestamps)
+            max_ts = max(timestamps)
+            try:
+                min_dt = datetime.fromisoformat(min_ts) - timedelta(hours=2)
+                max_dt = datetime.fromisoformat(max_ts) + timedelta(minutes=15)
+                login_window = await db.audit_logs.find(
+                    {
+                        "tenant_id": tid,
+                        "action": "login",
+                        "created_at": {"$gte": min_dt.isoformat(), "$lte": max_dt.isoformat()},
+                    },
+                    {"_id": 0, "user_name": 1, "user_role": 1, "user_id": 1, "created_at": 1, "details": 1}
+                ).sort("created_at", 1).to_list(5000)
+                # For each shipment, find the nearest preceding login (within 2h)
+                for s in created_in_range:
+                    sid = s["id"]
+                    s_dt = datetime.fromisoformat(s["created_at"])
+                    candidate = None
+                    for log in login_window:
+                        log_dt = datetime.fromisoformat(log["created_at"])
+                        if log_dt <= s_dt and (s_dt - log_dt).total_seconds() <= 7200:
+                            # Last login within 2 hours BEFORE the shipment creation
+                            candidate = log
+                        elif log_dt > s_dt:
+                            break
+                    if candidate:
+                        login_proximity_logs[sid] = {
+                            "user_name": candidate.get("user_name"),
+                            "user_role": candidate.get("user_role"),
+                            "user_id": candidate.get("user_id"),
+                            "login_at": candidate.get("created_at"),
+                            "minutes_before": round((s_dt - datetime.fromisoformat(candidate["created_at"])).total_seconds() / 60, 1),
+                        }
+            except Exception as _ex:
+                logger.warning(f"Could not compute login proximity: {_ex}")
+
     # Group audit logs by shipment id
     logs_by_ship = {}
     for log in audit_logs:
@@ -7035,6 +7079,7 @@ async def diagnose_shipments(
             "audit_create_at": (create_log or {}).get("created_at"),
             "audit_log_count": len(related),
             "audit_logs": related[:10],  # cap for payload size
+            "login_proximity": login_proximity_logs.get(sid),  # who was logged in at the time
         }
 
     rows_created = [build_row(s) for s in created_in_range]
