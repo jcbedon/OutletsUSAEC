@@ -172,6 +172,10 @@ export default function AdminPackagesReport() {
     let totalPackages = 0;
     let totalGuides = 0;
     let shipmentsWithGuides = 0;
+    let shipmentsApproved = 0;
+    let shipmentsPending = 0;
+    let shipmentsAnnulled = 0;
+    let shipmentsNoInvoice = 0;
     rows.forEach((s) => {
       const cid = (s.customer_id || "—").toUpperCase();
       const name = s.user_name || s.customer_name || clientsByCode[cid] || "Sin nombre";
@@ -183,6 +187,10 @@ export default function AdminPackagesReport() {
       totalPackages += pkgs;
       totalGuides += allTracks.length;
       if (hasGuide) shipmentsWithGuides += 1;
+      if (s.invoice_status === "approved") shipmentsApproved += 1;
+      else if (s.invoice_status === "annulled") shipmentsAnnulled += 1;
+      else if (s.invoice_status === "pending") shipmentsPending += 1;
+      else shipmentsNoInvoice += 1;
       if (!groups[cid]) groups[cid] = { customer_id: cid, name, items: [], total_pkgs: 0, total_guides: 0 };
       groups[cid].items.push({
         id: s.id,
@@ -195,6 +203,8 @@ export default function AdminPackagesReport() {
         tracking_count: allTracks.length,
         has_guide: hasGuide,
         status: s.status || "preparing",
+        invoice_status: s.invoice_status || null,
+        invoice_number: s.invoice_number || "",
       });
       groups[cid].total_pkgs += pkgs;
       groups[cid].total_guides += allTracks.length;
@@ -210,6 +220,10 @@ export default function AdminPackagesReport() {
       totalShipments: rows.length,
       shipmentsWithGuides,
       shipmentsWithoutGuides: rows.length - shipmentsWithGuides,
+      shipmentsApproved,
+      shipmentsPending,
+      shipmentsAnnulled,
+      shipmentsNoInvoice,
     };
   }, [shipments, verifyWeek, clientsByCode]);
 
@@ -526,6 +540,27 @@ export default function AdminPackagesReport() {
               </div>
             </div>
 
+            {/* Invoice status row */}
+            <div className="flex items-center gap-2 flex-wrap mb-3 text-[11px]">
+              <span className="font-bold text-slate-500 uppercase text-[10px]">Facturas:</span>
+              <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-bold" data-testid="verify-inv-approved">
+                ✓ {verifyData.shipmentsApproved} aprobada{verifyData.shipmentsApproved === 1 ? "" : "s"}
+              </span>
+              <span className="bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded font-bold" data-testid="verify-inv-pending">
+                ⌛ {verifyData.shipmentsPending} pendiente{verifyData.shipmentsPending === 1 ? "" : "s"}
+              </span>
+              {verifyData.shipmentsAnnulled > 0 && (
+                <span className="bg-slate-200 text-slate-700 border border-slate-300 px-2 py-0.5 rounded font-bold" data-testid="verify-inv-annulled">
+                  ✕ {verifyData.shipmentsAnnulled} anulada{verifyData.shipmentsAnnulled === 1 ? "" : "s"}
+                </span>
+              )}
+              {verifyData.shipmentsNoInvoice > 0 && (
+                <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-bold" data-testid="verify-inv-none">
+                  — {verifyData.shipmentsNoInvoice} sin factura
+                </span>
+              )}
+            </div>
+
             {/* Grouped list by client */}
             {verifyData.groups.length === 0 ? (
               <div className="rounded-xl bg-slate-50 border border-slate-100 p-6 text-center">
@@ -583,6 +618,25 @@ export default function AdminPackagesReport() {
                               <p className={`text-[10px] mt-0.5 ${it.has_guide ? "text-emerald-700" : "text-rose-600"} font-semibold`}>
                                 {it.has_guide ? `${it.tracking_count} guía${it.tracking_count === 1 ? "" : "s"}` : "Sin guía"}
                               </p>
+                              {it.invoice_status ? (
+                                <span
+                                  className={
+                                    it.invoice_status === "approved"
+                                      ? "inline-block mt-1 text-[10px] font-bold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-200"
+                                      : it.invoice_status === "annulled"
+                                        ? "inline-block mt-1 text-[10px] font-bold bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded border border-slate-300"
+                                        : "inline-block mt-1 text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-200"
+                                  }
+                                  title={it.invoice_number ? `Factura ${it.invoice_number}` : ""}
+                                  data-testid={`verify-invoice-status-${it.id}`}
+                                >
+                                  {it.invoice_status === "approved" ? "✓ Aprobada" : it.invoice_status === "annulled" ? "Anulada" : "Pendiente"}
+                                </span>
+                              ) : (
+                                <span className="inline-block mt-1 text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200" data-testid={`verify-invoice-status-${it.id}`}>
+                                  Sin factura
+                                </span>
+                              )}
                             </div>
                           </div>
                         ))}

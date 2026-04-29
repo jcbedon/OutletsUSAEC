@@ -3810,6 +3810,20 @@ async def get_all_shipments(status: Optional[str] = None, current_user: dict = D
         if primary_admin:
             legacy_admin_name = primary_admin.get("name")
 
+    # Batch fetch invoice statuses for shipments (status + is_annulled + invoice_number)
+    invoice_ids = list({s.get("invoice_id") for s in shipments if s.get("invoice_id")})
+    invoices_dict = {}
+    if invoice_ids:
+        invs = await db.invoices.find(
+            {"id": {"$in": invoice_ids}, "tenant_id": tid},
+            {"_id": 0, "id": 1, "status": 1, "is_annulled": 1, "invoice_number": 1}
+        ).to_list(len(invoice_ids))
+        for inv in invs:
+            invoices_dict[inv["id"]] = {
+                "status": "annulled" if inv.get("is_annulled") else (inv.get("status") or "pending"),
+                "invoice_number": inv.get("invoice_number") or "",
+            }
+
     result = []
     for s in shipments:
         creator_id = s.get("created_by")
@@ -3818,11 +3832,14 @@ async def get_all_shipments(status: Optional[str] = None, current_user: dict = D
         if not creator_id and not creator_name and legacy_admin_name:
             creator_name = legacy_admin_name
             is_legacy = True
+        inv_meta = invoices_dict.get(s.get("invoice_id") or "", {})
         result.append({
             **s,
             "user_name": users_dict.get(s["user_id"], "Unknown"),
             "created_by_name": creator_name,
-            "created_by_legacy": is_legacy
+            "created_by_legacy": is_legacy,
+            "invoice_status": inv_meta.get("status"),
+            "invoice_number": inv_meta.get("invoice_number"),
         })
     return result
 
