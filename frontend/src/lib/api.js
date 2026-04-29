@@ -111,6 +111,7 @@ export const getActiveClients = () => api.get("/admin/clients/active");
 export const createClient = (data) => api.post("/admin/clients/create", data);
 export const checkClientDuplicate = (data) => api.post("/admin/clients/check-duplicate", data);
 export const toggleClientStatus = (userId) => api.put(`/admin/clients/${userId}/toggle-status`);
+export const toggleClientReviewed = (userId) => api.put(`/admin/clients/${userId}/toggle-reviewed`);
 export const deleteClient = (userId) => api.delete(`/admin/clients/${userId}`);
 export const updateClientCommission = (userId, commissionFee) =>
   api.put(`/admin/clients/${userId}/commission?commission_fee=${commissionFee}`);

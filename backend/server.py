@@ -107,6 +107,10 @@ class User(BaseModel):
     password_plain: Optional[str] = None
     role: str = "client"
     is_active: bool = True
+    # "Revisado" flag the admin can toggle directly from the clients list to
+    # quickly mark which customers have already been reviewed in a session.
+    # Defaults to False — older clients without the field render as unchecked.
+    reviewed: bool = False
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class Wallet(BaseModel):
@@ -1578,6 +1582,25 @@ async def toggle_client_status(user_id: str, current_user: dict = Depends(get_cu
     
     status_text = "habilitado" if new_status else "inhabilitado"
     return {"message": f"Cliente {status_text} exitosamente", "is_active": new_status}
+
+
+@api_router.put("/admin/clients/{user_id}/toggle-reviewed")
+async def toggle_client_reviewed(user_id: str, current_user: dict = Depends(get_current_user)):
+    """Flip the 'reviewed' marker for a client — used by the admin clients list
+    to highlight customers that have already been audited in the current pass.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    client = await db.users.find_one({"id": user_id, "tenant_id": tid, "role": "client"}, {"_id": 0, "id": 1, "reviewed": 1})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    new_val = not bool(client.get("reviewed"))
+    await db.users.update_one(
+        {"id": user_id, "tenant_id": tid},
+        {"$set": {"reviewed": new_val, "reviewed_at": datetime.now(timezone.utc).isoformat() if new_val else None}}
+    )
+    return {"reviewed": new_val}
 
 @api_router.delete("/admin/clients/{user_id}")
 async def delete_client(user_id: str, current_user: dict = Depends(get_current_user)):

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings, getClientPassword } from "@/lib/api";
+import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings, getClientPassword, toggleClientReviewed } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -281,6 +281,19 @@ https://outletsusaec.shop/`;
       loadClients();
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al cambiar estado");
+    }
+  };
+
+  // Optimistic toggle so the UI feels instant. We flip the local state first
+  // and roll back on error.
+  const handleToggleReviewed = async (client) => {
+    const optimisticVal = !client.reviewed;
+    setClients((prev) => prev.map((c) => c.id === client.id ? { ...c, reviewed: optimisticVal } : c));
+    try {
+      await toggleClientReviewed(client.id);
+    } catch (error) {
+      setClients((prev) => prev.map((c) => c.id === client.id ? { ...c, reviewed: !optimisticVal } : c));
+      toast.error(error.response?.data?.detail || "Error al actualizar");
     }
   };
 
@@ -591,8 +604,27 @@ https://outletsusaec.shop/`;
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-2">
                               <Badge variant="outline" className="font-bold text-red-600 border-red-200">#{client.customer_id}</Badge>
-                              <span className="font-bold text-slate-800">{client.name}</span>
+                              <span
+                                className={`font-bold transition-colors px-1.5 py-0.5 rounded ${client.reviewed ? "bg-green-100 text-green-900" : "text-slate-800"}`}
+                                data-testid={`client-name-${client.customer_id}`}
+                              >
+                                {client.name}
+                              </span>
                               <Badge className="bg-green-100 text-green-700 border-green-200 text-xs">Activo</Badge>
+                              <label
+                                className="flex items-center gap-1 text-[11px] text-slate-500 select-none cursor-pointer ml-1"
+                                onClick={(e) => e.stopPropagation()}
+                                title={client.reviewed ? "Desmarcar como revisado" : "Marcar como revisado"}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={!!client.reviewed}
+                                  onChange={() => handleToggleReviewed(client)}
+                                  className="h-4 w-4 rounded accent-green-600 cursor-pointer"
+                                  data-testid={`reviewed-checkbox-${client.customer_id}`}
+                                />
+                                <span className={client.reviewed ? "text-green-700 font-semibold" : ""}>Revisado</span>
+                              </label>
                             </div>
                             <div className="space-y-1 text-sm text-gray-500">
                               <div className="flex items-center gap-2"><Phone className="h-4 w-4" /><span>{client.whatsapp}</span></div>
