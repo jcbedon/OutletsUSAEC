@@ -62,6 +62,13 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
   - Heurística de "tiene guía": `tracking_numbers.length > 0` con fallback a `tracking_number` legacy.
   - Backend: `GET /api/shipments` ahora enriquece la respuesta con `invoice_status` (`approved`/`pending`/`annulled`) e `invoice_number` vía batch lookup en `db.invoices`.
   - Default `weekFilter` de la página principal también cambiado a la semana actual.
+- **[29-abr]** **Diagnóstico profundo de envíos** (`/admin/shipments` → botón ámbar "Diagnóstico"):
+  - Backend: nuevo endpoint `GET /api/admin/diagnose-shipments?start_date=&end_date=` (admin-only) que devuelve para un rango ISO:
+    - `shipments_created_in_range`: envíos cuyo `created_at` cae en el rango, con metadata cruda de Mongo (`raw_created_at`, `raw_updated_at`, `created_by`, `created_by_name`, audit logs correlacionados con `entity_type=shipment`).
+    - `shipments_updated_only_in_range`: envíos con `created_at < start_date` pero `updated_at` en rango (los "editados pero no creados aquí").
+    - `summary`: KPIs de cuántos tienen `created_by` registrado y cuántos tienen audit log de `create_shipment`.
+  - Frontend: botón "🩺 Diagnóstico" al lado del filtro de semana en `/admin/shipments`. Diálogo modal muestra 4 KPIs, sección "Cómo leer este diagnóstico" con interpretación, lista detallada de envíos con `created_at` raw, `updated_at` raw, `created_by` (verde/rojo), audit log (verde/rojo) y `<details>` colapsable con historial completo de auditoría por envío.
+  - Permite al admin verificar con datos crudos de la BD si un envío realmente fue creado en una semana o solo modificado, y si producción tiene el código nuevo (audit log de `create_shipment`) o el viejo (sin audit log → "creator NULL legacy").
 - **[29-abr]** **Verificación manual de guías físicas (papel en mano)**:
   - Backend: nuevos campos en `Shipment`: `guide_verified: bool`, `guide_verified_at`, `guide_verified_by`, `guide_verified_by_name`. Endpoint nuevo `PUT /api/shipments/{id}/verify-guide` que acepta `{"verified": true|false}` (o toggle si no se envía body). Snapshot del actor que verificó. Verificado E2E con curl: ON marca con timestamp + nombre, OFF limpia los campos.
   - Frontend: la caja de check del verificador es **clicable**. Click → toggle optimista, llama al endpoint, muestra toast. Tooltip indica quién verificó y cuándo. Es **independiente** del campo `tracking_numbers`: este check refleja la confirmación física del operador ("tengo el papel en la mano"), no la presencia de tracking en la BD.

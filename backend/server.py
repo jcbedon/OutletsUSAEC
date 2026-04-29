@@ -6935,6 +6935,130 @@ async def diagnose_pending_purchases(customer_id: str, current_user: dict = Depe
     return {"customer_id": customer_id.upper(), "total_pending": len(rows), "counts": counts, "rows": rows}
 
 
+@api_router.get("/admin/diagnose-shipments")
+async def diagnose_shipments(
+    start_date: str = None,
+    end_date: str = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Deep diagnostic for shipments in a date range.
+
+    Returns every shipment whose `created_at` (or `updated_at` as fallback comparison)
+    falls in the range, plus correlated audit-log entries so the admin can verify:
+    - Real creation date from MongoDB
+    - Whether `created_by` is missing (legacy) or set (new code)
+    - Whether there is an audit log entry of action="create_shipment"
+    - Last modification time and what changed
+
+    Helps answer: "did anyone really create these shipments this week?"
+    """
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    if not start_date or not end_date:
+        raise HTTPException(status_code=400, detail="start_date y end_date son requeridos (ISO 8601)")
+
+    # Two queries: shipments created in range, and shipments whose updated_at is in range
+    # but created_at is NOT — these are the "edited but not created" ones.
+    created_in_range = await db.shipments.find(
+        {"tenant_id": tid, "created_at": {"$gte": start_date, "$lte": end_date}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(2000)
+
+    updated_in_range = await db.shipments.find(
+        {
+            "tenant_id": tid,
+            "updated_at": {"$gte": start_date, "$lte": end_date},
+            "created_at": {"$lt": start_date},  # created BEFORE the range
+        },
+        {"_id": 0}
+    ).sort("updated_at", -1).to_list(2000)
+
+    # Build a set of all shipment IDs to fetch related audit logs
+    all_ids = [s["id"] for s in created_in_range] + [s["id"] for s in updated_in_range]
+    audit_logs = []
+    if all_ids:
+        audit_logs = await db.audit_logs.find(
+            {"tenant_id": tid, "entity_type": "shipment", "entity_id": {"$in": all_ids}},
+            {"_id": 0}
+        ).sort("created_at", -1).to_list(5000)
+
+    # Group audit logs by shipment id
+    logs_by_ship = {}
+    for log in audit_logs:
+        sid = log.get("entity_id")
+        if not sid:
+            continue
+        logs_by_ship.setdefault(sid, []).append({
+            "action": log.get("action"),
+            "user_name": log.get("user_name"),
+            "user_role": log.get("user_role"),
+            "created_at": log.get("created_at"),
+            "details": log.get("details"),
+        })
+
+    # Resolve user names for each shipment's user_id and created_by
+    user_ids = list({s.get("user_id") for s in (created_in_range + updated_in_range) if s.get("user_id")})
+    creator_ids = list({s.get("created_by") for s in (created_in_range + updated_in_range) if s.get("created_by")})
+    name_lookup = {}
+    if user_ids:
+        for u in await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(user_ids)):
+            name_lookup[u["id"]] = u["name"]
+    if creator_ids:
+        for u in await db.users.find({"id": {"$in": creator_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(creator_ids)):
+            name_lookup[u["id"]] = u["name"]
+        missing = [c for c in creator_ids if c not in name_lookup]
+        if missing:
+            for e in await db.employees.find({"id": {"$in": missing}}, {"_id": 0, "id": 1, "name": 1}).to_list(len(missing)):
+                name_lookup[e["id"]] = e["name"]
+
+    def build_row(s):
+        sid = s["id"]
+        related = logs_by_ship.get(sid, [])
+        create_log = next((l for l in related if l["action"] == "create_shipment"), None)
+        return {
+            "id": sid,
+            "customer_id": s.get("customer_id"),
+            "client_name": name_lookup.get(s.get("user_id"), "Sin nombre"),
+            "package_count": s.get("package_count"),
+            "shipping_category": s.get("shipping_category"),
+            "shipping_cost": s.get("shipping_cost"),
+            "status": s.get("status"),
+            "raw_created_at": s.get("created_at"),
+            "raw_updated_at": s.get("updated_at"),
+            "created_by": s.get("created_by"),
+            "created_by_name_in_doc": s.get("created_by_name"),
+            "created_by_resolved": name_lookup.get(s.get("created_by"), None),
+            "has_audit_create": bool(create_log),
+            "audit_create_user": (create_log or {}).get("user_name"),
+            "audit_create_at": (create_log or {}).get("created_at"),
+            "audit_log_count": len(related),
+            "audit_logs": related[:10],  # cap for payload size
+        }
+
+    rows_created = [build_row(s) for s in created_in_range]
+    rows_updated_only = [build_row(s) for s in updated_in_range]
+
+    # Summary diagnostics
+    summary = {
+        "range": {"start": start_date, "end": end_date},
+        "created_in_range_count": len(rows_created),
+        "updated_only_count": len(rows_updated_only),
+        "created_with_created_by": sum(1 for r in rows_created if r["created_by"]),
+        "created_without_created_by_legacy": sum(1 for r in rows_created if not r["created_by"]),
+        "created_with_audit_log": sum(1 for r in rows_created if r["has_audit_create"]),
+        "created_without_audit_log": sum(1 for r in rows_created if not r["has_audit_create"]),
+        "total_packages_in_range": sum((r.get("package_count") or 0) for r in rows_created),
+    }
+
+    return {
+        "summary": summary,
+        "shipments_created_in_range": rows_created,
+        "shipments_updated_only_in_range": rows_updated_only,
+    }
+
+
 @api_router.get("/")
 async def root():
     return {"message": "OUTLETS USA EC SaaS API - Multi-Tenant Live Shopping Platform"}

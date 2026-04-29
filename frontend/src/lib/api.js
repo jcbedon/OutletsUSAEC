@@ -207,6 +207,10 @@ export const getAuditUsers = () => api.get("/admin/audit-logs/users");
 export const getAuditActions = () => api.get("/admin/audit-logs/actions");
 export const getAuditHistory = (days = 7) => api.get(`/admin/audit-logs/history?days=${days}`);
 
+// Diagnostics
+export const diagnoseShipments = (startDate, endDate) =>
+  api.get("/admin/diagnose-shipments", { params: { start_date: startDate, end_date: endDate } });
+
 // Superadmin - Tenant Settings
 export const updateTenantTaxOptionsSuperadmin = (tenantId, taxOptions) => 
   api.put(`/superadmin/tenants/${tenantId}/tax-options`, { tax_options: taxOptions });

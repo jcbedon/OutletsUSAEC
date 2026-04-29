@@ -15,7 +15,8 @@ import {
   getClientInvoicesForShipment,
   createUploadSession,
   getUploadSession,
-  attachSessionFilesToShipment
+  attachSessionFilesToShipment,
+  diagnoseShipments
 } from "@/lib/api";
 import { toast } from "sonner";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
@@ -51,7 +52,8 @@ import {
   DollarSign,
   ChevronDown,
   Smartphone,
-  RefreshCw
+  RefreshCw,
+  Stethoscope
 } from "lucide-react";
 import QRCode from "qrcode";
 import axios from "axios";
@@ -91,6 +93,47 @@ export default function AdminShipments() {
     return candidate.toISOString().slice(0, 10);
   };
   const [weekFilter, setWeekFilter] = useState(() => getCurrentWeekKey());
+  const [diagDialogOpen, setDiagDialogOpen] = useState(false);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagData, setDiagData] = useState(null);
+
+  // Run a deep diagnostic for the active week (currently selected weekFilter).
+  // Resolves the explicit Monday→Monday range and asks the backend for raw shipment
+  // metadata + audit logs so the admin can see the truth from MongoDB.
+  const handleRunDiagnostic = async () => {
+    setDiagDialogOpen(true);
+    setDiagLoading(true);
+    setDiagData(null);
+    try {
+      let startISO; let endISO;
+      if (weekFilter === "all") {
+        // Use current week as default for diagnostics
+        const key = getCurrentWeekKey();
+        const [y, m, d] = key.split("-").map(Number);
+        const start = new Date(y, m - 1, d, 12, 0, 0, 0);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 7);
+        end.setSeconds(end.getSeconds() - 1);
+        startISO = start.toISOString();
+        endISO = end.toISOString();
+      } else {
+        const [y, m, d] = weekFilter.split("-").map(Number);
+        const start = new Date(y, m - 1, d, 12, 0, 0, 0);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 7);
+        end.setSeconds(end.getSeconds() - 1);
+        startISO = start.toISOString();
+        endISO = end.toISOString();
+      }
+      const res = await diagnoseShipments(startISO, endISO);
+      setDiagData({ ...res.data, _range: { startISO, endISO } });
+    } catch (e) {
+      toast.error("No se pudo ejecutar el diagnóstico");
+      setDiagData({ error: e?.response?.data?.detail || e.message });
+    } finally {
+      setDiagLoading(false);
+    }
+  };
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [trackingDialogOpen, setTrackingDialogOpen] = useState(null);
   const [trackingNumbers, setTrackingNumbers] = useState([""]);  // Array of tracking numbers
@@ -1158,19 +1201,33 @@ export default function AdminShipments() {
                         </p>
                       </div>
                     </div>
-                    <Select value={weekFilter} onValueChange={setWeekFilter}>
-                      <SelectTrigger className="w-48 h-9 rounded-lg text-xs bg-white" data-testid="week-filter">
-                        <SelectValue placeholder="Filtrar por semana" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todas las semanas</SelectItem>
-                        {weekList.map(([key, w]) => (
-                          <SelectItem key={key} value={key} className="text-xs">
-                            {w.label} ({w.count})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRunDiagnostic}
+                        className="h-9 rounded-lg text-xs gap-1.5 bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"
+                        data-testid="open-diagnostic-btn"
+                        title="Diagnosticar envíos de la semana seleccionada"
+                      >
+                        <Stethoscope className="h-3.5 w-3.5" />
+                        Diagnóstico
+                      </Button>
+                      <Select value={weekFilter} onValueChange={setWeekFilter}>
+                        <SelectTrigger className="w-48 h-9 rounded-lg text-xs bg-white" data-testid="week-filter">
+                          <SelectValue placeholder="Filtrar por semana" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todas las semanas</SelectItem>
+                          {weekList.map(([key, w]) => (
+                            <SelectItem key={key} value={key} className="text-xs">
+                              {w.label} ({w.count})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -1487,6 +1544,152 @@ export default function AdminShipments() {
           ))}
         </Tabs>
       </div>
+
+      {/* Deep Diagnostic Dialog */}
+      <Dialog open={diagDialogOpen} onOpenChange={setDiagDialogOpen}>
+        <DialogContent className="rounded-2xl max-w-4xl w-[95vw] max-h-[90vh] overflow-y-auto" data-testid="diagnostic-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Stethoscope className="h-5 w-5 text-amber-600" />
+              Diagnóstico de envíos · {weekFilter === "all" ? "Semana actual" : weekFilter}
+            </DialogTitle>
+          </DialogHeader>
+
+          {diagLoading && (
+            <div className="text-center py-10 text-sm text-slate-500">
+              <RefreshCw className="h-6 w-6 mx-auto mb-2 animate-spin text-amber-600" />
+              Consultando MongoDB y audit logs…
+            </div>
+          )}
+
+          {!diagLoading && diagData?.error && (
+            <div className="rounded-xl bg-rose-50 border border-rose-200 p-4 text-sm text-rose-800" data-testid="diagnostic-error">
+              <p className="font-bold mb-1">Error</p>
+              <p>{diagData.error}</p>
+            </div>
+          )}
+
+          {!diagLoading && diagData && !diagData.error && (
+            <div className="space-y-4 mt-2">
+              {/* Range info */}
+              <div className="text-[11px] text-slate-500 bg-slate-50 rounded px-2 py-1 font-mono">
+                {diagData._range?.startISO} → {diagData._range?.endISO}
+              </div>
+
+              {/* Summary KPIs */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
+                  <p className="text-[10px] uppercase font-bold text-blue-700">Creados en rango</p>
+                  <p className="text-2xl font-extrabold text-blue-900" data-testid="diag-created-count">{diagData.summary.created_in_range_count}</p>
+                  <p className="text-[10px] text-blue-700">{diagData.summary.total_packages_in_range} paquetes</p>
+                </div>
+                <div className="rounded-xl bg-amber-50 border border-amber-100 p-3">
+                  <p className="text-[10px] uppercase font-bold text-amber-700">Solo modificados</p>
+                  <p className="text-2xl font-extrabold text-amber-900" data-testid="diag-updated-only-count">{diagData.summary.updated_only_count}</p>
+                  <p className="text-[10px] text-amber-700">creados antes, editados aquí</p>
+                </div>
+                <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                  <p className="text-[10px] uppercase font-bold text-emerald-700">Con creator registrado</p>
+                  <p className="text-2xl font-extrabold text-emerald-900" data-testid="diag-with-creator">{diagData.summary.created_with_created_by}</p>
+                  <p className="text-[10px] text-emerald-700">de {diagData.summary.created_in_range_count}</p>
+                </div>
+                <div className="rounded-xl bg-rose-50 border border-rose-100 p-3">
+                  <p className="text-[10px] uppercase font-bold text-rose-700">Con audit log</p>
+                  <p className="text-2xl font-extrabold text-rose-900" data-testid="diag-with-audit">{diagData.summary.created_with_audit_log}</p>
+                  <p className="text-[10px] text-rose-700">de {diagData.summary.created_in_range_count}</p>
+                </div>
+              </div>
+
+              {/* Interpretation hint */}
+              <div className="rounded-xl bg-indigo-50 border border-indigo-100 p-3 text-[11px] text-indigo-900">
+                <p className="font-bold mb-1">📖 Cómo leer este diagnóstico</p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  <li><b>Creados en rango</b>: envíos cuyo <code>created_at</code> en MongoDB cae en esta semana.</li>
+                  <li><b>Con creator registrado</b>: tienen <code>created_by</code> guardado (código nuevo).</li>
+                  <li><b>Con audit log</b>: existe entrada <code>action="create_shipment"</code> en <code>audit_logs</code> → confirma 100% que SÍ fueron creados en este rango.</li>
+                  <li>Si <b>"Creados en rango"</b> = N pero <b>"Con audit log"</b> = 0 → producción tiene código viejo. Los envíos sí fueron creados (la fecha es real) pero sin auditoría.</li>
+                </ul>
+              </div>
+
+              {/* Shipments created in range */}
+              {diagData.shipments_created_in_range?.length > 0 && (
+                <div className="rounded-xl border border-slate-200 overflow-hidden">
+                  <div className="bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
+                    Envíos creados en el rango ({diagData.shipments_created_in_range.length})
+                  </div>
+                  <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
+                    {diagData.shipments_created_in_range.map((s) => (
+                      <div key={s.id} className="px-3 py-2 text-xs space-y-1" data-testid={`diag-row-${s.id}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Badge variant="outline" className="font-mono text-[10px]">{s.customer_id}</Badge>
+                            <span className="font-bold text-slate-800 truncate">{s.client_name}</span>
+                            <span className="text-slate-500">· {s.package_count} {s.shipping_category}</span>
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-500 flex-shrink-0">{s.id.slice(0, 8)}…</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-600">
+                          <div>📅 <b>created_at</b>: <span className="font-mono">{s.raw_created_at}</span></div>
+                          <div>✏️ <b>updated_at</b>: <span className="font-mono">{s.raw_updated_at}</span></div>
+                          <div>👤 <b>created_by</b>: {s.created_by ? <span className="text-emerald-700 font-bold">{s.created_by_resolved || s.created_by_name_in_doc || s.created_by.slice(0, 8)}</span> : <span className="text-rose-700 font-bold">NULL (legacy)</span>}</div>
+                          <div>📝 <b>audit log</b>: {s.has_audit_create ? <span className="text-emerald-700 font-bold">{s.audit_create_user} @ {s.audit_create_at?.slice(0, 16).replace("T"," ")}</span> : <span className="text-rose-700 font-bold">SIN registro</span>}</div>
+                        </div>
+                        {s.audit_log_count > 0 && (
+                          <details className="text-[10px]">
+                            <summary className="cursor-pointer text-blue-700 font-bold">Ver historial ({s.audit_log_count} entradas)</summary>
+                            <div className="mt-1 pl-4 space-y-0.5 text-slate-600">
+                              {s.audit_logs.map((log, idx) => (
+                                <div key={idx}>
+                                  <span className="font-mono text-slate-400">{log.created_at?.slice(0, 16).replace("T"," ")}</span>
+                                  {" · "}
+                                  <span className="font-bold">{log.action}</span>
+                                  {" · "}
+                                  <span>{log.user_name}</span>
+                                  {log.user_role && <span className="text-slate-400"> ({log.user_role})</span>}
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Shipments only modified in range */}
+              {diagData.shipments_updated_only_in_range?.length > 0 && (
+                <div className="rounded-xl border border-amber-200 overflow-hidden">
+                  <div className="bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                    Envíos creados ANTES pero modificados en el rango ({diagData.shipments_updated_only_in_range.length})
+                  </div>
+                  <div className="divide-y divide-amber-100 max-h-60 overflow-y-auto">
+                    {diagData.shipments_updated_only_in_range.map((s) => (
+                      <div key={s.id} className="px-3 py-2 text-xs space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Badge variant="outline" className="font-mono text-[10px]">{s.customer_id}</Badge>
+                            <span className="font-bold text-slate-800 truncate">{s.client_name}</span>
+                          </div>
+                        </div>
+                        <div className="text-[10px] text-slate-600">
+                          📅 created_at: <span className="font-mono">{s.raw_created_at}</span> · ✏️ updated_at: <span className="font-mono">{s.raw_updated_at}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {diagData.summary.created_in_range_count === 0 && diagData.summary.updated_only_count === 0 && (
+                <div className="text-center py-6 text-sm text-slate-500">
+                  Sin envíos creados ni modificados en este rango.
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
