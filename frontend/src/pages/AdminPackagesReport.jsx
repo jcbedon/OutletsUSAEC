@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { getAllShipments, getTenantSettings, getAllClients } from "@/lib/api";
+import { getAllShipments, getTenantSettings, getAllClients, getInvoicesWithoutShipment } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  ArrowLeft, Package, Search, Users, Layers, DollarSign, ClipboardCheck, CheckCircle2, AlertCircle,
+  ArrowLeft, Package, Search, Users, Layers, DollarSign, ClipboardCheck, CheckCircle2, AlertCircle, FileText, FileWarning,
 } from "lucide-react";
 
 // Week boundary helper: Monday 12:00 local → next Monday 11:59:59 local.
@@ -58,6 +58,9 @@ export default function AdminPackagesReport() {
   const [detailCustomerFilter, setDetailCustomerFilter] = useState("");
   const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
   const [verifyWeek, setVerifyWeek] = useState(() => getWeekKey(new Date().toISOString()));
+  const [invoiceStatusFilter, setInvoiceStatusFilter] = useState("all"); // "all" | "approved" | "pending" | "annulled" | "none"
+  const [invoicesWithoutShipment, setInvoicesWithoutShipment] = useState(null); // { clients, invoices_count, clients_count }
+  const [loadingInvoicesWithoutShipment, setLoadingInvoicesWithoutShipment] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -88,6 +91,24 @@ export default function AdminPackagesReport() {
       }
     })();
   }, []);
+
+  // Lazy-load invoices-without-shipment whenever the verify dialog opens.
+  useEffect(() => {
+    if (!verifyDialogOpen) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingInvoicesWithoutShipment(true);
+      try {
+        const res = await getInvoicesWithoutShipment();
+        if (!cancelled) setInvoicesWithoutShipment(res.data || null);
+      } catch {
+        if (!cancelled) setInvoicesWithoutShipment(null);
+      } finally {
+        if (!cancelled) setLoadingInvoicesWithoutShipment(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [verifyDialogOpen]);
 
   // Derive every week present in the data, sorted desc.
   // Always ensure the current week is included so the default filter has a matching option.
@@ -166,16 +187,44 @@ export default function AdminPackagesReport() {
   const fmtQty = (q) => Number(q).toFixed(isPounds ? 1 : 0);
 
   // Verification view: shipments grouped by client, showing if guide (tracking) was created.
+  // Totals/chips ALWAYS reflect the full week (so filters can be re-applied);
+  // only the grouped list is filtered when an invoice status chip is clicked.
   const verifyData = useMemo(() => {
-    const rows = shipments.filter((s) => getWeekKey(s.created_at) === verifyWeek);
+    const allRows = shipments.filter((s) => getWeekKey(s.created_at) === verifyWeek);
+
+    // Aggregate counts over the full unfiltered set
+    let aggPackages = 0;
+    let aggGuides = 0;
+    let aggWithGuides = 0;
+    let cntApproved = 0;
+    let cntPending = 0;
+    let cntAnnulled = 0;
+    let cntNoInvoice = 0;
+    let cntWithInvoice = 0;
+    allRows.forEach((s) => {
+      const tracks = Array.isArray(s.tracking_numbers) ? s.tracking_numbers.filter((t) => (t || "").trim()) : [];
+      const legacyTrack = s.tracking_number && tracks.length === 0 ? [s.tracking_number] : [];
+      const allTracks = tracks.length ? tracks : legacyTrack;
+      aggPackages += Number(s.package_count) || 0;
+      aggGuides += allTracks.length;
+      if (allTracks.length > 0) aggWithGuides += 1;
+      const st = s.invoice_status || null;
+      if (st === "approved") cntApproved += 1;
+      else if (st === "annulled") cntAnnulled += 1;
+      else if (st === "pending") cntPending += 1;
+      else cntNoInvoice += 1;
+      if (st) cntWithInvoice += 1;
+    });
+
+    // Filter rows for the displayed list
+    const rows = invoiceStatusFilter === "all"
+      ? allRows
+      : allRows.filter((s) => {
+          const st = s.invoice_status || null;
+          if (invoiceStatusFilter === "none") return !st;
+          return st === invoiceStatusFilter;
+        });
     const groups = {}; // customer_id -> { name, items: [...], totals }
-    let totalPackages = 0;
-    let totalGuides = 0;
-    let shipmentsWithGuides = 0;
-    let shipmentsApproved = 0;
-    let shipmentsPending = 0;
-    let shipmentsAnnulled = 0;
-    let shipmentsNoInvoice = 0;
     rows.forEach((s) => {
       const cid = (s.customer_id || "—").toUpperCase();
       const name = s.user_name || s.customer_name || clientsByCode[cid] || "Sin nombre";
@@ -184,13 +233,6 @@ export default function AdminPackagesReport() {
       const allTracks = tracks.length ? tracks : legacyTrack;
       const hasGuide = allTracks.length > 0;
       const pkgs = Number(s.package_count) || 0;
-      totalPackages += pkgs;
-      totalGuides += allTracks.length;
-      if (hasGuide) shipmentsWithGuides += 1;
-      if (s.invoice_status === "approved") shipmentsApproved += 1;
-      else if (s.invoice_status === "annulled") shipmentsAnnulled += 1;
-      else if (s.invoice_status === "pending") shipmentsPending += 1;
-      else shipmentsNoInvoice += 1;
       if (!groups[cid]) groups[cid] = { customer_id: cid, name, items: [], total_pkgs: 0, total_guides: 0 };
       groups[cid].items.push({
         id: s.id,
@@ -215,17 +257,19 @@ export default function AdminPackagesReport() {
     });
     return {
       groups: Object.values(groups).sort((a, b) => a.customer_id.localeCompare(b.customer_id)),
-      totalPackages,
-      totalGuides,
-      totalShipments: rows.length,
-      shipmentsWithGuides,
-      shipmentsWithoutGuides: rows.length - shipmentsWithGuides,
-      shipmentsApproved,
-      shipmentsPending,
-      shipmentsAnnulled,
-      shipmentsNoInvoice,
+      totalPackages: aggPackages,
+      totalGuides: aggGuides,
+      totalShipments: allRows.length,
+      shipmentsWithGuides: aggWithGuides,
+      shipmentsWithoutGuides: allRows.length - aggWithGuides,
+      shipmentsApproved: cntApproved,
+      shipmentsPending: cntPending,
+      shipmentsAnnulled: cntAnnulled,
+      shipmentsNoInvoice: cntNoInvoice,
+      shipmentsWithInvoice: cntWithInvoice,
+      filteredCount: rows.length,
     };
-  }, [shipments, verifyWeek, clientsByCode]);
+  }, [shipments, verifyWeek, invoiceStatusFilter, clientsByCode]);
 
   if (loading) {
     return (
@@ -540,24 +584,132 @@ export default function AdminPackagesReport() {
               </div>
             </div>
 
-            {/* Invoice status row */}
+            {/* Invoice status row — chips are clickable filters */}
             <div className="flex items-center gap-2 flex-wrap mb-3 text-[11px]">
               <span className="font-bold text-slate-500 uppercase text-[10px]">Facturas:</span>
-              <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-bold" data-testid="verify-inv-approved">
+              <button
+                type="button"
+                onClick={() => setInvoiceStatusFilter("all")}
+                className={`px-2 py-0.5 rounded font-bold border transition-all ${invoiceStatusFilter === "all" ? "bg-slate-800 text-white border-slate-800 ring-2 ring-slate-300" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}
+                data-testid="verify-inv-filter-all"
+              >
+                Todas ({verifyData.totalShipments})
+              </button>              <button
+                type="button"
+                onClick={() => setInvoiceStatusFilter(invoiceStatusFilter === "approved" ? "all" : "approved")}
+                className={`px-2 py-0.5 rounded font-bold border transition-all ${invoiceStatusFilter === "approved" ? "bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-300" : "bg-emerald-100 text-emerald-800 border-emerald-200 hover:bg-emerald-200"}`}
+                data-testid="verify-inv-approved"
+              >
                 ✓ {verifyData.shipmentsApproved} aprobada{verifyData.shipmentsApproved === 1 ? "" : "s"}
-              </span>
-              <span className="bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded font-bold" data-testid="verify-inv-pending">
+              </button>
+              <button
+                type="button"
+                onClick={() => setInvoiceStatusFilter(invoiceStatusFilter === "pending" ? "all" : "pending")}
+                className={`px-2 py-0.5 rounded font-bold border transition-all ${invoiceStatusFilter === "pending" ? "bg-amber-600 text-white border-amber-600 ring-2 ring-amber-300" : "bg-amber-100 text-amber-800 border-amber-200 hover:bg-amber-200"}`}
+                data-testid="verify-inv-pending"
+              >
                 ⌛ {verifyData.shipmentsPending} pendiente{verifyData.shipmentsPending === 1 ? "" : "s"}
-              </span>
+              </button>
               {verifyData.shipmentsAnnulled > 0 && (
-                <span className="bg-slate-200 text-slate-700 border border-slate-300 px-2 py-0.5 rounded font-bold" data-testid="verify-inv-annulled">
+                <button
+                  type="button"
+                  onClick={() => setInvoiceStatusFilter(invoiceStatusFilter === "annulled" ? "all" : "annulled")}
+                  className={`px-2 py-0.5 rounded font-bold border transition-all ${invoiceStatusFilter === "annulled" ? "bg-slate-700 text-white border-slate-700 ring-2 ring-slate-300" : "bg-slate-200 text-slate-700 border-slate-300 hover:bg-slate-300"}`}
+                  data-testid="verify-inv-annulled"
+                >
                   ✕ {verifyData.shipmentsAnnulled} anulada{verifyData.shipmentsAnnulled === 1 ? "" : "s"}
-                </span>
+                </button>
               )}
               {verifyData.shipmentsNoInvoice > 0 && (
-                <span className="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-bold" data-testid="verify-inv-none">
+                <button
+                  type="button"
+                  onClick={() => setInvoiceStatusFilter(invoiceStatusFilter === "none" ? "all" : "none")}
+                  className={`px-2 py-0.5 rounded font-bold border transition-all ${invoiceStatusFilter === "none" ? "bg-slate-600 text-white border-slate-600 ring-2 ring-slate-300" : "bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200"}`}
+                  data-testid="verify-inv-none"
+                >
                   — {verifyData.shipmentsNoInvoice} sin factura
+                </button>
+              )}
+              {invoiceStatusFilter !== "all" && (
+                <span className="text-[10px] text-slate-500 italic">
+                  · mostrando {verifyData.filteredCount} de {verifyData.totalShipments}
                 </span>
+              )}
+            </div>
+
+            {/* Paquetes vs Facturas — totals + invoices missing a shipment */}
+            <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3 mb-3" data-testid="verify-packages-vs-invoices">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-[11px] font-bold text-blue-800 uppercase flex items-center gap-1.5">
+                  <FileText className="h-3.5 w-3.5" /> Paquetes vs Facturas
+                </p>
+                <p className="text-[10px] text-blue-700">Datos globales (todas las semanas)</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2">
+                  <p className="text-[10px] uppercase font-bold text-emerald-700">Con paquete asignado</p>
+                  <p className="text-lg font-extrabold text-emerald-900" data-testid="verify-paq-with-invoice">
+                    {verifyData.shipmentsWithInvoice}
+                  </p>
+                  <p className="text-[10px] text-emerald-700">envío{verifyData.shipmentsWithInvoice === 1 ? "" : "s"} con factura</p>
+                </div>
+                <div className="rounded-lg bg-rose-50 border border-rose-200 p-2">
+                  <p className="text-[10px] uppercase font-bold text-rose-700 flex items-center gap-1">
+                    <FileWarning className="h-3 w-3" /> Facturas sin paquete
+                  </p>
+                  <p className="text-lg font-extrabold text-rose-900" data-testid="verify-inv-no-shipment">
+                    {loadingInvoicesWithoutShipment ? "…" : (invoicesWithoutShipment?.invoices_count ?? 0)}
+                  </p>
+                  <p className="text-[10px] text-rose-700">
+                    {invoicesWithoutShipment?.clients_count || 0} cliente{invoicesWithoutShipment?.clients_count === 1 ? "" : "s"}
+                  </p>
+                </div>
+              </div>
+
+              {/* List of invoices missing a shipment */}
+              {!loadingInvoicesWithoutShipment && invoicesWithoutShipment && invoicesWithoutShipment.clients?.length > 0 && (
+                <details className="mt-2 group" data-testid="verify-inv-no-shipment-details">
+                  <summary className="cursor-pointer text-[11px] font-bold text-rose-700 hover:text-rose-900 select-none">
+                    Ver facturas sin paquete asignado ▾
+                  </summary>
+                  <div className="mt-2 space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {invoicesWithoutShipment.clients.map((c) => (
+                      <div key={c.customer_id} className="rounded-lg border border-rose-100 bg-white" data-testid={`verify-inv-missing-client-${c.customer_id}`}>
+                        <div className="flex items-center justify-between px-2 py-1.5 bg-rose-50 rounded-t-lg gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Badge variant="outline" className="font-mono text-[10px]">{c.customer_id}</Badge>
+                            <span className="text-[11px] font-bold text-slate-800 truncate">{c.name || "Sin nombre"}</span>
+                          </div>
+                          <Badge className="bg-rose-500 hover:bg-rose-500 text-[10px] flex-shrink-0">
+                            {c.invoices.length} factura{c.invoices.length === 1 ? "" : "s"}
+                          </Badge>
+                        </div>
+                        <div className="divide-y divide-rose-50">
+                          {c.invoices.map((inv) => (
+                            <div key={inv.id} className="flex items-center justify-between px-2 py-1.5 text-[11px]" data-testid={`verify-inv-missing-${inv.id}`}>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <FileText className="h-3 w-3 text-rose-500 flex-shrink-0" />
+                                <span className="font-mono font-bold text-slate-700">{inv.invoice_number}</span>
+                                <span className="text-[10px] text-slate-500">
+                                  {new Date(inv.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "2-digit" })}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${inv.status === "approved" ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "bg-amber-100 text-amber-800 border-amber-200"}`}>
+                                  {inv.status === "approved" ? "Aprobada" : "Pendiente"}
+                                </span>
+                                <span className="font-extrabold text-slate-800">${(inv.total || 0).toFixed(2)}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+              {!loadingInvoicesWithoutShipment && invoicesWithoutShipment && invoicesWithoutShipment.invoices_count === 0 && (
+                <p className="text-[10px] text-emerald-700 text-center mt-1 italic">Todas las facturas tienen paquete asignado ✓</p>
               )}
             </div>
 
@@ -590,11 +742,17 @@ export default function AdminPackagesReport() {
                         {g.items.map((it) => (
                           <div key={it.id} className="flex items-center justify-between gap-3 px-3 py-2 text-xs" data-testid={`verify-item-${it.id}`}>
                             <div className="flex items-center gap-2 min-w-0 flex-1">
-                              {it.has_guide ? (
-                                <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" data-testid={`verify-check-yes-${it.id}`} />
-                              ) : (
-                                <AlertCircle className="h-4 w-4 text-rose-500 flex-shrink-0" data-testid={`verify-check-no-${it.id}`} />
-                              )}
+                              <div
+                                className={`flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center border-2 ${it.has_guide ? "bg-emerald-100 border-emerald-500" : "bg-white border-rose-300"}`}
+                                title={it.has_guide ? `Guía creada (${it.tracking_count})` : "Falta crear guía"}
+                                data-testid={it.has_guide ? `verify-check-yes-${it.id}` : `verify-check-no-${it.id}`}
+                              >
+                                {it.has_guide ? (
+                                  <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                                ) : (
+                                  <AlertCircle className="h-5 w-5 text-rose-400" />
+                                )}
+                              </div>
                               <div className="min-w-0">
                                 <p className="text-slate-700 truncate">
                                   {new Date(it.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}
