@@ -56,7 +56,12 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
   - Backend: nuevos campos `created_by` y `created_by_name` en el modelo `Shipment`. Se setean al crear desde `current_user` (lookup en `users`/`employees`). El endpoint `GET /api/shipments` rellena `created_by_name` para envíos antiguos vía batch lookup.
   - Frontend: badge azul con ícono de usuario en cada tarjeta de envío al lado de la fecha (oculto si el envío legacy no tiene creador registrado).
   - `weekFilter` ahora arranca por defecto en la **semana actual** (lunes 12:00 → lunes 12:00) en lugar de "Todas". La semana actual siempre aparece en el dropdown aunque no haya envíos en ella.
-- **[29-abr]** **Auditoría completa — todas las acciones del combobox**: el dropdown de filtros listaba 23 acciones pero solo 8 estaban realmente registrando eventos. Agregadas las llamadas a `log_audit_action` en los endpoints faltantes:
+- **[29-abr]** **Verificar Paquetes vs Guías Creadas** (`/admin/packages-report`):
+  - Botón "Verificar Paquetes vs Guías" en el header de la página de detalle de paquetes (gradient naranja, icono `ClipboardCheck`).
+  - Diálogo modal con: filtro de semana (lunes 12:00 → lunes 12:00, **default = semana actual**, siempre incluida en el dropdown aunque no haya envíos), 4 KPIs (paquetes totales, guías creadas, % cobertura, envíos pendientes sin guía), y lista de envíos **agrupados por cliente** mostrando para cada uno: ✓ verde si tiene guía / ⚠ rojo si no, fecha+hora, nombre del creador (badge azul para reales / ámbar `(est.)` para legacy), categoría, cantidad de paquetes/libras, y conteo de guías. Cada grupo muestra un badge "Completo" verde si todos sus envíos tienen guía o "N pendiente(s)" ámbar si faltan.
+  - Heurística de "tiene guía": `tracking_numbers.length > 0` con fallback a `tracking_number` legacy.
+  - Default `weekFilter` de la página principal también cambiado a la semana actual.
+- **[29-abr]** **Auditoría completa — todas las acciones del combobox**: el dropdown listaba 23 acciones pero solo ~8 registraban eventos realmente. Agregadas llamadas a `log_audit_action` en los endpoints faltantes:
   - **Clientes**: `create_client`, `update_client`, `delete_client`
   - **Compras**: `create_purchase`, `update_purchase`
   - **Envíos**: `create_shipment` (en sesión anterior), `update_shipment`, `delete_shipment`

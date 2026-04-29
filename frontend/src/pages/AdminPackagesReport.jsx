@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  ArrowLeft, Package, Search, Users, Layers, DollarSign,
+  ArrowLeft, Package, Search, Users, Layers, DollarSign, ClipboardCheck, CheckCircle2, AlertCircle,
 } from "lucide-react";
 
 // Week boundary helper: Monday 12:00 local → next Monday 11:59:59 local.
@@ -51,11 +51,13 @@ export default function AdminPackagesReport() {
   const [clientsByCode, setClientsByCode] = useState({}); // customer_id (UPPER) -> name
   const [categories, setCategories] = useState([]); // [{key, label, value_packages, value_pounds}]
   const [shippingMode, setShippingMode] = useState("packages");
-  const [weekFilter, setWeekFilter] = useState("all");
+  const [weekFilter, setWeekFilter] = useState(() => getWeekKey(new Date().toISOString()));
   const [customerFilter, setCustomerFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [customerListDialog, setCustomerListDialog] = useState(null); // {label, customers: [{customer_id, name}]}
   const [detailCustomerFilter, setDetailCustomerFilter] = useState("");
+  const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
+  const [verifyWeek, setVerifyWeek] = useState(() => getWeekKey(new Date().toISOString()));
 
   useEffect(() => {
     (async () => {
@@ -88,9 +90,11 @@ export default function AdminPackagesReport() {
   }, []);
 
   // Derive every week present in the data, sorted desc.
+  // Always ensure the current week is included so the default filter has a matching option.
   const weekOptions = useMemo(() => {
     const set = new Set();
     shipments.forEach((s) => set.add(getWeekKey(s.created_at)));
+    set.add(getWeekKey(new Date().toISOString()));
     return Array.from(set).sort((a, b) => b.localeCompare(a));
   }, [shipments]);
 
@@ -161,6 +165,54 @@ export default function AdminPackagesReport() {
   const unitLabel = isPounds ? "lb" : "paq.";
   const fmtQty = (q) => Number(q).toFixed(isPounds ? 1 : 0);
 
+  // Verification view: shipments grouped by client, showing if guide (tracking) was created.
+  const verifyData = useMemo(() => {
+    const rows = shipments.filter((s) => getWeekKey(s.created_at) === verifyWeek);
+    const groups = {}; // customer_id -> { name, items: [...], totals }
+    let totalPackages = 0;
+    let totalGuides = 0;
+    let shipmentsWithGuides = 0;
+    rows.forEach((s) => {
+      const cid = (s.customer_id || "—").toUpperCase();
+      const name = s.user_name || s.customer_name || clientsByCode[cid] || "Sin nombre";
+      const tracks = Array.isArray(s.tracking_numbers) ? s.tracking_numbers.filter((t) => (t || "").trim()) : [];
+      const legacyTrack = s.tracking_number && tracks.length === 0 ? [s.tracking_number] : [];
+      const allTracks = tracks.length ? tracks : legacyTrack;
+      const hasGuide = allTracks.length > 0;
+      const pkgs = Number(s.package_count) || 0;
+      totalPackages += pkgs;
+      totalGuides += allTracks.length;
+      if (hasGuide) shipmentsWithGuides += 1;
+      if (!groups[cid]) groups[cid] = { customer_id: cid, name, items: [], total_pkgs: 0, total_guides: 0 };
+      groups[cid].items.push({
+        id: s.id,
+        created_at: s.created_at,
+        created_by_name: s.created_by_name || "",
+        created_by_legacy: !!s.created_by_legacy,
+        package_count: pkgs,
+        shipping_mode: s.shipping_mode,
+        shipping_category: s.shipping_category || "",
+        tracking_count: allTracks.length,
+        has_guide: hasGuide,
+        status: s.status || "preparing",
+      });
+      groups[cid].total_pkgs += pkgs;
+      groups[cid].total_guides += allTracks.length;
+    });
+    // Sort each group's items by date desc
+    Object.values(groups).forEach((g) => {
+      g.items.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+    });
+    return {
+      groups: Object.values(groups).sort((a, b) => a.customer_id.localeCompare(b.customer_id)),
+      totalPackages,
+      totalGuides,
+      totalShipments: rows.length,
+      shipmentsWithGuides,
+      shipmentsWithoutGuides: rows.length - shipmentsWithGuides,
+    };
+  }, [shipments, verifyWeek, clientsByCode]);
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -173,7 +225,7 @@ export default function AdminPackagesReport() {
     <div className="app-bg min-h-screen pb-12">
       <div className="max-w-5xl mx-auto p-4 sm:p-6">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate("/admin")} data-testid="back-btn" className="rounded-xl">
               <ArrowLeft className="h-5 w-5" />
@@ -183,8 +235,18 @@ export default function AdminPackagesReport() {
               <p className="text-xs text-slate-500">Corte semanal: lunes 12:00 → lunes 12:00</p>
             </div>
           </div>
-          <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
-            <Package className="h-5 w-5 text-orange-600" />
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setVerifyDialogOpen(true)}
+              className="rounded-xl bg-orange-600 hover:bg-orange-700 text-white h-10 px-3 text-xs font-bold"
+              data-testid="open-verify-dialog-btn"
+            >
+              <ClipboardCheck className="h-4 w-4 mr-1.5" />
+              Verificar Paquetes vs Guías
+            </Button>
+            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
+              <Package className="h-5 w-5 text-orange-600" />
+            </div>
           </div>
         </div>
 
@@ -408,6 +470,128 @@ export default function AdminPackagesReport() {
                 <p className="text-xs text-slate-500 text-center py-4">Sin clientes.</p>
               )}
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Verification Dialog: Paquetes vs Guías */}
+        <Dialog open={verifyDialogOpen} onOpenChange={setVerifyDialogOpen}>
+          <DialogContent className="rounded-2xl max-w-3xl w-[95vw] max-h-[90vh] overflow-y-auto" data-testid="verify-dialog">
+            <DialogHeader>
+              <DialogTitle className="text-base flex items-center gap-2">
+                <ClipboardCheck className="h-5 w-5 text-orange-600" />
+                Verificar Paquetes vs Guías Creadas
+              </DialogTitle>
+            </DialogHeader>
+
+            {/* Week filter */}
+            <div className="flex items-center gap-3 mt-3 mb-3">
+              <label className="text-[10px] uppercase font-bold text-slate-500">Semana</label>
+              <Select value={verifyWeek} onValueChange={setVerifyWeek}>
+                <SelectTrigger className="h-9 rounded-xl bg-white text-xs flex-1" data-testid="verify-week-filter">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {weekOptions.map((wk) => (
+                    <SelectItem key={wk} value={wk}>{getWeekLabel(wk)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Totals */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+              <div className="rounded-xl bg-orange-50 border border-orange-100 p-3">
+                <p className="text-[10px] uppercase font-bold text-orange-700">Paquetes</p>
+                <p className="text-xl font-extrabold text-orange-900" data-testid="verify-total-packages">{fmtQty(verifyData.totalPackages)}</p>
+                <p className="text-[10px] text-orange-700 mt-0.5">{verifyData.totalShipments} envío{verifyData.totalShipments === 1 ? "" : "s"}</p>
+              </div>
+              <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
+                <p className="text-[10px] uppercase font-bold text-blue-700">Guías Creadas</p>
+                <p className="text-xl font-extrabold text-blue-900" data-testid="verify-total-guides">{verifyData.totalGuides}</p>
+                <p className="text-[10px] text-blue-700 mt-0.5">{verifyData.shipmentsWithGuides} envío{verifyData.shipmentsWithGuides === 1 ? "" : "s"} con guía</p>
+              </div>
+              <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
+                <p className="text-[10px] uppercase font-bold text-emerald-700">Cobertura</p>
+                <p className="text-xl font-extrabold text-emerald-900" data-testid="verify-coverage">
+                  {verifyData.totalShipments
+                    ? `${Math.round((verifyData.shipmentsWithGuides / verifyData.totalShipments) * 100)}%`
+                    : "—"}
+                </p>
+                <p className="text-[10px] text-emerald-700 mt-0.5">envíos con guía</p>
+              </div>
+              <div className="rounded-xl bg-rose-50 border border-rose-100 p-3">
+                <p className="text-[10px] uppercase font-bold text-rose-700">Pendientes</p>
+                <p className="text-xl font-extrabold text-rose-900" data-testid="verify-missing">{verifyData.shipmentsWithoutGuides}</p>
+                <p className="text-[10px] text-rose-700 mt-0.5">sin guía aún</p>
+              </div>
+            </div>
+
+            {/* Grouped list by client */}
+            {verifyData.groups.length === 0 ? (
+              <div className="rounded-xl bg-slate-50 border border-slate-100 p-6 text-center">
+                <p className="text-sm text-slate-500">Sin envíos en esta semana.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {verifyData.groups.map((g) => {
+                  const fullCoverage = g.items.every((it) => it.has_guide);
+                  return (
+                    <div key={g.customer_id} className="rounded-xl border border-slate-100 bg-white overflow-hidden" data-testid={`verify-group-${g.customer_id}`}>
+                      <div className={`flex items-center justify-between px-3 py-2 ${fullCoverage ? "bg-emerald-50" : "bg-slate-50"}`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Badge variant="outline" className="font-mono">{g.customer_id}</Badge>
+                          <span className="text-xs font-bold text-slate-800 truncate">{g.name}</span>
+                          {fullCoverage ? (
+                            <Badge className="bg-emerald-600 hover:bg-emerald-600 text-[10px]">Completo</Badge>
+                          ) : (
+                            <Badge className="bg-amber-500 hover:bg-amber-500 text-[10px]">{g.items.filter((it) => !it.has_guide).length} pendiente{g.items.filter((it) => !it.has_guide).length === 1 ? "" : "s"}</Badge>
+                          )}
+                        </div>
+                        <p className="text-[11px] font-bold text-slate-600 flex-shrink-0">
+                          {fmtQty(g.total_pkgs)} {unitLabel} · {g.total_guides} guía{g.total_guides === 1 ? "" : "s"}
+                        </p>
+                      </div>
+                      <div className="divide-y divide-slate-100">
+                        {g.items.map((it) => (
+                          <div key={it.id} className="flex items-center justify-between gap-3 px-3 py-2 text-xs" data-testid={`verify-item-${it.id}`}>
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              {it.has_guide ? (
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600 flex-shrink-0" data-testid={`verify-check-yes-${it.id}`} />
+                              ) : (
+                                <AlertCircle className="h-4 w-4 text-rose-500 flex-shrink-0" data-testid={`verify-check-no-${it.id}`} />
+                              )}
+                              <div className="min-w-0">
+                                <p className="text-slate-700 truncate">
+                                  {new Date(it.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}
+                                  {" · "}
+                                  {new Date(it.created_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                                  {it.shipping_category && (
+                                    <span className="ml-2 text-slate-400">· {it.shipping_category}</span>
+                                  )}
+                                </p>
+                                {it.created_by_name && (
+                                  <p className={`text-[10px] mt-0.5 ${it.created_by_legacy ? "text-amber-700" : "text-blue-700"} font-semibold`}>
+                                    {it.created_by_legacy ? "(est.)" : ""} {it.created_by_name}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="text-right flex-shrink-0">
+                              <p className="font-bold text-slate-800">
+                                {fmtQty(it.package_count)} {it.shipping_mode === "pounds" ? "lb" : "paq."}
+                              </p>
+                              <p className={`text-[10px] mt-0.5 ${it.has_guide ? "text-emerald-700" : "text-rose-600"} font-semibold`}>
+                                {it.has_guide ? `${it.tracking_count} guía${it.tracking_count === 1 ? "" : "s"}` : "Sin guía"}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
