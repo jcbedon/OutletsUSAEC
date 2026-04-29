@@ -5000,6 +5000,9 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
     # Packages from shipments linked to invoices in period
     all_shipments = await db.shipments.find(shipment_match, {"_id": 0, "weight_pounds": 1, "package_count": 1}).to_list(1000)
     total_packages = sum(s.get("package_count", 0) or math.ceil((s.get("weight_pounds", 0) or 0) / 8) for s in all_shipments if (s.get("package_count", 0) or 0) > 0 or (s.get("weight_pounds", 0) or 0) > 0)
+    # Number of shipment documents in the period — distinct from total_packages
+    # because one shipment can group multiple physical packages.
+    shipments_count = len(all_shipments)
     
     # Unique buyers in this period
     buyers_agg = await db.purchases.aggregate([
@@ -5024,6 +5027,7 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
         "pending_shipments": pending_shipments,
         "total_shipping": total_shipping[0]["total"] if total_shipping else 0,
         "total_packages": total_packages,
+        "shipments_count": shipments_count,
         "buyers_count": buyers_count,
         "top_customers": top_customers
     }
