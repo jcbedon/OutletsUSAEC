@@ -1301,6 +1301,17 @@ export default function AdminShipments() {
                                   #{shipment.customer_id}
                                 </Badge>
                                 <span className="font-bold text-slate-800">{shipment.user_name}</span>
+                                {shipment.created_at && (
+                                  <span
+                                    className="text-[10px] text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded"
+                                    data-testid={`shipment-created-at-${shipment.id}`}
+                                    title={new Date(shipment.created_at).toLocaleString("es-ES")}
+                                  >
+                                    {new Date(shipment.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short", year: "2-digit" })}
+                                    {" · "}
+                                    {new Date(shipment.created_at).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                                  </span>
+                                )}
                               </div>
                               <p className="text-sm text-gray-500">
                                 {(() => {
