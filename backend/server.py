@@ -506,6 +506,13 @@ async def log_audit_action(
     )
     await db.audit_logs.insert_one(audit_log.model_dump())
 
+async def get_actor_name(user_id: str) -> str:
+    """Resolve a display name for an admin/employee actor — falls back to 'Sistema'."""
+    actor = await db.users.find_one({"id": user_id}, {"_id": 0, "name": 1})
+    if not actor:
+        actor = await db.employees.find_one({"id": user_id}, {"_id": 0, "name": 1})
+    return (actor or {}).get("name") or "Sistema"
+
 async def check_employee_permission(user_id: str, permission: str) -> bool:
     """Check if an employee has a specific permission"""
     employee = await db.employees.find_one({"id": user_id}, {"_id": 0})
@@ -1524,6 +1531,15 @@ async def admin_create_client(data: AdminClientCreate, current_user: dict = Depe
             description="Saldo inicial (Admin)", status="approved",
             approved_at=datetime.now(timezone.utc).isoformat())
         await db.wallet_transactions.insert_one(tx.model_dump())
+    # Audit
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+        user_role=current_user.get("role", "admin"), action="create_client",
+        entity_type="client", entity_id=user.id, entity_name=f"{data.name} ({customer_id})",
+        details={"customer_id": customer_id, "whatsapp": data.whatsapp, "email": data.email,
+                 "commission_fee": data.commission_fee, "initial_balance": data.initial_balance}
+    )
     return {"message": "Cliente creado exitosamente", "user_id": user.id, "customer_id": customer_id,
         "commission_fee": data.commission_fee, "initial_balance": data.initial_balance}
 
@@ -1628,7 +1644,18 @@ async def delete_client(user_id: str, current_user: dict = Depends(get_current_u
     await db.wallets.delete_one({"user_id": user_id, "tenant_id": tid})
     await db.wallet_transactions.delete_many({"user_id": user_id, "tenant_id": tid})
     # Note: Purchases and shipments are kept for historical records
-    
+
+    # Audit
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+        user_role="admin", action="delete_client",
+        entity_type="client", entity_id=user_id,
+        entity_name=f"{client.get('name','')} ({client.get('customer_id','')})",
+        details={"customer_id": client.get("customer_id"), "whatsapp": client.get("whatsapp"),
+                 "email": client.get("email")}
+    )
+
     return {"message": "Cliente eliminado exitosamente", "deleted_id": user_id}
 
 @api_router.get("/admin/clients/active")
@@ -1707,6 +1734,21 @@ async def update_client(user_id: str, data: ClientUpdate, current_user: dict = D
         await db.users.update_one({"id": user_id, "tenant_id": tid}, {"$set": updates})
     
     updated_user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0, "password_hash": 0, "password_plain": 0})
+
+    # Audit (only if something actually changed)
+    if updates:
+        actor_name = await get_actor_name(current_user["user_id"])
+        # Snapshot of changed keys (excluding sensitive password values)
+        changed_keys = [k for k in updates.keys() if k not in ("password_hash", "password_plain", "updated_at")]
+        if "new_password" in (data.model_dump(exclude_none=True) or {}):
+            changed_keys.append("password")
+        await log_audit_action(
+            tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+            user_role=current_user.get("role", "admin"), action="update_client",
+            entity_type="client", entity_id=user_id,
+            entity_name=f"{updated_user.get('name','')} ({updated_user.get('customer_id','')})",
+            details={"changed": changed_keys}
+        )
     return {"message": "Cliente actualizado exitosamente", "user": updated_user}
 
 @api_router.get("/admin/clients/{user_id}/password")
@@ -2619,16 +2661,31 @@ async def create_live(live_data: LiveCreate, current_user: dict = Depends(get_cu
         raise HTTPException(status_code=403, detail="No autorizado")
     live = Live(tenant_id=current_user["tenant_id"], title=live_data.title, store=live_data.store)
     await db.lives.insert_one(live.model_dump())
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=current_user["tenant_id"], user_id=current_user["user_id"], user_name=actor_name,
+        user_role=current_user.get("role", "admin"), action="create_live",
+        entity_type="live", entity_id=live.id, entity_name=f"{live.title} · {live.store}",
+        details={"store": live.store, "title": live.title}
+    )
     return {"message": "Live creado", "live_id": live.id}
 
 @api_router.post("/lives/{live_id}/start")
 async def start_live(live_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
+    live = await db.lives.find_one({"id": live_id, "tenant_id": current_user["tenant_id"]}, {"_id": 0, "title": 1, "store": 1})
     result = await db.lives.update_one({"id": live_id, "tenant_id": current_user["tenant_id"]},
         {"$set": {"status": "active", "started_at": datetime.now(timezone.utc).isoformat()}})
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Live no encontrado")
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=current_user["tenant_id"], user_id=current_user["user_id"], user_name=actor_name,
+        user_role=current_user.get("role", "admin"), action="start_live",
+        entity_type="live", entity_id=live_id,
+        entity_name=f"{(live or {}).get('title','')} · {(live or {}).get('store','')}"
+    )
     return {"message": "Live iniciado"}
 
 @api_router.post("/lives/{live_id}/end")
@@ -2645,6 +2702,14 @@ async def end_live(live_id: str, current_user: dict = Depends(get_current_user))
         {"$set": {"status": "completed", "ended_at": datetime.now(timezone.utc).isoformat()}})
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Live no encontrado")
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+        user_role=current_user.get("role", "admin"), action="end_live",
+        entity_type="live", entity_id=live_id,
+        entity_name=f"{live.get('title','')} · {live.get('store','')}",
+        details={"started_at": live.get("started_at")}
+    )
     return {"message": "Live finalizado"}
 
 @api_router.put("/lives/{live_id}/store-invoice")
@@ -2946,6 +3011,24 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
             f"Precio: ${purchase_data.price:.2f}"
         ))
     await check_low_balance(tid, user["id"], purchase_data.customer_id.upper(), new_balance)
+
+    # Audit
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+        user_role=current_user.get("role", "admin"), action="create_purchase",
+        entity_type="purchase", entity_id=purchase_dict["id"],
+        entity_name=f"{purchase_data.item_name} ({purchase_data.store or '—'})",
+        details={
+            "customer_id": purchase_data.customer_id.upper(),
+            "client_name": user.get("name"),
+            "live_id": purchase_data.live_id,
+            "price": purchase_data.price,
+            "tax": tax,
+            "commission": commission_fee,
+            "total": total
+        }
+    )
     return {
         "message": "Compra registrada", "purchase_id": purchase_dict["id"], "price": purchase_data.price,
         "tax": tax, "price_with_tax": price_with_tax, "commission": commission_fee, "total": total,
@@ -3151,6 +3234,22 @@ async def update_purchase(purchase_id: str, data: PurchaseUpdate, current_user: 
             await recalculate_client_invoices(tid, purchase.get("customer_id"))
         except Exception as _re_err:
             logger.error(f"Error recalculating after update_purchase: {_re_err}")
+
+    # Audit
+    if updates:
+        actor_name = await get_actor_name(current_user["user_id"])
+        await log_audit_action(
+            tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+            user_role=current_user.get("role", "admin"), action="update_purchase",
+            entity_type="purchase", entity_id=purchase_id,
+            entity_name=f"{updated.get('item_name','')} ({updated.get('store','—')})",
+            details={
+                "customer_id": updated.get("customer_id"),
+                "changed": [k for k in updates.keys() if k not in ("paid_at",)],
+                "new_total": updated.get("total"),
+                "old_total": purchase.get("total")
+            }
+        )
 
     return updated
 
@@ -3808,6 +3907,22 @@ async def update_shipment(shipment_id: str, data: ShipmentUpdate, current_user: 
             )
         await recalculate_client_invoices(tid, shipment["customer_id"])
     updated = await db.shipments.find_one({"id": shipment_id, "tenant_id": tid}, {"_id": 0})
+
+    # Audit
+    if updates:
+        actor_name = await get_actor_name(current_user["user_id"])
+        await log_audit_action(
+            tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+            user_role=current_user.get("role", "admin"), action="update_shipment",
+            entity_type="shipment", entity_id=shipment_id,
+            entity_name=f"Envío {shipment.get('customer_id','')}",
+            details={
+                "customer_id": shipment.get("customer_id"),
+                "changed": [k for k in updates.keys() if k != "updated_at"],
+                "new_total": updated.get("shipping_cost") if updated else None,
+                "old_total": shipment.get("shipping_cost")
+            }
+        )
     return updated
 
 @api_router.delete("/shipments/{shipment_id}")
@@ -3841,6 +3956,22 @@ async def delete_shipment(shipment_id: str, current_user: dict = Depends(get_cur
         await recalculate_client_invoices(tid, shipment["customer_id"])
     await create_notification(tid, shipment["user_id"], shipment["customer_id"], "shipment_deleted",
         "Envío Eliminado", "Un envío ha sido eliminado de tu cuenta.")
+
+    # Audit
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+        user_role=current_user.get("role", "admin"), action="delete_shipment",
+        entity_type="shipment", entity_id=shipment_id,
+        entity_name=f"Envío {shipment.get('customer_id','')}",
+        details={
+            "customer_id": shipment.get("customer_id"),
+            "shipping_cost": shipment.get("shipping_cost"),
+            "package_count": shipment.get("package_count"),
+            "shipping_category": shipment.get("shipping_category"),
+            "invoice_id": linked_invoice_id
+        }
+    )
     return {"message": "Envío eliminado"}
 
 # ==================== INVOICES ====================
@@ -4132,7 +4263,27 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     # Recalculate the full invoice chain to ensure consistency across invoices
     # (handles edge cases like shipping costs added later on previous invoices)
     await recalculate_client_invoices(tid, customer_id)
-    
+
+    # Audit
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+        user_role=current_user.get("role", "admin"), action="create_invoice",
+        entity_type="invoice", entity_id=invoice.id,
+        entity_name=f"Factura {invoice_number} · {client.get('name','')}",
+        details={
+            "customer_id": customer_id,
+            "invoice_number": invoice_number,
+            "purchase_count": len(purchase_ids),
+            "subtotal": round(subtotal, 2),
+            "total": round(total, 2),
+            "total_a_pagar": total_a_pagar,
+            "saldo_a_favor": saldo_a_favor,
+            "saldo_pendiente": saldo_pendiente,
+            "saldo_a_favor_anterior": saldo_a_favor_anterior
+        }
+    )
+
     return {
         "message": "Factura creada",
         "invoice_id": invoice.id,
@@ -4813,7 +4964,21 @@ async def reopen_invoice(invoice_id: str, current_user: dict = Depends(get_curre
         {"id": {"$in": invoice["purchase_ids"]}, "tenant_id": tid},
         {"$set": {"status": "confirmed", "paid_at": None}}
     )
-    
+
+    # Audit
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+        user_role=current_user.get("role", "admin"), action="reopen_invoice",
+        entity_type="invoice", entity_id=invoice_id,
+        entity_name=f"Factura {invoice['invoice_number']}",
+        details={
+            "customer_id": invoice.get("customer_id"),
+            "invoice_number": invoice["invoice_number"],
+            "purchase_count": len(invoice.get("purchase_ids", []))
+        }
+    )
+
     return {"message": "Factura reabierta para modificaciones"}
 
 @api_router.put("/invoices/{invoice_id}/saldo-pendiente")
@@ -4866,7 +5031,22 @@ async def approve_invoice(invoice_id: str, current_user: dict = Depends(get_curr
         "Factura Aprobada",
         f"Tu factura {invoice['invoice_number']} por ${invoice['total']:.2f} ha sido aprobada."
     )
-    
+
+    # Audit
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+        user_role=current_user.get("role", "admin"), action="approve_invoice",
+        entity_type="invoice", entity_id=invoice_id,
+        entity_name=f"Factura {invoice['invoice_number']}",
+        details={
+            "customer_id": invoice.get("customer_id"),
+            "invoice_number": invoice["invoice_number"],
+            "total": invoice.get("total"),
+            "purchase_count": len(invoice.get("purchase_ids", []))
+        }
+    )
+
     return {"message": "Factura aprobada", "invoice_number": invoice["invoice_number"]}
 
 @api_router.get("/invoices/client/{customer_id}/history")
@@ -4943,19 +5123,21 @@ async def annul_invoice(invoice_id: str, data: dict = None, current_user: dict =
         {"$set": {"invoice_id": None}}
     )
     
-    # Log audit
-    await db.audit_logs.insert_one({
-        "id": str(uuid.uuid4()),
-        "tenant_id": tid,
-        "action": "invoice_annulled",
-        "entity_type": "invoice",
-        "entity_id": invoice_id,
-        "user_id": user_id,
-        "user_name": admin_name,
-        "details": f"Factura {invoice['invoice_number']} anulada",
-        "created_at": now
-    })
-    
+    # Audit
+    await log_audit_action(
+        tenant_id=tid, user_id=user_id, user_name=admin_name,
+        user_role=current_user.get("role", "admin"), action="invoice_annulled",
+        entity_type="invoice", entity_id=invoice_id,
+        entity_name=f"Factura {invoice['invoice_number']}",
+        details={
+            "customer_id": invoice.get("customer_id"),
+            "invoice_number": invoice["invoice_number"],
+            "total": invoice.get("total"),
+            "was_status": invoice.get("status"),
+            "purchase_count": len(invoice.get("purchase_ids", []))
+        }
+    )
+
     return {"message": "Factura anulada exitosamente", "invoice_number": invoice["invoice_number"]}
 
 # ==================== NOTIFICATIONS ====================

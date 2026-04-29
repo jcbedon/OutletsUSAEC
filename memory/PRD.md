@@ -56,6 +56,14 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
   - Backend: nuevos campos `created_by` y `created_by_name` en el modelo `Shipment`. Se setean al crear desde `current_user` (lookup en `users`/`employees`). El endpoint `GET /api/shipments` rellena `created_by_name` para envíos antiguos vía batch lookup.
   - Frontend: badge azul con ícono de usuario en cada tarjeta de envío al lado de la fecha (oculto si el envío legacy no tiene creador registrado).
   - `weekFilter` ahora arranca por defecto en la **semana actual** (lunes 12:00 → lunes 12:00) en lugar de "Todas". La semana actual siempre aparece en el dropdown aunque no haya envíos en ella.
+- **[29-abr]** **Auditoría completa — todas las acciones del combobox**: el dropdown de filtros listaba 23 acciones pero solo 8 estaban realmente registrando eventos. Agregadas las llamadas a `log_audit_action` en los endpoints faltantes:
+  - **Clientes**: `create_client`, `update_client`, `delete_client`
+  - **Compras**: `create_purchase`, `update_purchase`
+  - **Envíos**: `create_shipment` (en sesión anterior), `update_shipment`, `delete_shipment`
+  - **Facturas**: `create_invoice`, `approve_invoice`, `reopen_invoice`, `invoice_annulled` (refactorizado para usar el helper `log_audit_action` y guardar `user_role` + `details` como dict en vez de string)
+  - **Lives**: `create_live`, `start_live`, `end_live`
+  - Helper nuevo `get_actor_name(user_id)` que resuelve el nombre del actor en `users` con fallback a `employees` y "Sistema". Verificado E2E con curl creando/iniciando/finalizando un live de prueba: cada acción aparece en `/api/admin/audit-logs?action=<X>` con `user_name`, `user_role`, `entity_name` y `details` correctos.
+- **[29-abr]** **Fallback legacy en envíos antiguos**: para envíos creados antes del nuevo modelo, el endpoint `GET /api/shipments` atribuye el creador al **admin primario del tenant** (más antiguo del rol `admin`) y devuelve `created_by_legacy: true`. La UI los renderiza con badge **ámbar** y sufijo "(est.)" para distinguirlos de los datos reales.
 
 ## Roadmap
 ### P0 técnico
