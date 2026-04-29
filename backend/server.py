@@ -586,6 +586,26 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
         {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1, "shipping_cost": 1, "created_at": 1}
     ).sort("created_at", 1).to_list(1000)
 
+    # Backfill effective shipping_cost from the LINKED SHIPMENT for each invoice.
+    # The invoice document's `shipping_cost` field can be stale or zero (e.g. if the
+    # shipment was created/edited after invoice creation and never synced back).
+    # The shipment is the source of truth for the cost the client actually pays.
+    inv_ids_for_ship = [i["id"] for i in all_invoices]
+    shipping_by_inv = {}
+    if inv_ids_for_ship:
+        ship_docs = await db.shipments.find(
+            {"invoice_id": {"$in": inv_ids_for_ship}, "tenant_id": tenant_id},
+            {"_id": 0, "invoice_id": 1, "shipping_cost": 1}
+        ).to_list(len(inv_ids_for_ship) * 2)
+        for sd in ship_docs:
+            iid = sd.get("invoice_id")
+            if iid:
+                # If multiple shipments per invoice (rare), sum them
+                shipping_by_inv[iid] = shipping_by_inv.get(iid, 0) + (sd.get("shipping_cost") or 0)
+    # Use shipment value when present, otherwise fall back to invoice.shipping_cost
+    for inv in all_invoices:
+        inv["_effective_shipping"] = shipping_by_inv.get(inv["id"], inv.get("shipping_cost", 0) or 0)
+
     # Defensive cleanup: any annulled invoice that still has stale applied_deposits
     # (from before annul cleared them) gets wiped here so historial views show $0.
     await db.invoices.update_many(
@@ -630,7 +650,7 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
         inv_deposits = deposits_by_invoice.get(inv_doc["id"], [])
         total_deposits = round(sum(ad["amount_applied"] for ad in inv_deposits), 2)
         
-        inv_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + inv_doc.get("shipping_cost", 0)
+        inv_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + inv_doc.get("_effective_shipping", inv_doc.get("shipping_cost", 0) or 0)
         saldo_ant = carry_saldo_a_favor
         total_credits = total_deposits + saldo_ant
         
@@ -642,7 +662,10 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
             saldo_a_favor = 0
         
         carry_saldo_a_favor = saldo_a_favor
-        
+
+        # Persist the effective shipping back to the invoice document so list views
+        # and PDF (which read invoice.shipping_cost) stay consistent with the recalc.
+        effective_shipping = inv_doc.get("_effective_shipping", inv_doc.get("shipping_cost", 0) or 0)
         await db.invoices.update_one(
             {"id": inv_doc["id"], "tenant_id": tenant_id},
             {"$set": {
@@ -650,7 +673,8 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
                 "deposits_applied": total_deposits,
                 "saldo_a_favor_anterior": saldo_ant,
                 "total_a_pagar": total_a_pagar,
-                "saldo_a_favor": saldo_a_favor
+                "saldo_a_favor": saldo_a_favor,
+                "shipping_cost": round(effective_shipping, 2),
             }}
         )
 
@@ -5053,12 +5077,19 @@ async def update_invoice_saldo_pendiente(invoice_id: str, data: dict, current_us
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     saldo = round(float(data.get("saldo_pendiente", 0)), 2)
-    result = await db.invoices.update_one(
+    invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid, "is_annulled": {"$ne": True}}, {"_id": 0, "customer_id": 1})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    await db.invoices.update_one(
         {"id": invoice_id, "tenant_id": tid, "is_annulled": {"$ne": True}},
         {"$set": {"saldo_pendiente": saldo}}
     )
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    # Recompute total_a_pagar / saldo_a_favor / deposits chain so PDF + UI agree.
+    if invoice.get("customer_id"):
+        try:
+            await recalculate_client_invoices(tid, invoice["customer_id"])
+        except Exception as _e:
+            logger.error(f"Error recalculating after saldo_pendiente update: {_e}")
     return {"message": "Saldo pendiente actualizado", "saldo_pendiente": saldo}
 
 @api_router.put("/invoices/{invoice_id}/approve")

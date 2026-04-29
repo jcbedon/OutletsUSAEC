@@ -62,6 +62,17 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
   - Heurística de "tiene guía": `tracking_numbers.length > 0` con fallback a `tracking_number` legacy.
   - Backend: `GET /api/shipments` ahora enriquece la respuesta con `invoice_status` (`approved`/`pending`/`annulled`) e `invoice_number` vía batch lookup en `db.invoices`.
   - Default `weekFilter` de la página principal también cambiado a la semana actual.
+- **[29-abr]** **Fix: PDF y listado de facturas mostraban valores diferentes después del recalc**:
+  - **Causa raíz #1**: `recalculate_client_invoices` calculaba `total_a_pagar` usando `invoice.shipping_cost`, pero el costo real estaba en `shipment.shipping_cost`. Si el shipment se creaba/editaba después de la factura, el invoice.shipping_cost quedaba en 0 → `total_a_pagar` quedaba mal calculado.
+  - **Causa raíz #2**: El listado de facturas (`/admin/invoices`) mostraba `invoice.total` (solo items) mientras el PDF mostraba `total_a_pagar` (items + envío + saldo_pendiente − depósitos − saldo_a_favor_anterior). Cuando había créditos acumulados, divergían visualmente.
+  - **Causa raíz #3**: `update_invoice_saldo_pendiente` actualizaba `saldo_pendiente` pero NO disparaba la cadena de recálculo → `total_a_pagar` quedaba stale.
+  - **Causa raíz #4**: Frontend `handleRecalcInvoice` actualizaba `currentInvoice` pero no reseteaba el estado local `editSaldoPendiente`, causando que el UI usara el valor viejo del input mientras el PDF usaba el nuevo del backend.
+  - **Fixes**:
+    1. `recalculate_client_invoices` ahora hace batch lookup de shipments por `invoice_id` y usa el `shipping_cost` del shipment como fuente de verdad. También persiste de vuelta al `invoice.shipping_cost` para que listado/PDF siempre coincidan.
+    2. Listado de facturas ahora muestra `total_a_pagar` como número grande, con subtítulo `items: $X · saldo: -$Y` cuando difieren del total bruto. Tooltip explica la composición.
+    3. `update_invoice_saldo_pendiente` ahora dispara `recalculate_client_invoices` después de modificar el campo.
+    4. `handleRecalcInvoice` resetea `editSaldoPendiente` con el valor fresco del backend.
+  - **Verificación E2E**: factura J2934-015 con `total=$44`, `shipping=$128`, `saldo_a_favor_anterior=$249` → `total_a_pagar=$0` (correcto: créditos cubren todo, queda $77 de crédito para la próxima). PDF, listado y diálogo ahora muestran el mismo valor.
 - **[29-abr]** **Diagnóstico profundo de envíos** (`/admin/shipments` → botón ámbar "Diagnóstico"):
   - Backend: nuevo endpoint `GET /api/admin/diagnose-shipments?start_date=&end_date=` (admin-only) que devuelve para un rango ISO:
     - `shipments_created_in_range`: envíos cuyo `created_at` cae en el rango, con metadata cruda de Mongo (`raw_created_at`, `raw_updated_at`, `created_by`, `created_by_name`, audit logs correlacionados con `entity_type=shipment`).

@@ -521,10 +521,29 @@ export default function AdminInvoices() {
                 </div>
                 <div className="flex items-center gap-4">
                   <div className="text-right">
-                    <p className={`font-extrabold text-xl ${invoice.is_annulled ? "text-red-600 line-through" : ""}`} style={{ color: invoice.is_annulled ? undefined : '#1E3A5F' }}>
-                      ${invoice.total.toFixed(2)}
-                    </p>
-                    <p className="text-xs text-gray-400">{invoice.purchase_ids?.length || 0} items</p>
+                    {(() => {
+                      const totalAPagar = invoice.total_a_pagar != null ? invoice.total_a_pagar : invoice.total;
+                      const totalRaw = invoice.total || 0;
+                      const showBoth = !invoice.is_annulled && Math.abs(totalAPagar - totalRaw) > 0.01;
+                      return (
+                        <>
+                          <p className={`font-extrabold text-xl ${invoice.is_annulled ? "text-red-600 line-through" : ""}`} style={{ color: invoice.is_annulled ? undefined : '#1E3A5F' }} data-testid={`invoice-total-a-pagar-${invoice.id}`}>
+                            ${totalAPagar.toFixed(2)}
+                          </p>
+                          {showBoth && (
+                            <p
+                              className="text-[10px] text-gray-500 leading-tight"
+                              title={`Total items: $${totalRaw.toFixed(2)} · Saldo a favor anterior: $${(invoice.saldo_a_favor_anterior || 0).toFixed(2)} · Depósitos: $${(invoice.deposits_applied || 0).toFixed(2)}`}
+                              data-testid={`invoice-total-items-${invoice.id}`}
+                            >
+                              items: ${totalRaw.toFixed(2)}
+                              {(invoice.saldo_a_favor_anterior || 0) > 0 && <> · saldo: -${(invoice.saldo_a_favor_anterior || 0).toFixed(2)}</>}
+                            </p>
+                          )}
+                          <p className="text-xs text-gray-400">{invoice.purchase_ids?.length || 0} items</p>
+                        </>
+                      );
+                    })()}
                   </div>
                   {!invoice.is_annulled && user?.role === "admin" && (
                     <Button

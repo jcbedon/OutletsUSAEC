@@ -493,6 +493,13 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       try {
         const fresh = await getInvoiceDetail(currentInvoice.id);
         setCurrentInvoice(fresh.data);
+        // Force-reset the local saldo input so the UI matches the freshly persisted value.
+        // Without this the "Saldo Pendiente" input would keep the previous typed value
+        // and the displayed grandTotal would diverge from the PDF (which always reads
+        // backend's saldo_pendiente).
+        setEditSaldoPendiente(
+          fresh.data?.saldo_pendiente > 0 ? fresh.data.saldo_pendiente.toFixed(2) : ""
+        );
       } catch (_) { /* ignore refresh errors, we'll still close */ }
       const orphans = d.removed_orphan_ids || 0;
       toast.success(
