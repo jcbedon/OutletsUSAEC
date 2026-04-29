@@ -500,16 +500,21 @@ export default function AdminShipments() {
   };
 
   const handleOpenEditDialog = (shipment) => {
+    // Pre-fill the dialog with category-aware fields. We default custom_unit_cost
+    // to the existing shipping_unit_cost so manual edits still round-trip.
     setEditForm({
       shipping_type: shipment.shipping_type || "",
       shipping_cost: shipment.shipping_cost?.toString() || "",
+      shipping_unit_cost: shipment.shipping_unit_cost?.toString() || "",
+      shipping_category: shipment.shipping_category || "",
+      package_count: (shipment.package_count ?? "").toString(),
       weight_pounds: shipment.weight_pounds?.toString() || "",
       address: shipment.address || "",
       country: shipment.country || "",
       phone: shipment.phone || "",
       additional_info: shipment.additional_info || "",
-      tracking_numbers: shipment.tracking_numbers?.length > 0 
-        ? shipment.tracking_numbers 
+      tracking_numbers: shipment.tracking_numbers?.length > 0
+        ? shipment.tracking_numbers
         : (shipment.tracking_number ? [shipment.tracking_number] : [])
     });
     setEditDialogOpen(shipment.id);
@@ -518,11 +523,18 @@ export default function AdminShipments() {
   const handleSaveEdit = async (shipmentId) => {
     try {
       const data = {
-        ...editForm,
+        shipping_type: editForm.shipping_type || null,
         shipping_cost: parseFloat(editForm.shipping_cost) || 0,
+        shipping_unit_cost: editForm.shipping_unit_cost === "" ? null : (parseFloat(editForm.shipping_unit_cost) || 0),
+        shipping_category: editForm.shipping_category || null,
+        package_count: editForm.package_count === "" ? null : (parseFloat(editForm.package_count) || 0),
         weight_pounds: parseFloat(editForm.weight_pounds) || 0,
-        tracking_numbers: editForm.tracking_numbers?.filter(t => t.trim()) || [],
-        tracking_number: editForm.tracking_numbers?.[0] || null  // Keep first one for backwards compatibility
+        address: editForm.address || null,
+        country: editForm.country || null,
+        phone: editForm.phone || null,
+        additional_info: editForm.additional_info || null,
+        tracking_numbers: editForm.tracking_numbers?.filter((t) => t.trim()) || [],
+        tracking_number: editForm.tracking_numbers?.[0] || null,
       };
       await updateShipment(shipmentId, data);
       toast.success("Envío actualizado");
@@ -1402,6 +1414,7 @@ export default function AdminShipments() {
                               setEditForm={setEditForm}
                               handleOpenEditDialog={handleOpenEditDialog}
                               handleSaveEdit={handleSaveEdit}
+                              tenantSettings={tenantSettings}
                             />
 
                             {/* Delete Button */}

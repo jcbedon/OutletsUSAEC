@@ -3636,6 +3636,11 @@ class ShipmentUpdate(BaseModel):
     phone: Optional[str] = None
     additional_info: Optional[str] = None
     tracking_number: Optional[str] = None
+    # Newer fields used by the rich Edit dialog (category-aware shipments).
+    shipping_category: Optional[str] = None      # "G" | "A" | "B" | "OTHER"
+    shipping_unit_cost: Optional[float] = None   # per-package or per-pound cost
+    package_count: Optional[float] = None        # qty of packages OR pounds
+    tracking_numbers: Optional[List[str]] = None # full array of tracking codes
 
 @api_router.put("/shipments/{shipment_id}")
 async def update_shipment(shipment_id: str, data: ShipmentUpdate, current_user: dict = Depends(get_current_user)):
@@ -3662,6 +3667,16 @@ async def update_shipment(shipment_id: str, data: ShipmentUpdate, current_user: 
         updates["additional_info"] = data.additional_info
     if data.tracking_number is not None:
         updates["tracking_number"] = data.tracking_number
+    if data.tracking_numbers is not None:
+        updates["tracking_numbers"] = data.tracking_numbers
+        # Keep the legacy single-tracking field in sync with the first entry.
+        updates["tracking_number"] = data.tracking_numbers[0] if data.tracking_numbers else None
+    if data.shipping_category is not None:
+        updates["shipping_category"] = data.shipping_category
+    if data.shipping_unit_cost is not None:
+        updates["shipping_unit_cost"] = data.shipping_unit_cost
+    if data.package_count is not None:
+        updates["package_count"] = data.package_count
     if updates:
         updates["updated_at"] = datetime.now(timezone.utc).isoformat()
         await db.shipments.update_one({"id": shipment_id, "tenant_id": tid}, {"$set": updates})

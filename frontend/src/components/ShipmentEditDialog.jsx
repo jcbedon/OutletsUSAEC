@@ -1,10 +1,17 @@
+import { useEffect, useMemo } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Edit, Save, Plus, Trash2, Package } from "lucide-react";
+import { Edit, Save, Plus, Trash2, Package, Scale } from "lucide-react";
+
+const DEFAULT_CATEGORIES = [
+  { key: "G", label: "Categoría G (CON Núcleo Familiar)", value_packages: 32, value_pounds: 32 },
+  { key: "A", label: "Categoría A (Personal)", value_packages: 42, value_pounds: 42 },
+  { key: "B", label: "Categoría B (SIN Núcleo Familiar)", value_packages: 52, value_pounds: 52 },
+];
 
 export default function ShipmentEditDialog({
   shipment,
@@ -13,19 +20,47 @@ export default function ShipmentEditDialog({
   editForm,
   setEditForm,
   handleOpenEditDialog,
-  handleSaveEdit
+  handleSaveEdit,
+  tenantSettings,
 }) {
+  const mode = tenantSettings?.shipping_mode === "pounds" ? "pounds" : "packages";
+  const categories = (tenantSettings?.shipping_categories?.length ? tenantSettings.shipping_categories : DEFAULT_CATEGORIES);
+  const isOpen = editDialogOpen === shipment.id;
+
+  // Derive the unit cost from the chosen category (or manual cost in OTHER mode).
+  const unitCost = useMemo(() => {
+    if (!editForm?.shipping_category) return 0;
+    if (editForm.shipping_category === "OTHER") {
+      return parseFloat(editForm.shipping_unit_cost) || 0;
+    }
+    const cat = categories.find((c) => c.key === editForm.shipping_category);
+    if (!cat) return 0;
+    const priceField = mode === "pounds" ? "value_pounds" : "value_packages";
+    return parseFloat(cat[priceField] ?? cat.value ?? 0) || 0;
+  }, [editForm?.shipping_category, editForm?.shipping_unit_cost, categories, mode]);
+
+  // Recompute total cost when category / quantity / unit cost changes.
+  // We only auto-update shipping_cost while the dialog is open, so legacy
+  // shipments without a category still keep their stored shipping_cost intact
+  // until the admin picks a category.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (!editForm?.shipping_category) return;
+    const rawQty = parseFloat(editForm.package_count) || 0;
+    const qty = mode === "pounds" ? Math.max(rawQty, 0) : Math.max(Math.round(rawQty), 0);
+    const total = Math.round(unitCost * qty * 100) / 100;
+    if (Number.isFinite(total)) {
+      setEditForm((prev) => ({ ...prev, shipping_cost: total.toFixed(2) }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, editForm?.shipping_category, editForm?.package_count, editForm?.shipping_unit_cost, mode, unitCost]);
+
   return (
-    <Dialog 
-      open={editDialogOpen === shipment.id} 
-      onOpenChange={(open) => {
-        if (!open) setEditDialogOpen(null);
-      }}
-    >
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open) setEditDialogOpen(null); }}>
       <DialogTrigger asChild>
-        <Button 
-          variant="outline" 
-          size="sm" 
+        <Button
+          variant="outline"
+          size="sm"
           className="rounded-lg"
           onClick={() => handleOpenEditDialog(shipment)}
           data-testid={`edit-shipment-${shipment.id}`}
@@ -38,14 +73,94 @@ export default function ShipmentEditDialog({
           <DialogTitle>Editar Envío</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-4">
+          {/* Category selector */}
+          <div>
+            <Label>Categoría de envío</Label>
+            <Select
+              value={editForm.shipping_category || ""}
+              onValueChange={(value) => setEditForm({ ...editForm, shipping_category: value })}
+            >
+              <SelectTrigger className="h-12 rounded-xl mt-1" data-testid="edit-shipment-category">
+                <SelectValue placeholder="Selecciona una categoría" />
+              </SelectTrigger>
+              <SelectContent>
+                {categories.map((cat) => {
+                  const v = mode === "pounds" ? cat.value_pounds : cat.value_packages;
+                  return (
+                    <SelectItem key={cat.key} value={cat.key}>
+                      {cat.label} — ${v}/{mode === "pounds" ? "lb" : "paq"}
+                    </SelectItem>
+                  );
+                })}
+                <SelectItem value="OTHER">Otra (precio personalizado)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Custom unit cost only for OTHER */}
+          {editForm.shipping_category === "OTHER" && (
+            <div>
+              <Label>Costo unitario personalizado (USD)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={editForm.shipping_unit_cost}
+                onChange={(e) => setEditForm({ ...editForm, shipping_unit_cost: e.target.value })}
+                onWheel={(e) => e.target.blur()}
+                className="h-12 rounded-xl mt-1"
+                placeholder="Ej: 38.00"
+              />
+            </div>
+          )}
+
+          {/* Quantity (packages or pounds, depending on tenant mode) */}
+          <div>
+            <Label className="flex items-center gap-2">
+              {mode === "pounds" ? <Scale className="h-4 w-4" /> : <Package className="h-4 w-4" />}
+              {mode === "pounds" ? "Libras" : "Paquetes"}
+            </Label>
+            <Input
+              type="number"
+              step={mode === "pounds" ? "0.1" : "1"}
+              min={mode === "pounds" ? "0.1" : "1"}
+              value={editForm.package_count}
+              onChange={(e) => setEditForm({ ...editForm, package_count: e.target.value })}
+              onWheel={(e) => e.target.blur()}
+              className="h-12 rounded-xl mt-1"
+              placeholder={mode === "pounds" ? "Ej: 5.5" : "Ej: 2"}
+              data-testid="edit-shipment-qty"
+            />
+            {editForm.shipping_category && unitCost > 0 && (
+              <p className="text-xs text-slate-500 mt-1">
+                ${unitCost.toFixed(2)} × {editForm.package_count || 0} {mode === "pounds" ? "lb" : "paq"} = <span className="font-bold text-slate-800">${(parseFloat(editForm.shipping_cost) || 0).toFixed(2)}</span>
+              </p>
+            )}
+          </div>
+
+          {/* Total cost (auto-calculated, manually editable for backwards compat) */}
+          <div>
+            <Label>Costo Total del Envío (USD)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              value={editForm.shipping_cost}
+              onChange={(e) => setEditForm({ ...editForm, shipping_cost: e.target.value })}
+              onWheel={(e) => e.target.blur()}
+              className="h-12 rounded-xl mt-1 font-bold"
+              data-testid="edit-shipment-total-cost"
+            />
+            <p className="text-[10px] text-slate-400 mt-0.5">Se recalcula automáticamente al cambiar categoría o cantidad. Puedes ajustarlo manualmente.</p>
+          </div>
+
+          {/* Type (legacy) */}
           <div>
             <Label>Tipo de Envío</Label>
-            <Select 
+            <Select
               value={editForm.shipping_type}
-              onValueChange={(value) => setEditForm({...editForm, shipping_type: value})}
+              onValueChange={(value) => setEditForm({ ...editForm, shipping_type: value })}
             >
               <SelectTrigger className="h-12 rounded-xl mt-1">
-                <SelectValue />
+                <SelectValue placeholder="Selecciona tipo" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="with_family">Con Familiar en USA</SelectItem>
@@ -54,34 +169,13 @@ export default function ShipmentEditDialog({
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <Label>Costo de Envío (USD)</Label>
-            <Input 
-              type="number" 
-              step="0.01"
-              value={editForm.shipping_cost}
-              onChange={(e) => setEditForm({...editForm, shipping_cost: e.target.value})}
-              onWheel={(e) => e.target.blur()}
-              className="h-12 rounded-xl mt-1"
-            />
-          </div>
-          <div>
-            <Label>Peso (Libras)</Label>
-            <Input 
-              type="number" 
-              step="0.1"
-              placeholder="Ej: 5.5"
-              value={editForm.weight_pounds}
-              onChange={(e) => setEditForm({...editForm, weight_pounds: e.target.value})}
-              onWheel={(e) => e.target.blur()}
-              className="h-12 rounded-xl mt-1"
-            />
-          </div>
+
+          {/* Address / phone / country */}
           <div>
             <Label>Dirección</Label>
             <Textarea
               value={editForm.address}
-              onChange={(e) => setEditForm({...editForm, address: e.target.value})}
+              onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
               className="rounded-xl mt-1"
             />
           </div>
@@ -90,7 +184,7 @@ export default function ShipmentEditDialog({
               <Label>País</Label>
               <Input
                 value={editForm.country}
-                onChange={(e) => setEditForm({...editForm, country: e.target.value})}
+                onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
                 className="h-12 rounded-xl mt-1"
               />
             </div>
@@ -98,11 +192,13 @@ export default function ShipmentEditDialog({
               <Label>Teléfono</Label>
               <Input
                 value={editForm.phone}
-                onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
+                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
                 className="h-12 rounded-xl mt-1"
               />
             </div>
           </div>
+
+          {/* Tracking numbers (preserved) */}
           <div>
             <Label className="flex items-center gap-2 mb-2">
               <Package className="h-4 w-4" />
@@ -117,25 +213,23 @@ export default function ShipmentEditDialog({
                     onChange={(e) => {
                       const updated = [...(editForm.tracking_numbers || [])];
                       updated[index] = e.target.value;
-                      setEditForm({...editForm, tracking_numbers: updated});
+                      setEditForm({ ...editForm, tracking_numbers: updated });
                     }}
                     className="h-10 rounded-lg flex-1"
                     placeholder={`Tracking paquete ${index + 1}`}
                   />
-                  {(editForm.tracking_numbers?.length || 0) > 0 && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        const updated = editForm.tracking_numbers.filter((_, i) => i !== index);
-                        setEditForm({...editForm, tracking_numbers: updated});
-                      }}
-                      className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      const updated = editForm.tracking_numbers.filter((_, i) => i !== index);
+                      setEditForm({ ...editForm, tracking_numbers: updated });
+                    }}
+                    className="h-10 w-10 p-0 text-red-500 hover:text-red-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               ))}
               <Button
@@ -143,8 +237,8 @@ export default function ShipmentEditDialog({
                 variant="outline"
                 size="sm"
                 onClick={() => setEditForm({
-                  ...editForm, 
-                  tracking_numbers: [...(editForm.tracking_numbers || []), ""]
+                  ...editForm,
+                  tracking_numbers: [...(editForm.tracking_numbers || []), ""],
                 })}
                 className="w-full h-10 rounded-lg border-dashed"
               >
@@ -153,18 +247,21 @@ export default function ShipmentEditDialog({
               </Button>
             </div>
           </div>
+
           <div>
             <Label>Información Adicional</Label>
             <Textarea
               value={editForm.additional_info}
-              onChange={(e) => setEditForm({...editForm, additional_info: e.target.value})}
+              onChange={(e) => setEditForm({ ...editForm, additional_info: e.target.value })}
               className="rounded-xl mt-1"
             />
           </div>
-          <Button 
+
+          <Button
             onClick={() => handleSaveEdit(shipment.id)}
-            className="w-full h-12 font-bold rounded-xl" 
+            className="w-full h-12 font-bold rounded-xl"
             style={{ background: '#1E3A5F', color: 'white' }}
+            data-testid="save-shipment-edit"
           >
             <Save className="h-5 w-5 mr-2" />
             Guardar Cambios
