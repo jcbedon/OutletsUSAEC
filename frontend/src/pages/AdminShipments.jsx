@@ -1333,12 +1333,21 @@ export default function AdminShipments() {
                                 )}
                                 {shipment.created_by_name && (
                                   <span
-                                    className="text-[10px] text-blue-700 font-semibold bg-blue-50 border border-blue-100 px-2 py-0.5 rounded inline-flex items-center gap-1"
+                                    className={
+                                      shipment.created_by_legacy
+                                        ? "text-[10px] text-amber-700 font-semibold bg-amber-50 border border-amber-200 px-2 py-0.5 rounded inline-flex items-center gap-1"
+                                        : "text-[10px] text-blue-700 font-semibold bg-blue-50 border border-blue-100 px-2 py-0.5 rounded inline-flex items-center gap-1"
+                                    }
                                     data-testid={`shipment-created-by-${shipment.id}`}
-                                    title={`Creado por ${shipment.created_by_name}`}
+                                    title={
+                                      shipment.created_by_legacy
+                                        ? `Estimado: ${shipment.created_by_name} (envío anterior al registro de creadores)`
+                                        : `Creado por ${shipment.created_by_name}`
+                                    }
                                   >
                                     <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                                     {shipment.created_by_name}
+                                    {shipment.created_by_legacy && <span className="opacity-70">(est.)</span>}
                                   </span>
                                 )}
                               </div>

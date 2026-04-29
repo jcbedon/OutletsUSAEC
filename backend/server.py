@@ -3419,6 +3419,28 @@ async def create_shipment(shipment_data: ShipmentCreate, current_user: dict = De
     )
     await db.shipments.insert_one(shipment.model_dump())
 
+    # Audit log: who created this shipment
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=creator_name,
+        user_role=current_user.get("role", "admin"),
+        action="create_shipment",
+        entity_type="shipment",
+        entity_id=shipment.id,
+        entity_name=f"Envío {user.get('name', '')} (#{user['customer_id']})",
+        details={
+            "customer_id": user["customer_id"],
+            "user_id": shipment_data.user_id,
+            "invoice_id": shipment_data.invoice_id,
+            "shipping_category": category_key,
+            "shipping_mode": shipping_mode,
+            "package_count": package_count,
+            "shipping_cost": total_cost,
+            "purchase_ids_count": len(shipment_data.purchase_ids or [])
+        }
+    )
+
     # Update linked invoice
     await db.invoices.update_one(
         {"id": shipment_data.invoice_id, "tenant_id": tid},
@@ -3675,10 +3697,34 @@ async def get_all_shipments(status: Optional[str] = None, current_user: dict = D
             for e in emps_list:
                 creators_dict[e["id"]] = e["name"]
 
+    # Legacy fallback: shipments created before this feature don't have `created_by` at all.
+    # Attribute them to the tenant's primary admin (most likely creator) and flag them so the
+    # frontend can render the badge with a different style.
+    legacy_admin_name = None
+    has_legacy = any(not s.get("created_by") for s in shipments)
+    if has_legacy:
+        primary_admin = await db.users.find_one(
+            {"tenant_id": tid, "role": "admin"},
+            {"_id": 0, "name": 1},
+            sort=[("created_at", 1)]
+        )
+        if primary_admin:
+            legacy_admin_name = primary_admin.get("name")
+
     result = []
     for s in shipments:
-        creator_name = s.get("created_by_name") or creators_dict.get(s.get("created_by") or "", "")
-        result.append({**s, "user_name": users_dict.get(s["user_id"], "Unknown"), "created_by_name": creator_name})
+        creator_id = s.get("created_by")
+        creator_name = s.get("created_by_name") or creators_dict.get(creator_id or "", "")
+        is_legacy = False
+        if not creator_id and not creator_name and legacy_admin_name:
+            creator_name = legacy_admin_name
+            is_legacy = True
+        result.append({
+            **s,
+            "user_name": users_dict.get(s["user_id"], "Unknown"),
+            "created_by_name": creator_name,
+            "created_by_legacy": is_legacy
+        })
     return result
 
 class ShipmentUpdate(BaseModel):
