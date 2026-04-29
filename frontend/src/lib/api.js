@@ -123,7 +123,12 @@ export const updateClient = (userId, data) => api.put(`/admin/clients/${userId}`
 export const getClientPassword = (userId) => api.get(`/admin/clients/${userId}/password`);
 export const getClientInfo = (customerId) => api.get(`/admin/clients/${customerId}/info`);
 export const getLiveReport = (liveId) => api.get(`/admin/reports/live/${liveId}`);
-export const getReportsSummary = (period = "week") => api.get(`/admin/reports/summary?period=${period}`);
+export const getReportsSummary = (period = "week", startDate = null, endDate = null) => {
+  const params = new URLSearchParams({ period });
+  if (startDate) params.set("start_date", startDate);
+  if (endDate) params.set("end_date", endDate);
+  return api.get(`/admin/reports/summary?${params.toString()}`);
+};
 export const getBuyersReport = (period = "week") => api.get(`/admin/reports/buyers?period=${period}`);
 export const getBusinessStats = (period = "all") => api.get(`/admin/reports/business-stats?period=${period}`);
 export const getClientsPurchasesReport = () => api.get("/admin/reports/clients-purchases");

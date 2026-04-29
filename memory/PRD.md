@@ -62,6 +62,12 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
   - Heurística de "tiene guía": `tracking_numbers.length > 0` con fallback a `tracking_number` legacy.
   - Backend: `GET /api/shipments` ahora enriquece la respuesta con `invoice_status` (`approved`/`pending`/`annulled`) e `invoice_number` vía batch lookup en `db.invoices`.
   - Default `weekFilter` de la página principal también cambiado a la semana actual.
+- **[29-abr]** **Fix: filtros del Dashboard usan SOLO `created_at` (no fecha de modificación)**:
+  - Bug: el selector de semanas pasadas (w1, w2, …) en el dashboard llamaba a `/admin/reports/summary?period=week` sin importar la semana elegida → siempre devolvía datos de la **semana actual**. El usuario veía "el mismo total" en todas las semanas y conclusión incorrecta de que se contaban fechas de modificación.
+  - Backend: `/admin/reports/summary` ahora acepta `start_date`/`end_date` ISO opcionales que **sobrescriben** el cálculo automático de semana. Filtra estrictamente por `created_at` (la fecha de creación nunca se modifica al editar shipments/purchases/invoices).
+  - Backend: `total_shipping` ahora se calcula directamente desde `shipments.shipping_cost` filtrado por `shipment.created_at` (antes lo agregaba desde `invoices.shipping_cost`, lo que atribuía el costo a la semana de creación de la factura aunque el envío se creara semanas después).
+  - Frontend: `getReportsSummary(period, startDate, endDate)` y `AdminDashboard.loadData` resuelven el rango Monday→Monday cuando se pica `wN` y lo envían al backend.
+  - Verificado E2E con curl: rangos diferentes devuelven counts distintos (semana actual: 0 / hace 2 semanas: 0 / all-time: 6 envíos · 10.5 paquetes · $252.50).
 - **[29-abr]** **Auditoría completa — todas las acciones del combobox**: el dropdown listaba 23 acciones pero solo ~8 registraban eventos realmente. Agregadas llamadas a `log_audit_action` en los endpoints faltantes:
   - **Clientes**: `create_client`, `update_client`, `delete_client`
   - **Compras**: `create_purchase`, `update_purchase`

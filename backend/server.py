@@ -5222,15 +5222,25 @@ async def get_live_report(live_id: str, current_user: dict = Depends(get_current
         "purchase_count": live.get("purchase_count", 0)}
 
 @api_router.get("/admin/reports/summary")
-async def get_reports_summary(period: str = "week", current_user: dict = Depends(get_current_user)):
+async def get_reports_summary(
+    period: str = "week",
+    start_date: str = None,
+    end_date: str = None,
+    current_user: dict = Depends(get_current_user)
+):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
-    
-    # Build date filter based on period
+
+    # Build date filter based on period OR explicit start/end (creation date only).
+    # NOTE: We always filter by `created_at` so that editing a shipment/purchase/invoice
+    # does NOT pull it into a different week's counters.
     import math
     date_filter = {}
-    if period == "week":
+    if start_date and end_date:
+        # Explicit range overrides any `period` value (used by past-week selectors).
+        date_filter = {"created_at": {"$gte": start_date, "$lte": end_date}}
+    elif period == "week":
         # Week = current Monday 12:00 (tenant local, UTC-5 Ecuador) → next Monday 11:59:59.
         # In UTC that is Monday 17:00 → next Monday 16:59:59.
         now = datetime.now(timezone.utc)
@@ -5266,12 +5276,15 @@ async def get_reports_summary(period: str = "week", current_user: dict = Depends
     client_count = await db.users.count_documents({"role": "client", "tenant_id": tid})
     live_count = await db.lives.count_documents({"tenant_id": tid, **date_filter})
     pending_shipments = await db.shipments.count_documents({"status": {"$ne": "delivered"}, "tenant_id": tid})
-    # Shipping from invoices (shipping_cost stored on invoice)
-    total_shipping = await db.invoices.aggregate([
-        {"$match": invoice_match}, {"$group": {"_id": None, "total": {"$sum": "$shipping_cost"}}}
-    ]).to_list(1)
-    # Packages from shipments linked to invoices in period
-    all_shipments = await db.shipments.find(shipment_match, {"_id": 0, "weight_pounds": 1, "package_count": 1}).to_list(1000)
+    # Packages and shipping totals come from `shipments` filtered by shipment.created_at.
+    # Pulling shipping_cost from invoices would attribute the cost to the invoice's
+    # creation week, which is wrong if the shipment (and its cost) was added later.
+    all_shipments = await db.shipments.find(
+        shipment_match,
+        {"_id": 0, "weight_pounds": 1, "package_count": 1, "shipping_cost": 1}
+    ).to_list(5000)
+    total_shipping_val = sum((s.get("shipping_cost") or 0) for s in all_shipments)
+    total_shipping = [{"total": total_shipping_val}] if all_shipments else []
     total_packages = sum(s.get("package_count", 0) or math.ceil((s.get("weight_pounds", 0) or 0) / 8) for s in all_shipments if (s.get("package_count", 0) or 0) > 0 or (s.get("weight_pounds", 0) or 0) > 0)
     # Number of shipment documents in the period — distinct from total_packages
     # because one shipment can group multiple physical packages.

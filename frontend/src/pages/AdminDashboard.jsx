@@ -97,11 +97,22 @@ export default function AdminDashboard() {
   const loadData = async (period) => {
     try {
       const p = period || dashPeriod;
-      // For specific weeks (w0, w1, ...), still call summary with period="week"
-      // but the buyers report and sales detail use the explicit range.
-      const summaryPeriod = (typeof p === "string" && p.startsWith("w")) ? "week" : p;
+      // For specific past weeks (w0, w1, ...), resolve the explicit Monday→Monday range
+      // and send it to the backend so the cards filter by `created_at` of that week,
+      // not by the current week.
+      let summaryPeriod = p;
+      let startISO = null;
+      let endISO = null;
+      if (typeof p === "string" && p.startsWith("w")) {
+        const range = resolveRange(p);
+        if (range) {
+          summaryPeriod = "week";
+          startISO = range.startISO;
+          endISO = range.endISO;
+        }
+      }
       const [summaryRes, activeLiveRes] = await Promise.all([
-        getReportsSummary(summaryPeriod),
+        getReportsSummary(summaryPeriod, startISO, endISO),
         getActiveLive()
       ]);
       setSummary(summaryRes.data);
