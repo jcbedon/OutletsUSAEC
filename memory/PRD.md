@@ -62,6 +62,15 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
   - Heurística de "tiene guía": `tracking_numbers.length > 0` con fallback a `tracking_number` legacy.
   - Backend: `GET /api/shipments` ahora enriquece la respuesta con `invoice_status` (`approved`/`pending`/`annulled`) e `invoice_number` vía batch lookup en `db.invoices`.
   - Default `weekFilter` de la página principal también cambiado a la semana actual.
+- **[29-abr] (v2)** **Fix definitivo: PDF usaba valor persistido stale del backend**:
+  - Aunque `recalculate_client_invoices` ya sincroniza `shipping_cost` desde el shipment, el valor `inv.total_a_pagar` persistido en BD podía estar obsoleto si el recalc corrió antes del fix o si alguna operación posterior desactualizó el campo. El UI calculaba `total_a_pagar` **localmente** con la fórmula correcta, mientras que el PDF confiaba en `inv.total_a_pagar` del backend → divergían.
+  - **Fix**: PDF (`invoicePDF.js`), listado de facturas (`AdminInvoices.jsx`) y diálogo de factura (`InvoiceDialog.jsx`) ahora **todos** usan la misma fórmula local:
+    ```
+    total_a_pagar = max(0, subtotal + commission + tax + shipping + saldo_pendiente − deposits − saldo_a_favor_anterior)
+    saldo_a_favor = max(0, credits − grandTotal)
+    ```
+  - El campo `inv.total_a_pagar` del backend queda como "referencia informativa" pero nunca se usa para render. Consistencia garantizada independiente de cuándo/cómo corrió el recalc.
+  - **Verificación**: mismo caso de Paola — `grandTotal = 460.13 + 62 + 43.67 + 84 + 292.01 = $941.81`. `credits = 751.32 + 0 = $751.32`. `total_a_pagar = $190.49` en UI, listado y PDF.
 - **[29-abr]** **Fix: PDF y listado de facturas mostraban valores diferentes después del recalc**:
   - **Causa raíz #1**: `recalculate_client_invoices` calculaba `total_a_pagar` usando `invoice.shipping_cost`, pero el costo real estaba en `shipment.shipping_cost`. Si el shipment se creaba/editaba después de la factura, el invoice.shipping_cost quedaba en 0 → `total_a_pagar` quedaba mal calculado.
   - **Causa raíz #2**: El listado de facturas (`/admin/invoices`) mostraba `invoice.total` (solo items) mientras el PDF mostraba `total_a_pagar` (items + envío + saldo_pendiente − depósitos − saldo_a_favor_anterior). Cuando había créditos acumulados, divergían visualmente.

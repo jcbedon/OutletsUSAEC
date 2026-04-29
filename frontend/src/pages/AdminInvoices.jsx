@@ -522,7 +522,19 @@ export default function AdminInvoices() {
                 <div className="flex items-center gap-4">
                   <div className="text-right">
                     {(() => {
-                      const totalAPagar = invoice.total_a_pagar != null ? invoice.total_a_pagar : invoice.total;
+                      // Always compute total_a_pagar locally from authoritative components
+                      // so the list matches the invoice dialog and PDF (all three use
+                      // the same formula instead of trusting the backend-persisted value,
+                      // which can go stale when shipping_cost lives on the shipment doc).
+                      const displaySubtotal = (invoice.subtotal || 0) + (invoice.total_commission || 0);
+                      const taxes = invoice.total_tax || 0;
+                      const shippingCost = invoice.shipping_cost || (invoice.shipment?.shipping_cost || 0);
+                      const saldoPend = invoice.saldo_pendiente || 0;
+                      const saldoFavorAnt = invoice.saldo_a_favor_anterior || 0;
+                      const depositsApp = invoice.deposits_applied || 0;
+                      const grandTotal = displaySubtotal + taxes + shippingCost + saldoPend;
+                      const totalCredits = depositsApp + saldoFavorAnt;
+                      const totalAPagar = Math.max(0, grandTotal - totalCredits);
                       const totalRaw = invoice.total || 0;
                       const showBoth = !invoice.is_annulled && Math.abs(totalAPagar - totalRaw) > 0.01;
                       return (
@@ -533,11 +545,11 @@ export default function AdminInvoices() {
                           {showBoth && (
                             <p
                               className="text-[10px] text-gray-500 leading-tight"
-                              title={`Total items: $${totalRaw.toFixed(2)} · Saldo a favor anterior: $${(invoice.saldo_a_favor_anterior || 0).toFixed(2)} · Depósitos: $${(invoice.deposits_applied || 0).toFixed(2)}`}
+                              title={`Items: $${displaySubtotal.toFixed(2)} · Taxes: $${taxes.toFixed(2)} · Envío: $${shippingCost.toFixed(2)} · Saldo pend.: $${saldoPend.toFixed(2)} · Depósitos: -$${depositsApp.toFixed(2)} · Saldo favor ant.: -$${saldoFavorAnt.toFixed(2)}`}
                               data-testid={`invoice-total-items-${invoice.id}`}
                             >
                               items: ${totalRaw.toFixed(2)}
-                              {(invoice.saldo_a_favor_anterior || 0) > 0 && <> · saldo: -${(invoice.saldo_a_favor_anterior || 0).toFixed(2)}</>}
+                              {saldoFavorAnt > 0 && <> · saldo: -${saldoFavorAnt.toFixed(2)}</>}
                             </p>
                           )}
                           <p className="text-xs text-gray-400">{invoice.purchase_ids?.length || 0} items</p>

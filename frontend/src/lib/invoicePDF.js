@@ -257,14 +257,20 @@ export async function generateInvoicePDF(invoiceData, tenantInfo) {
   const shippingCost = shipment?.shipping_cost || 0;
   const saldoPend = inv.saldo_pendiente || 0;
   const saldoFavorAnterior = inv.saldo_a_favor_anterior || 0;
-  const saldoFavor = inv.saldo_a_favor || 0;
-  const grandTotal = displaySubtotal + taxes + shippingCost + saldoPend;
   const appliedDeposits = inv.applied_deposits || [];
   const depositsApplied = inv.deposits_applied || 0;
-  // Prefer backend's authoritative total_a_pagar if present; fallback to computed value
-  const totalAPagar = inv.total_a_pagar != null
-    ? inv.total_a_pagar
-    : Math.max(0, grandTotal - depositsApplied - saldoFavorAnterior);
+  const grandTotal = displaySubtotal + taxes + shippingCost + saldoPend;
+  const totalCreditsPreview = depositsApplied + saldoFavorAnterior;
+  // IMPORTANT: Always compute `total_a_pagar` and `saldo_a_favor` locally from
+  // authoritative components instead of trusting the backend-persisted values.
+  //
+  // Why: `inv.total_a_pagar` and `inv.saldo_a_favor` are written by
+  // `recalculate_client_invoices`, but they can go stale if the recalc ran
+  // against a document whose `shipping_cost` field was $0 (the truth lives in
+  // the linked shipment document). UI uses this same local formula, so PDF
+  // must match to keep both views consistent even if stored values are stale.
+  const totalAPagar = Math.max(0, grandTotal - totalCreditsPreview);
+  const saldoFavor = Math.max(0, totalCreditsPreview - grandTotal);
 
   doc.setTextColor(...colors.textSecondary);
   doc.setFontSize(9);
