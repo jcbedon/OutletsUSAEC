@@ -3761,7 +3761,24 @@ async def get_pending_purchases_for_invoice(customer_id: str, current_user: dict
             {"invoice_id": {"$exists": False}}
         ]
     }, {"_id": 0}).sort("created_at", -1).to_list(1000)
-    
+
+    # Enrich each purchase with the live's name (or None if it has no live or
+    # the live was deleted). The frontend uses this to show the origin badge in
+    # the Nueva Factura modal so admins can tell apart purchases that came from
+    # different lives or from manual registrations.
+    live_ids = {p.get("live_id") for p in purchases if p.get("live_id")}
+    live_lookup = {}
+    if live_ids:
+        live_docs = await db.lives.find(
+            {"id": {"$in": list(live_ids)}, "tenant_id": tid},
+            {"_id": 0, "id": 1, "title": 1, "status": 1}
+        ).to_list(len(live_ids))
+        live_lookup = {ld["id"]: ld for ld in live_docs}
+    for p in purchases:
+        live = live_lookup.get(p.get("live_id"))
+        p["live_title"] = (live or {}).get("title")
+        p["live_status"] = (live or {}).get("status")
+
     return purchases
 
 @api_router.get("/invoices/client-available-deposits/{customer_id}")

@@ -9,7 +9,7 @@ import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, g
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info, Save, X, ShieldCheck } from "lucide-react";
+import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info, Save, X, ShieldCheck, Radio } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import QRCode from "qrcode";
@@ -766,9 +766,29 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                                 <span>Costo: ${purchase.price.toFixed(2)}</span>
                                 {purchase.commission > 0 && <span>Com: ${purchase.commission.toFixed(2)}</span>}
                               </div>
-                              <p className="text-xs text-gray-400 mt-1">
-                                {new Date(purchase.created_at).toLocaleDateString("es-ES")}
-                              </p>
+                              <div className="flex items-center gap-2 mt-1 text-xs">
+                                <span className="text-gray-400">
+                                  {new Date(purchase.created_at).toLocaleDateString("es-ES")}
+                                </span>
+                                {purchase.live_title ? (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200 font-medium"
+                                    data-testid={`pending-purchase-origin-${purchase.id}`}
+                                    title="Live de origen"
+                                  >
+                                    <Radio className="h-3 w-3" />
+                                    {purchase.live_title}
+                                  </span>
+                                ) : (
+                                  <span
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200 font-medium"
+                                    data-testid={`pending-purchase-origin-${purchase.id}`}
+                                    title="Compra registrada sin Live"
+                                  >
+                                    Sin live
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
