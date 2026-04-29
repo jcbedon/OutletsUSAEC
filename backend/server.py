@@ -225,6 +225,12 @@ class Shipment(BaseModel):
     attachments: List[str] = []
     created_by: Optional[str] = None       # user_id of admin/employee who created the shipment
     created_by_name: Optional[str] = None  # snapshot of creator name at creation time
+    # Manual physical-guide verification: admin marks this when they hold the
+    # printed guide in their hands (independent of tracking_numbers presence).
+    guide_verified: bool = False
+    guide_verified_at: Optional[str] = None
+    guide_verified_by: Optional[str] = None
+    guide_verified_by_name: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -3585,6 +3591,48 @@ async def update_tracking(shipment_id: str, data: dict, current_user: dict = Dep
         raise HTTPException(status_code=404, detail="Envío no encontrado")
     
     return {"message": "Tracking actualizado", "tracking_numbers": tracking_numbers}
+
+@api_router.put("/shipments/{shipment_id}/verify-guide")
+async def toggle_shipment_guide_verified(shipment_id: str, data: dict = None, current_user: dict = Depends(get_current_user)):
+    """Toggle the manual `guide_verified` flag on a shipment.
+
+    Used when the admin/employee has the printed guide physically in hand and
+    wants to mark the package as verified. Independent of `tracking_numbers`.
+    Body: {"verified": true|false} — if omitted, toggles the current value.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    shipment = await db.shipments.find_one({"id": shipment_id, "tenant_id": tid}, {"_id": 0})
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Envío no encontrado")
+
+    # Decide the new value: explicit `verified` from body, or toggle current.
+    new_val = bool(shipment.get("guide_verified", False))
+    if data is not None and "verified" in data:
+        new_val = bool(data.get("verified"))
+    else:
+        new_val = not new_val
+
+    actor_name = await get_actor_name(current_user["user_id"])
+    now = datetime.now(timezone.utc).isoformat()
+    update_set = {
+        "guide_verified": new_val,
+        "guide_verified_at": now if new_val else None,
+        "guide_verified_by": current_user["user_id"] if new_val else None,
+        "guide_verified_by_name": actor_name if new_val else None,
+        "updated_at": now,
+    }
+    await db.shipments.update_one(
+        {"id": shipment_id, "tenant_id": tid},
+        {"$set": update_set}
+    )
+    return {
+        "message": "Guía marcada como verificada" if new_val else "Verificación de guía removida",
+        "guide_verified": new_val,
+        "guide_verified_at": update_set["guide_verified_at"],
+        "guide_verified_by_name": update_set["guide_verified_by_name"],
+    }
 
 @api_router.put("/shipments/{shipment_id}/status")
 async def update_shipment_status(shipment_id: str, status: str, current_user: dict = Depends(get_current_user)):

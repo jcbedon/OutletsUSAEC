@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { getAllShipments, getTenantSettings, getAllClients, getInvoicesWithoutShipment } from "@/lib/api";
+import { getAllShipments, getTenantSettings, getAllClients, getInvoicesWithoutShipment, toggleShipmentGuideVerified } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -186,6 +186,25 @@ export default function AdminPackagesReport() {
   const unitLabel = isPounds ? "lb" : "paq.";
   const fmtQty = (q) => Number(q).toFixed(isPounds ? 1 : 0);
 
+  // Toggle the manual `guide_verified` flag of a shipment with optimistic UI.
+  const handleToggleGuideVerified = async (shipmentId, currentVal) => {
+    const next = !currentVal;
+    // Optimistic update so the check responds instantly
+    setShipments((prev) => prev.map((s) => (
+      s.id === shipmentId ? { ...s, guide_verified: next, guide_verified_at: next ? new Date().toISOString() : null } : s
+    )));
+    try {
+      await toggleShipmentGuideVerified(shipmentId, next);
+      toast.success(next ? "Guía marcada como verificada" : "Verificación removida");
+    } catch (e) {
+      // Roll back on failure
+      setShipments((prev) => prev.map((s) => (
+        s.id === shipmentId ? { ...s, guide_verified: currentVal } : s
+      )));
+      toast.error("No se pudo actualizar la verificación");
+    }
+  };
+
   // Verification view: shipments grouped by client, showing if guide (tracking) was created.
   // Totals/chips ALWAYS reflect the full week (so filters can be re-applied);
   // only the grouped list is filtered when an invoice status chip is clicked.
@@ -207,7 +226,8 @@ export default function AdminPackagesReport() {
       const allTracks = tracks.length ? tracks : legacyTrack;
       aggPackages += Number(s.package_count) || 0;
       aggGuides += allTracks.length;
-      if (allTracks.length > 0) aggWithGuides += 1;
+      // "tiene guía" = manual confirmation by admin (paper in hand)
+      if (s.guide_verified) aggWithGuides += 1;
       const st = s.invoice_status || null;
       if (st === "approved") cntApproved += 1;
       else if (st === "annulled") cntAnnulled += 1;
@@ -231,7 +251,7 @@ export default function AdminPackagesReport() {
       const tracks = Array.isArray(s.tracking_numbers) ? s.tracking_numbers.filter((t) => (t || "").trim()) : [];
       const legacyTrack = s.tracking_number && tracks.length === 0 ? [s.tracking_number] : [];
       const allTracks = tracks.length ? tracks : legacyTrack;
-      const hasGuide = allTracks.length > 0;
+      const verified = !!s.guide_verified;
       const pkgs = Number(s.package_count) || 0;
       if (!groups[cid]) groups[cid] = { customer_id: cid, name, items: [], total_pkgs: 0, total_guides: 0 };
       groups[cid].items.push({
@@ -243,7 +263,10 @@ export default function AdminPackagesReport() {
         shipping_mode: s.shipping_mode,
         shipping_category: s.shipping_category || "",
         tracking_count: allTracks.length,
-        has_guide: hasGuide,
+        has_guide: verified,
+        guide_verified: verified,
+        guide_verified_at: s.guide_verified_at || null,
+        guide_verified_by_name: s.guide_verified_by_name || "",
         status: s.status || "preparing",
         invoice_status: s.invoice_status || null,
         invoice_number: s.invoice_number || "",
@@ -564,9 +587,9 @@ export default function AdminPackagesReport() {
                 <p className="text-[10px] text-orange-700 mt-0.5">{verifyData.totalShipments} envío{verifyData.totalShipments === 1 ? "" : "s"}</p>
               </div>
               <div className="rounded-xl bg-blue-50 border border-blue-100 p-3">
-                <p className="text-[10px] uppercase font-bold text-blue-700">Guías Creadas</p>
-                <p className="text-xl font-extrabold text-blue-900" data-testid="verify-total-guides">{verifyData.totalGuides}</p>
-                <p className="text-[10px] text-blue-700 mt-0.5">{verifyData.shipmentsWithGuides} envío{verifyData.shipmentsWithGuides === 1 ? "" : "s"} con guía</p>
+                <p className="text-[10px] uppercase font-bold text-blue-700">Guías Verificadas</p>
+                <p className="text-xl font-extrabold text-blue-900" data-testid="verify-total-guides">{verifyData.shipmentsWithGuides}</p>
+                <p className="text-[10px] text-blue-700 mt-0.5">de {verifyData.totalShipments} envío{verifyData.totalShipments === 1 ? "" : "s"}</p>
               </div>
               <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-3">
                 <p className="text-[10px] uppercase font-bold text-emerald-700">Cobertura</p>
@@ -575,12 +598,12 @@ export default function AdminPackagesReport() {
                     ? `${Math.round((verifyData.shipmentsWithGuides / verifyData.totalShipments) * 100)}%`
                     : "—"}
                 </p>
-                <p className="text-[10px] text-emerald-700 mt-0.5">envíos con guía</p>
+                <p className="text-[10px] text-emerald-700 mt-0.5">guías verificadas</p>
               </div>
               <div className="rounded-xl bg-rose-50 border border-rose-100 p-3">
                 <p className="text-[10px] uppercase font-bold text-rose-700">Pendientes</p>
                 <p className="text-xl font-extrabold text-rose-900" data-testid="verify-missing">{verifyData.shipmentsWithoutGuides}</p>
-                <p className="text-[10px] text-rose-700 mt-0.5">sin guía aún</p>
+                <p className="text-[10px] text-rose-700 mt-0.5">sin verificar</p>
               </div>
             </div>
 
@@ -742,17 +765,20 @@ export default function AdminPackagesReport() {
                         {g.items.map((it) => (
                           <div key={it.id} className="flex items-center justify-between gap-3 px-3 py-2 text-xs" data-testid={`verify-item-${it.id}`}>
                             <div className="flex items-center gap-2 min-w-0 flex-1">
-                              <div
-                                className={`flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center border-2 ${it.has_guide ? "bg-emerald-100 border-emerald-500" : "bg-white border-rose-300"}`}
-                                title={it.has_guide ? `Guía creada (${it.tracking_count})` : "Falta crear guía"}
-                                data-testid={it.has_guide ? `verify-check-yes-${it.id}` : `verify-check-no-${it.id}`}
+                              <button
+                                type="button"
+                                onClick={() => handleToggleGuideVerified(it.id, it.guide_verified)}
+                                className={`flex-shrink-0 w-7 h-7 rounded-md flex items-center justify-center border-2 transition-all hover:scale-110 cursor-pointer ${it.guide_verified ? "bg-emerald-100 border-emerald-500 hover:bg-emerald-200" : "bg-white border-rose-300 hover:bg-rose-50"}`}
+                                title={it.guide_verified ? `✓ Guía verificada${it.guide_verified_by_name ? ` por ${it.guide_verified_by_name}` : ""}${it.guide_verified_at ? ` el ${new Date(it.guide_verified_at).toLocaleDateString("es-ES")}` : ""} — click para desmarcar` : "Click para marcar guía como verificada (papel en mano)"}
+                                data-testid={it.guide_verified ? `verify-check-yes-${it.id}` : `verify-check-no-${it.id}`}
+                                aria-label={it.guide_verified ? "Desmarcar guía verificada" : "Marcar guía como verificada"}
                               >
-                                {it.has_guide ? (
+                                {it.guide_verified ? (
                                   <CheckCircle2 className="h-5 w-5 text-emerald-600" />
                                 ) : (
                                   <AlertCircle className="h-5 w-5 text-rose-400" />
                                 )}
-                              </div>
+                              </button>
                               <div className="min-w-0">
                                 <p className="text-slate-700 truncate">
                                   {new Date(it.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}
@@ -773,8 +799,8 @@ export default function AdminPackagesReport() {
                               <p className="font-bold text-slate-800">
                                 {fmtQty(it.package_count)} {it.shipping_mode === "pounds" ? "lb" : "paq."}
                               </p>
-                              <p className={`text-[10px] mt-0.5 ${it.has_guide ? "text-emerald-700" : "text-rose-600"} font-semibold`}>
-                                {it.has_guide ? `${it.tracking_count} guía${it.tracking_count === 1 ? "" : "s"}` : "Sin guía"}
+                              <p className={`text-[10px] mt-0.5 ${it.guide_verified ? "text-emerald-700" : "text-rose-600"} font-semibold`}>
+                                {it.guide_verified ? "✓ Guía verificada" : "Sin verificar"}
                               </p>
                               {it.invoice_status ? (
                                 <span

@@ -62,7 +62,12 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
   - Heurística de "tiene guía": `tracking_numbers.length > 0` con fallback a `tracking_number` legacy.
   - Backend: `GET /api/shipments` ahora enriquece la respuesta con `invoice_status` (`approved`/`pending`/`annulled`) e `invoice_number` vía batch lookup en `db.invoices`.
   - Default `weekFilter` de la página principal también cambiado a la semana actual.
-- **[29-abr]** **Verificar Paquetes vs Guías — chips clicables, check más prominente y panel "Facturas sin paquete"**:
+- **[29-abr]** **Verificación manual de guías físicas (papel en mano)**:
+  - Backend: nuevos campos en `Shipment`: `guide_verified: bool`, `guide_verified_at`, `guide_verified_by`, `guide_verified_by_name`. Endpoint nuevo `PUT /api/shipments/{id}/verify-guide` que acepta `{"verified": true|false}` (o toggle si no se envía body). Snapshot del actor que verificó. Verificado E2E con curl: ON marca con timestamp + nombre, OFF limpia los campos.
+  - Frontend: la caja de check del verificador es **clicable**. Click → toggle optimista, llama al endpoint, muestra toast. Tooltip indica quién verificó y cuándo. Es **independiente** del campo `tracking_numbers`: este check refleja la confirmación física del operador ("tengo el papel en la mano"), no la presencia de tracking en la BD.
+  - KPIs y % cobertura ahora se calculan sobre `guide_verified === true` (no sobre tracking presence).
+  - Texto del lado derecho de cada fila cambia entre "✓ Guía verificada" (verde) y "Sin verificar" (rojo).
+- **[29-abr]** **Verificar Paquetes vs Guías — chips clicables y panel "Facturas sin paquete"**:
   - **Chips de estado de factura ahora son botones filtro**: click sobre "✓ Aprobadas / ⌛ Pendientes / ✕ Anuladas / — Sin factura" filtra la lista agrupada por cliente debajo. Click de nuevo desactiva el filtro. Indicador "mostrando N de M" cuando hay filtro activo. Botón "Todas (N)" siempre presente para reset rápido.
   - **Check de "Guía creada" más visible**: cada fila ahora muestra una caja cuadrada de 28x28 con borde verde y `CheckCircle2` cuando hay guía, o caja blanca con borde rosa y `AlertCircle` cuando falta. Mucho más fácil de escanear visualmente.
   - **Panel "Paquetes vs Facturas"** dentro del diálogo: 2 mini-KPIs (envíos con factura asignada vs facturas sin paquete) más un `<details>` colapsable con el listado completo de facturas sin paquete agrupado por cliente. Cada factura muestra: número, fecha, estado (aprobada/pendiente) y total. Datos vienen del endpoint existente `GET /admin/reports/invoices-without-shipment`. Verificado E2E: 5 facturas sin paquete en 4 clientes.
