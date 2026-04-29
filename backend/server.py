@@ -2966,7 +2966,12 @@ async def get_user_purchases(user_id: str, current_user: dict = Depends(get_curr
 @api_router.get("/purchases/live/{live_id}")
 async def get_live_purchases(live_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
-    purchases = await db.purchases.find({"live_id": live_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    # `to_list(500)` was capping the result for high-volume lives (e.g. an active
+    # COSTCO live easily passes 500 purchases), making clients appear with fewer
+    # items in the live view than they actually have when invoicing. We bump
+    # the cap to 5000 — well above any realistic single-live volume — and keep
+    # the chronological-desc order for the UI.
+    purchases = await db.purchases.find({"live_id": live_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(5000)
     return purchases
 
 @api_router.get("/purchases/pending-shipment/{user_id}")
