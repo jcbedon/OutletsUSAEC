@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings, getClientPassword, toggleClientReviewed } from "@/lib/api";
+import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings, getClientPassword, toggleClientReviewed, recalculateClientInvoices } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText, UserX, Trash2, AlertTriangle, UserCheck, Hash, Eye, EyeOff, Copy, Check } from "lucide-react";
+import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText, UserX, Trash2, AlertTriangle, UserCheck, Hash, Eye, EyeOff, Copy, Check, RefreshCw } from "lucide-react";
 import InvoiceDialog from "@/components/InvoiceDialog";
 
 export default function AdminClients() {
@@ -147,6 +147,27 @@ export default function AdminClients() {
     setCurrentClientPassword(undefined);
     setCurrentPasswordCopied(false);
     setEditDialogOpen(true);
+  };
+
+  // Force-recalculate the entire invoice chain for one client.
+  // Useful when totals/PDF show divergent values due to legacy invoices that
+  // never had `shipping_cost` synced from the linked shipment, or when
+  // saldo_pendiente/deposits got out of sync after manual edits.
+  const [recalcingClientId, setRecalcingClientId] = useState(null);
+  const handleRecalcClient = async (client) => {
+    if (!client?.customer_id) return;
+    if (!window.confirm(`¿Recalcular todas las facturas de ${client.name} (${client.customer_id})?\n\nEsto reordena depósitos, sincroniza envíos y recomputa Total a pagar y Saldo a Favor.`)) {
+      return;
+    }
+    setRecalcingClientId(client.customer_id);
+    try {
+      await recalculateClientInvoices(client.customer_id);
+      toast.success(`Facturas de ${client.customer_id} recalculadas`);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "No se pudo recalcular");
+    } finally {
+      setRecalcingClientId(null);
+    }
   };
 
   const handleShowCurrentPassword = async () => {
@@ -660,6 +681,18 @@ https://outletsusaec.shop/`;
                               data-testid={`invoice-client-${client.customer_id}`}
                             >
                               <FileText className="h-4 w-4 mr-1" /> Factura
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="rounded-lg border-purple-200 text-purple-700 hover:bg-purple-50"
+                              onClick={() => handleRecalcClient(client)}
+                              disabled={recalcingClientId === client.customer_id}
+                              data-testid={`recalc-client-${client.customer_id}`}
+                              title={`Recalcular todas las facturas de ${client.name}`}
+                            >
+                              <RefreshCw className={`h-4 w-4 mr-1 ${recalcingClientId === client.customer_id ? "animate-spin" : ""}`} />
+                              Recalcular
                             </Button>
                             <Button variant="outline" size="sm" className="rounded-lg"
                               onClick={() => handleOpenEditDialog(client)}
