@@ -5160,14 +5160,62 @@ async def get_client_purchase_history(customer_id: str, current_user: dict = Dep
     
     return purchases
 
+@api_router.get("/invoices/{invoice_id}/annul-preview")
+async def annul_invoice_preview(invoice_id: str, current_user: dict = Depends(get_current_user)):
+    """Preview what will happen when an invoice is annulled.
+
+    Returns the linked shipment (if any), the purchases that will be reverted,
+    and the deposits that will be freed. Used by the UI to show a detailed
+    warning dialog BEFORE the destructive action runs.
+    """
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores")
+    tid = current_user["tenant_id"]
+    invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    if invoice.get("is_annulled"):
+        raise HTTPException(status_code=400, detail="Factura ya anulada")
+
+    shipment = await db.shipments.find_one({"invoice_id": invoice_id, "tenant_id": tid}, {"_id": 0})
+    purchases = await db.purchases.find(
+        {"id": {"$in": invoice.get("purchase_ids", [])}, "tenant_id": tid},
+        {"_id": 0, "id": 1, "item_name": 1, "store": 1, "total": 1, "status": 1}
+    ).to_list(2000)
+    return {
+        "invoice": {
+            "id": invoice["id"],
+            "invoice_number": invoice["invoice_number"],
+            "customer_id": invoice.get("customer_id"),
+            "total": invoice.get("total"),
+            "total_a_pagar": invoice.get("total_a_pagar"),
+            "status": invoice.get("status"),
+            "deposits_applied": invoice.get("deposits_applied", 0),
+            "applied_deposits_count": len(invoice.get("applied_deposits", [])),
+        },
+        "shipment": shipment,
+        "purchases": purchases,
+        "counts": {
+            "purchases": len(purchases),
+            "deposits_freed": len(invoice.get("applied_deposits", [])),
+            "has_shipment": bool(shipment),
+        }
+    }
+
+
 @api_router.put("/invoices/{invoice_id}/annul")
 async def annul_invoice(invoice_id: str, data: dict = None, current_user: dict = Depends(get_current_user)):
-    """Annul an invoice (soft delete) - only admins can do this, requires password"""
+    """Annul an invoice (soft delete) - only admins can do this, requires password.
+
+    Optionally deletes the linked shipment when `data.delete_shipment == True`.
+    Otherwise the shipment is simply unlinked (set invoice_id to None) for historical record.
+    """
     if current_user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Solo administradores pueden anular facturas")
     tid = current_user["tenant_id"]
     user_id = current_user["user_id"]
-    
+    delete_shipment_flag = bool((data or {}).get("delete_shipment", False))
+
     # Verify admin password if provided
     if data and data.get("password"):
         admin = await db.users.find_one({"id": user_id, "tenant_id": tid})
@@ -5213,11 +5261,33 @@ async def annul_invoice(invoice_id: str, data: dict = None, current_user: dict =
             {"$set": {"invoice_id": None, "invoiced_at": None}}
         )
     
-    # Unlink any shipment tied to this invoice
-    await db.shipments.update_many(
-        {"invoice_id": invoice_id, "tenant_id": tid},
-        {"$set": {"invoice_id": None}}
-    )
+    # Handle linked shipment — either delete it or just unlink
+    shipment_action = None
+    linked_shipment = await db.shipments.find_one({"invoice_id": invoice_id, "tenant_id": tid}, {"_id": 0})
+    if linked_shipment:
+        if delete_shipment_flag:
+            await db.shipments.delete_one({"id": linked_shipment["id"], "tenant_id": tid})
+            shipment_action = "deleted"
+            # Audit shipment deletion as separate event
+            await log_audit_action(
+                tenant_id=tid, user_id=user_id, user_name=admin_name,
+                user_role=current_user.get("role", "admin"), action="delete_shipment",
+                entity_type="shipment", entity_id=linked_shipment["id"],
+                entity_name=f"Envío {linked_shipment.get('customer_id', '')}",
+                details={
+                    "customer_id": linked_shipment.get("customer_id"),
+                    "shipping_cost": linked_shipment.get("shipping_cost"),
+                    "package_count": linked_shipment.get("package_count"),
+                    "triggered_by": "invoice_annulment",
+                    "invoice_id": invoice_id,
+                }
+            )
+        else:
+            await db.shipments.update_one(
+                {"id": linked_shipment["id"], "tenant_id": tid},
+                {"$set": {"invoice_id": None}}
+            )
+            shipment_action = "unlinked"
     
     # Audit
     await log_audit_action(
@@ -5230,11 +5300,17 @@ async def annul_invoice(invoice_id: str, data: dict = None, current_user: dict =
             "invoice_number": invoice["invoice_number"],
             "total": invoice.get("total"),
             "was_status": invoice.get("status"),
-            "purchase_count": len(invoice.get("purchase_ids", []))
+            "purchase_count": len(invoice.get("purchase_ids", [])),
+            "shipment_action": shipment_action,
+            "shipment_id": linked_shipment.get("id") if linked_shipment else None,
         }
     )
 
-    return {"message": "Factura anulada exitosamente", "invoice_number": invoice["invoice_number"]}
+    return {
+        "message": "Factura anulada exitosamente",
+        "invoice_number": invoice["invoice_number"],
+        "shipment_action": shipment_action,
+    }
 
 # ==================== NOTIFICATIONS ====================
 

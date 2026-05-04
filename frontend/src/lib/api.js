@@ -182,7 +182,8 @@ export const approveInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/app
 export const removeItemFromInvoice = (invoiceId, purchaseId) => api.put(`/invoices/${invoiceId}/remove-item`, { purchase_id: purchaseId });
 export const reopenInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/reopen`);
 export const getClientPurchaseHistory = (customerId) => api.get(`/invoices/client/${customerId}/history`);
-export const annulInvoice = (invoiceId, password) => api.put(`/invoices/${invoiceId}/annul`, { password });
+export const annulInvoice = (invoiceId, password, deleteShipment = false) => api.put(`/invoices/${invoiceId}/annul`, { password, delete_shipment: deleteShipment });
+export const annulInvoicePreview = (invoiceId) => api.get(`/invoices/${invoiceId}/annul-preview`);
 export const recalculateAllInvoices = () => api.post("/admin/recalculate-all-invoices");
 export const recalculateClientInvoices = (customerId) => api.post(`/admin/recalculate-invoices/${customerId}`);
 export const getInvoicesWithoutShipment = () => api.get("/admin/reports/invoices-without-shipment");

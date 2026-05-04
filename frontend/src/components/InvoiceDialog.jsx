@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, getClientAvailableDeposits, annulInvoice, updateInvoiceSaldoPendiente, updatePurchase, getTenantSettings, auditInvoice, recalcInvoice, getLives, reassignPurchaseLive } from "@/lib/api";
+import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, getClientInvoices, removeItemFromInvoice, reopenInvoice, generateAccessToken, getClientPendingBalance, getClientAvailableDeposits, annulInvoice, annulInvoicePreview, updateInvoiceSaldoPendiente, updatePurchase, getTenantSettings, auditInvoice, recalcInvoice, getLives, reassignPurchaseLive } from "@/lib/api";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -62,6 +62,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
   const [pendingDetails, setPendingDetails] = useState([]);
   const [availableDeposits, setAvailableDeposits] = useState([]);
   const [annulDialogOpen, setAnnulDialogOpen] = useState(false);
+  const [annulPreview, setAnnulPreview] = useState(null);
+  const [deleteShipmentFlag, setDeleteShipmentFlag] = useState(true);
   const [annulTargetId, setAnnulTargetId] = useState(null);
   const [annulPassword, setAnnulPassword] = useState("");
   const [annulling, setAnnulling] = useState(false);
@@ -384,11 +386,22 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
     }
   };
 
-  const openAnnulDialog = (invoiceId, e) => {
+  const openAnnulDialog = async (invoiceId, e) => {
     if (e) e.stopPropagation();
     setAnnulTargetId(invoiceId);
     setAnnulPassword("");
+    setAnnulPreview(null);
+    setDeleteShipmentFlag(true); // default: delete linked shipment
     setAnnulDialogOpen(true);
+    // Fetch impact preview (linked shipment, purchases, deposits) so the UI
+    // can show a detailed warning BEFORE the destructive action.
+    try {
+      const res = await annulInvoicePreview(invoiceId);
+      setAnnulPreview(res.data);
+    } catch (e2) {
+      // Non-fatal — the user can still proceed without the preview.
+      console.error("annul preview failed", e2);
+    }
   };
 
   const handleAnnulInvoice = async () => {
@@ -398,11 +411,15 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
     }
     setAnnulling(true);
     try {
-      await annulInvoice(annulTargetId, annulPassword);
-      toast.success("Factura eliminada exitosamente");
+      const res = await annulInvoice(annulTargetId, annulPassword, deleteShipmentFlag);
+      const shipMsg = res.data?.shipment_action === "deleted"
+        ? " y envío eliminado"
+        : (res.data?.shipment_action === "unlinked" ? " (envío desvinculado)" : "");
+      toast.success(`Factura anulada${shipMsg}`);
       setAnnulDialogOpen(false);
       setAnnulTargetId(null);
       setAnnulPassword("");
+      setAnnulPreview(null);
       loadInvoices();
       if (currentInvoice?.id === annulTargetId) {
         setCurrentInvoice(null);
@@ -1622,22 +1639,99 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
         </ScrollArea>
 
         {/* Annul Invoice Confirmation Dialog */}
-        <Dialog open={annulDialogOpen} onOpenChange={(open) => { setAnnulDialogOpen(open); if (!open) setAnnulPassword(""); }}>
-          <DialogContent className="max-w-sm rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <Dialog open={annulDialogOpen} onOpenChange={(open) => { setAnnulDialogOpen(open); if (!open) { setAnnulPassword(""); setAnnulPreview(null); } }}>
+          <DialogContent className="max-w-lg rounded-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-red-600">
                 <Trash2 className="h-5 w-5" />
-                Eliminar Factura
+                Eliminar Factura {annulPreview?.invoice?.invoice_number ? `· ${annulPreview.invoice.invoice_number}` : ""}
               </DialogTitle>
             </DialogHeader>
             <p className="text-sm text-gray-600">
-              Esta accion anulara la factura, liberara las compras y los abonos asignados. Ingresa tu contrasena de administrador para confirmar.
+              Esta acción anulará la factura, liberará las compras y los abonos asignados.
             </p>
-            <div className="space-y-4 py-2">
+
+            {/* Impact preview */}
+            {annulPreview && (
+              <div className="space-y-2 mt-2">
+                {/* Invoice summary */}
+                <div className="rounded-xl bg-red-50 border border-red-200 p-3 text-xs">
+                  <p className="font-bold text-red-900 mb-1">Factura a anular</p>
+                  <div className="grid grid-cols-2 gap-1 text-red-800">
+                    <span>Total: <b>${(annulPreview.invoice.total || 0).toFixed(2)}</b></span>
+                    <span>Total a pagar: <b>${(annulPreview.invoice.total_a_pagar || 0).toFixed(2)}</b></span>
+                    <span>Compras: {annulPreview.counts.purchases}</span>
+                    <span>Abonos aplicados: {annulPreview.counts.deposits_freed} (${(annulPreview.invoice.deposits_applied || 0).toFixed(2)})</span>
+                  </div>
+                </div>
+
+                {/* Linked shipment */}
+                {annulPreview.shipment ? (
+                  <div className="rounded-xl bg-amber-50 border-2 border-amber-300 p-3" data-testid="annul-shipment-warning">
+                    <p className="font-bold text-amber-900 mb-1 flex items-center gap-1 text-sm">
+                      <Package className="h-4 w-4" /> Envío vinculado detectado
+                    </p>
+                    <div className="text-xs text-amber-900 space-y-0.5 mt-1">
+                      <div><b>Categoría:</b> {annulPreview.shipment.shipping_category || "—"}</div>
+                      <div><b>Paquetes/libras:</b> {annulPreview.shipment.package_count || 0} {annulPreview.shipment.shipping_mode === "pounds" ? "lb" : "paq."}</div>
+                      <div><b>Costo de envío:</b> ${(annulPreview.shipment.shipping_cost || 0).toFixed(2)}</div>
+                      <div><b>Estado:</b> {annulPreview.shipment.status || "preparing"}</div>
+                      {annulPreview.shipment.created_at && (
+                        <div><b>Creado:</b> {new Date(annulPreview.shipment.created_at).toLocaleString("es-ES")}</div>
+                      )}
+                      {annulPreview.shipment.created_by_name && (
+                        <div><b>Creado por:</b> {annulPreview.shipment.created_by_name}</div>
+                      )}
+                      {Array.isArray(annulPreview.shipment.tracking_numbers) && annulPreview.shipment.tracking_numbers.length > 0 && (
+                        <div><b>Guías:</b> {annulPreview.shipment.tracking_numbers.join(", ")}</div>
+                      )}
+                    </div>
+                    <label className="flex items-center gap-2 mt-3 cursor-pointer select-none bg-white rounded p-2 border border-amber-200">
+                      <input
+                        type="checkbox"
+                        checked={deleteShipmentFlag}
+                        onChange={(e) => setDeleteShipmentFlag(e.target.checked)}
+                        className="w-4 h-4 accent-red-600"
+                        data-testid="delete-shipment-checkbox"
+                      />
+                      <span className="text-xs font-bold text-slate-800">
+                        {deleteShipmentFlag
+                          ? "Eliminar también el envío (recomendado)"
+                          : "Solo desvincular el envío (se conserva como histórico sin factura)"}
+                      </span>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-slate-50 border border-slate-200 p-2 text-[11px] text-slate-600">
+                    Sin envío vinculado a esta factura.
+                  </div>
+                )}
+
+                {/* Purchases list */}
+                {annulPreview.purchases.length > 0 && (
+                  <details className="rounded-xl border border-slate-200 p-2 text-xs">
+                    <summary className="cursor-pointer font-bold text-slate-700">
+                      {annulPreview.purchases.length} compras volverán a "pendiente" ▾
+                    </summary>
+                    <div className="mt-2 max-h-32 overflow-y-auto space-y-0.5 pl-2">
+                      {annulPreview.purchases.map((p) => (
+                        <div key={p.id} className="flex items-center justify-between gap-2 text-[11px] text-slate-700">
+                          <span className="truncate">{p.store || "—"} · {p.item_name}</span>
+                          <span className="font-bold flex-shrink-0">${(p.total || 0).toFixed(2)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-4 py-2 mt-2">
               <div>
+                <p className="text-[11px] font-bold text-slate-700 mb-1">Ingresa tu contraseña para confirmar</p>
                 <Input
                   type="password"
-                  placeholder="Contrasena del administrador..."
+                  placeholder="Contraseña del administrador..."
                   value={annulPassword}
                   onChange={(e) => setAnnulPassword(e.target.value)}
                   className="h-11 rounded-xl"
@@ -1655,7 +1749,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                   className="flex-1 h-11 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold"
                   data-testid="confirm-annul-btn"
                 >
-                  {annulling ? "Eliminando..." : "Confirmar"}
+                  {annulling ? "Eliminando..." : (annulPreview?.shipment && deleteShipmentFlag ? "Eliminar factura + envío" : "Eliminar factura")}
                 </Button>
               </div>
             </div>

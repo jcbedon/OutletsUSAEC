@@ -62,6 +62,11 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
   - Heurística de "tiene guía": `tracking_numbers.length > 0` con fallback a `tracking_number` legacy.
   - Backend: `GET /api/shipments` ahora enriquece la respuesta con `invoice_status` (`approved`/`pending`/`annulled`) e `invoice_number` vía batch lookup en `db.invoices`.
   - Default `weekFilter` de la página principal también cambiado a la semana actual.
+- **[29-abr]** **Diálogo de anulación con preview del envío vinculado**:
+  - Bug: al anular una factura, el envío vinculado solo quedaba **desvinculado** (sin factura asociada) pero seguía existiendo. El admin tenía que recordarlo y eliminarlo manualmente.
+  - Fix backend: nuevo endpoint `GET /api/invoices/{id}/annul-preview` (admin-only) devuelve invoice + shipment + purchases + conteos. `PUT /api/invoices/{id}/annul` ahora acepta `{"delete_shipment": true|false}` — si `true` elimina el shipment y registra audit log `delete_shipment` con `triggered_by: "invoice_annulment"`; si `false` solo desvincula (comportamiento anterior para compatibilidad).
+  - Fix frontend: el diálogo de anulación ahora precarga el preview y muestra en caja ámbar todos los datos del envío (categoría, paquetes/libras, costo, estado, fecha creación, creador, guías) con un **checkbox** "Eliminar también el envío (recomendado)" activado por defecto. También preview de compras que vuelven a pending. Botón cambia entre "Eliminar factura + envío" y "Eliminar factura" según el toggle.
+  - Verificado E2E con curl: endpoint `/annul-preview` devuelve `counts: {purchases: 1, deposits_freed: 0, has_shipment: true}` con shipment completo ($128, 4 paquetes) para factura J2934-015.
 - **[29-abr]** **Diagnóstico de Factura — Timeline completo** (`InvoiceDialog` → botón ámbar `Stethoscope`):
   - Backend: nuevo endpoint admin `GET /api/admin/diagnose-invoice/{invoice_id}` que retorna estado actual de la factura, linked purchases (incluidos soft-deleted), shipment vinculado, **toda la cadena de facturas del cliente** (para ver la cascada de saldos), todas las transacciones de wallet del cliente, todos los audit logs relacionados (de la factura, sus compras, su shipment) + los audit logs de **otras facturas en la cadena** (anulaciones/aprobaciones que disparen recálculo).
   - Frontend: nuevo componente `InvoiceDiagnosticDialog.jsx` con:
