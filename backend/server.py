@@ -7168,6 +7168,128 @@ async def serve_upload(file_path: str):
     
     raise HTTPException(status_code=404, detail="File not found")
 
+
+@api_router.get("/admin/diagnose-invoice/{invoice_id}")
+async def diagnose_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
+    """Build a complete timeline for a specific invoice.
+
+    Returns the current state of the invoice, all linked purchases (including
+    soft-deleted ones), the linked shipment, ALL invoices of the same client
+    (so the saldo_a_favor cascade can be traced), all related audit_logs
+    (purchase create/update/delete, invoice create/approve/reopen/annul,
+    shipment create/update/delete, deposit create/approve, etc.), and
+    matching wallet transactions.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+
+    customer_id = invoice["customer_id"]
+
+    # Linked purchases (active + soft-deleted)
+    linked_purchases = await db.purchases.find(
+        {"id": {"$in": invoice.get("purchase_ids", [])}, "tenant_id": tid},
+        {"_id": 0}
+    ).to_list(2000)
+
+    # Soft-deleted purchases that previously belonged to this invoice but were removed.
+    # We find these via audit logs that referenced this invoice or by purchases whose
+    # `deleted_invoice_id` matches.
+    extra_deleted = await db.purchases.find(
+        {"tenant_id": tid, "is_deleted": True, "customer_id": customer_id},
+        {"_id": 0}
+    ).to_list(500)
+
+    # Linked shipment
+    shipment = await db.shipments.find_one({"invoice_id": invoice_id, "tenant_id": tid}, {"_id": 0})
+
+    # All client invoices in chronological order (saldo cascade)
+    client_invoices = await db.invoices.find(
+        {"customer_id": customer_id, "tenant_id": tid},
+        {"_id": 0, "id": 1, "invoice_number": 1, "status": 1, "is_annulled": 1,
+         "total": 1, "subtotal": 1, "total_commission": 1, "total_tax": 1,
+         "shipping_cost": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1,
+         "saldo_a_favor": 1, "deposits_applied": 1, "total_a_pagar": 1,
+         "applied_deposits": 1, "purchase_ids": 1, "created_at": 1, "approved_at": 1}
+    ).sort("created_at", 1).to_list(500)
+
+    # Audit logs for: this invoice, purchases of this invoice, the shipment.
+    related_ids = [invoice_id] + [p["id"] for p in linked_purchases] + [p["id"] for p in extra_deleted]
+    if shipment:
+        related_ids.append(shipment["id"])
+    audit_logs = []
+    if related_ids:
+        audit_logs = await db.audit_logs.find(
+            {"tenant_id": tid, "entity_id": {"$in": related_ids}},
+            {"_id": 0}
+        ).sort("created_at", -1).to_list(5000)
+
+    # Audit logs for any OTHER invoice in the chain (so we see when a previous
+    # invoice was annulled / reopened / approved → triggers a saldo recalc here).
+    other_inv_ids = [i["id"] for i in client_invoices if i["id"] != invoice_id]
+    chain_audit = []
+    if other_inv_ids:
+        chain_audit = await db.audit_logs.find(
+            {"tenant_id": tid, "entity_type": "invoice", "entity_id": {"$in": other_inv_ids},
+             "action": {"$in": ["create_invoice", "approve_invoice", "reopen_invoice",
+                                "invoice_annulled", "annul_invoice", "update_invoice"]}},
+            {"_id": 0}
+        ).sort("created_at", -1).to_list(2000)
+
+    # Wallet transactions (deposits) for this customer — recharges directly affect
+    # saldo cascade across invoices.
+    wallet_txs = await db.wallet_transactions.find(
+        {"tenant_id": tid, "customer_id": customer_id, "type": {"$in": ["deposit", "deposit_request"]}},
+        {"_id": 0, "id": 1, "amount": 1, "status": 1, "is_deleted": 1, "description": 1,
+         "created_at": 1, "approved_at": 1, "approved_by_name": 1, "deleted_at": 1, "deleted_by_name": 1}
+    ).sort("created_at", -1).to_list(2000)
+
+    # Build a unified timeline merging audits + wallet ops + invoice/purchase events
+    timeline = []
+    for log in audit_logs + chain_audit:
+        timeline.append({
+            "ts": log.get("created_at"),
+            "type": log.get("action"),
+            "entity_type": log.get("entity_type"),
+            "entity_id": log.get("entity_id"),
+            "entity_name": log.get("entity_name"),
+            "user_name": log.get("user_name"),
+            "user_role": log.get("user_role"),
+            "details": log.get("details"),
+        })
+    for tx in wallet_txs:
+        timeline.append({
+            "ts": tx.get("approved_at") or tx.get("created_at"),
+            "type": f"wallet_{tx.get('type')}_{tx.get('status') or 'pending'}",
+            "entity_type": "wallet",
+            "entity_id": tx.get("id"),
+            "entity_name": f"${tx.get('amount', 0):.2f} - {tx.get('description', '')}",
+            "user_name": tx.get("approved_by_name") or "Cliente",
+            "details": {"amount": tx.get("amount"), "is_deleted": tx.get("is_deleted")},
+        })
+    timeline.sort(key=lambda x: x.get("ts") or "", reverse=True)
+
+    return {
+        "invoice": invoice,
+        "linked_purchases": linked_purchases,
+        "shipment": shipment,
+        "extra_deleted_purchases": extra_deleted,
+        "client_invoices_chain": client_invoices,
+        "wallet_transactions": wallet_txs,
+        "timeline": timeline[:200],  # cap for payload size
+        "summary": {
+            "linked_purchases_count": len(linked_purchases),
+            "soft_deleted_purchases_count": sum(1 for p in linked_purchases if p.get("is_deleted")),
+            "audit_logs_count": len(audit_logs),
+            "chain_audit_count": len(chain_audit),
+            "wallet_tx_count": len(wallet_txs),
+        }
+    }
+
 app.include_router(api_router)
 
 class NoCacheMiddleware(BaseHTTPMiddleware):

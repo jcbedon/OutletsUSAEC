@@ -211,6 +211,8 @@ export const getAuditHistory = (days = 7) => api.get(`/admin/audit-logs/history?
 // Diagnostics
 export const diagnoseShipments = (startDate, endDate) =>
   api.get("/admin/diagnose-shipments", { params: { start_date: startDate, end_date: endDate } });
+export const diagnoseInvoice = (invoiceId) =>
+  api.get(`/admin/diagnose-invoice/${invoiceId}`);
 
 // Superadmin - Tenant Settings
 export const updateTenantTaxOptionsSuperadmin = (tenantId, taxOptions) => 

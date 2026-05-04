@@ -62,6 +62,16 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
   - Heurística de "tiene guía": `tracking_numbers.length > 0` con fallback a `tracking_number` legacy.
   - Backend: `GET /api/shipments` ahora enriquece la respuesta con `invoice_status` (`approved`/`pending`/`annulled`) e `invoice_number` vía batch lookup en `db.invoices`.
   - Default `weekFilter` de la página principal también cambiado a la semana actual.
+- **[29-abr]** **Diagnóstico de Factura — Timeline completo** (`InvoiceDialog` → botón ámbar `Stethoscope`):
+  - Backend: nuevo endpoint admin `GET /api/admin/diagnose-invoice/{invoice_id}` que retorna estado actual de la factura, linked purchases (incluidos soft-deleted), shipment vinculado, **toda la cadena de facturas del cliente** (para ver la cascada de saldos), todas las transacciones de wallet del cliente, todos los audit logs relacionados (de la factura, sus compras, su shipment) + los audit logs de **otras facturas en la cadena** (anulaciones/aprobaciones que disparen recálculo).
+  - Frontend: nuevo componente `InvoiceDiagnosticDialog.jsx` con:
+    - Estado actual de la factura (todos los campos financieros).
+    - **Cadena de facturas del cliente**: lista cronológica con totales, envíos, saldos anteriores, depósitos aplicados y total a pagar — la factura actual destacada en ámbar.
+    - **Compras vinculadas**: incluye soft-deleted con badge ELIMINADA y line-through.
+    - **Depósitos del cliente**: lista de wallet_transactions con badges según estado.
+    - **Timeline unificado**: eventos de toda la factura + cadena en orden cronológico inverso, cada uno con badge coloreado por tipo de acción (`create_purchase`, `delete_purchase`, `update_purchase`, `invoice_annulled`, `wallet_deposit_*`, etc.), usuario que lo hizo y `<details>` colapsable con detalles JSON.
+    - Caja indigo con guía de interpretación.
+  - **Verificación E2E**: factura J2934-015 → 21 facturas en cadena, 18 audit logs en cadena (5 anulaciones → cascada), 13 wallet txs, 31 eventos totales en el timeline.
 - **[29-abr] (v2)** **Fix definitivo: PDF usaba valor persistido stale del backend**:
   - Aunque `recalculate_client_invoices` ya sincroniza `shipping_cost` desde el shipment, el valor `inv.total_a_pagar` persistido en BD podía estar obsoleto si el recalc corrió antes del fix o si alguna operación posterior desactualizó el campo. El UI calculaba `total_a_pagar` **localmente** con la fórmula correcta, mientras que el PDF confiaba en `inv.total_a_pagar` del backend → divergían.
   - **Fix**: PDF (`invoicePDF.js`), listado de facturas (`AdminInvoices.jsx`) y diálogo de factura (`InvoiceDialog.jsx`) ahora **todos** usan la misma fórmula local:

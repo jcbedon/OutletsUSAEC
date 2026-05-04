@@ -9,10 +9,11 @@ import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, g
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info, Save, X, ShieldCheck, Radio } from "lucide-react";
+import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info, Save, X, ShieldCheck, Radio, Stethoscope } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import QRCode from "qrcode";
+import InvoiceDiagnosticDialog from "@/components/InvoiceDiagnosticDialog";
 // Helper function to load image with proper dimensions
 const loadImageWithDimensions = (url) => {
   return new Promise((resolve, reject) => {
@@ -53,6 +54,7 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
   const [auditing, setAuditing] = useState(false);
   const [auditResult, setAuditResult] = useState(null); // null | { issues, needs_recalc, ... }
   const [auditDialogOpen, setAuditDialogOpen] = useState(false);
+  const [diagnosticDialogOpen, setDiagnosticDialogOpen] = useState(false);
   const [recalcing, setRecalcing] = useState(false);
   const [showShipmentPrompt, setShowShipmentPrompt] = useState(false);
   const [saldoPendiente, setSaldoPendiente] = useState("");
@@ -1506,6 +1508,16 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
                     <ShieldCheck className="h-5 w-5" />
                   )}
                 </Button>
+                <Button
+                  onClick={() => setDiagnosticDialogOpen(true)}
+                  variant="ghost"
+                  size="icon"
+                  className="h-12 w-12 rounded-xl border border-amber-200 text-amber-700 hover:bg-amber-50"
+                  title="Diagnóstico completo de la factura (timeline + cadena de saldos)"
+                  data-testid="diagnose-invoice-btn"
+                >
+                  <Stethoscope className="h-5 w-5" />
+                </Button>
                 {currentInvoice.status === "approved" ? (
                   <Button
                     onClick={handleReopenInvoice}
@@ -1651,6 +1663,11 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
         </Dialog>
 
         {/* Audit Result Dialog */}
+        <InvoiceDiagnosticDialog
+          invoiceId={currentInvoice?.id}
+          open={diagnosticDialogOpen}
+          onOpenChange={setDiagnosticDialogOpen}
+        />
         <Dialog open={auditDialogOpen} onOpenChange={setAuditDialogOpen}>
           <DialogContent className="rounded-2xl max-w-md w-[95vw]" data-testid="audit-dialog">
             <DialogHeader>
