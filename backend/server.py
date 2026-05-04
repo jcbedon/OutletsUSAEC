@@ -5028,6 +5028,116 @@ async def remove_item_from_invoice(invoice_id: str, data: dict, current_user: di
         "remaining_items": len(new_purchase_ids)
     }
 
+
+@api_router.put("/invoices/{invoice_id}/add-items")
+async def add_items_to_invoice(invoice_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Attach one or more purchases (of the same client) to an existing invoice.
+
+    Only purchases not currently attached to any invoice AND belonging to the
+    same customer as the target invoice are accepted. The invoice must not be
+    annulled. Works for both pending and approved invoices — the purchases
+    receive `invoice_id`/`status=paid` when the invoice is approved.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    purchase_ids = data.get("purchase_ids") or []
+    if not isinstance(purchase_ids, list) or not purchase_ids:
+        raise HTTPException(status_code=400, detail="purchase_ids (lista) es requerido")
+
+    invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    if invoice.get("is_annulled"):
+        raise HTTPException(status_code=400, detail="No se pueden agregar artículos a una factura anulada")
+
+    customer_id = invoice.get("customer_id")
+    # Pull the candidate purchases and validate them
+    candidates = await db.purchases.find(
+        {"id": {"$in": purchase_ids}, "tenant_id": tid},
+        {"_id": 0}
+    ).to_list(len(purchase_ids))
+
+    if len(candidates) != len(purchase_ids):
+        raise HTTPException(status_code=400, detail="Alguna compra no existe")
+
+    for p in candidates:
+        if p.get("customer_id", "").upper() != (customer_id or "").upper():
+            raise HTTPException(status_code=400, detail=f"La compra {p.get('item_name', p['id'][:8])} no pertenece al cliente {customer_id}")
+        if p.get("invoice_id") and p.get("invoice_id") != invoice_id:
+            raise HTTPException(status_code=400, detail=f"La compra {p.get('item_name', p['id'][:8])} ya está en otra factura")
+        if p.get("is_deleted"):
+            raise HTTPException(status_code=400, detail=f"La compra {p.get('item_name', p['id'][:8])} está eliminada")
+
+    # Build the new purchase list (dedupe)
+    existing_ids = set(invoice.get("purchase_ids", []))
+    new_ids = [pid for pid in purchase_ids if pid not in existing_ids]
+    if not new_ids:
+        return {"message": "Todas las compras ya estaban en la factura", "added": 0}
+    merged_ids = list(existing_ids) + new_ids
+
+    # Recompute invoice totals from the merged set
+    merged_purchases = await db.purchases.find(
+        {"id": {"$in": merged_ids}, "tenant_id": tid},
+        {"_id": 0}
+    ).to_list(len(merged_ids))
+    new_subtotal = sum(p.get("price", 0) for p in merged_purchases)
+    new_total_tax = sum(p.get("tax", 0) for p in merged_purchases)
+    new_total_commission = sum(p.get("commission", 0) for p in merged_purchases)
+    new_total = sum(p.get("total", 0) for p in merged_purchases)
+
+    await db.invoices.update_one(
+        {"id": invoice_id, "tenant_id": tid},
+        {"$set": {
+            "purchase_ids": merged_ids,
+            "subtotal": round(new_subtotal, 2),
+            "total_tax": round(new_total_tax, 2),
+            "total_commission": round(new_total_commission, 2),
+            "total": round(new_total, 2),
+        }}
+    )
+
+    # Attach invoice reference + set status on added purchases
+    now = datetime.now(timezone.utc).isoformat()
+    update_fields = {"invoice_id": invoice_id, "invoiced_at": now}
+    if invoice.get("status") == "approved":
+        update_fields["status"] = "paid"
+        update_fields["paid_at"] = now
+    await db.purchases.update_many(
+        {"id": {"$in": new_ids}, "tenant_id": tid},
+        {"$set": update_fields}
+    )
+
+    # Recalc the full client chain so totals propagate
+    try:
+        await recalculate_client_invoices(tid, customer_id)
+    except Exception as _re_err:
+        logger.error(f"Error recalculating after add_items_to_invoice: {_re_err}")
+
+    # Audit
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+        user_role=current_user.get("role", "admin"), action="update_invoice",
+        entity_type="invoice", entity_id=invoice_id,
+        entity_name=f"Factura {invoice['invoice_number']}",
+        details={
+            "customer_id": customer_id,
+            "operation": "add_items",
+            "added_count": len(new_ids),
+            "added_purchase_ids": new_ids,
+            "new_total": round(new_total, 2),
+        }
+    )
+
+    return {
+        "message": f"{len(new_ids)} artículo(s) agregado(s) a la factura",
+        "added": len(new_ids),
+        "added_purchase_ids": new_ids,
+        "new_total": round(new_total, 2),
+        "total_items": len(merged_ids),
+    }
+
 @api_router.put("/invoices/{invoice_id}/reopen")
 async def reopen_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
     """Reopen an approved invoice for modifications"""

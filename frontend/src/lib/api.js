@@ -180,6 +180,7 @@ export const getInvoiceDetail = (invoiceId) => api.get(`/invoices/${invoiceId}`)
 export const getClientInvoicesForShipment = (customerId) => api.get(`/invoices/client/${customerId}/for-shipment`);
 export const approveInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/approve`);
 export const removeItemFromInvoice = (invoiceId, purchaseId) => api.put(`/invoices/${invoiceId}/remove-item`, { purchase_id: purchaseId });
+export const addItemsToInvoice = (invoiceId, purchaseIds) => api.put(`/invoices/${invoiceId}/add-items`, { purchase_ids: purchaseIds });
 export const reopenInvoice = (invoiceId) => api.put(`/invoices/${invoiceId}/reopen`);
 export const getClientPurchaseHistory = (customerId) => api.get(`/invoices/client/${customerId}/history`);
 export const annulInvoice = (invoiceId, password, deleteShipment = false) => api.put(`/invoices/${invoiceId}/annul`, { password, delete_shipment: deleteShipment });

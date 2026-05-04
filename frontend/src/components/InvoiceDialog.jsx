@@ -9,11 +9,12 @@ import { getPendingPurchases, createInvoice, getInvoiceDetail, approveInvoice, g
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info, Save, X, ShieldCheck, Radio, Stethoscope } from "lucide-react";
+import { FileText, Download, CheckCircle, Clock, AlertCircle, History, Trash2, Edit, RefreshCw, Loader2, Package, ArrowRight, Info, Save, X, ShieldCheck, Radio, Stethoscope, Plus } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import QRCode from "qrcode";
 import InvoiceDiagnosticDialog from "@/components/InvoiceDiagnosticDialog";
+import { addItemsToInvoice } from "@/lib/api";
 // Helper function to load image with proper dimensions
 const loadImageWithDimensions = (url) => {
   return new Promise((resolve, reject) => {
@@ -55,6 +56,12 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
   const [auditResult, setAuditResult] = useState(null); // null | { issues, needs_recalc, ... }
   const [auditDialogOpen, setAuditDialogOpen] = useState(false);
   const [diagnosticDialogOpen, setDiagnosticDialogOpen] = useState(false);
+  // Add-items dialog: pick pending purchases to attach to the current invoice
+  const [addItemsDialogOpen, setAddItemsDialogOpen] = useState(false);
+  const [addItemsLoading, setAddItemsLoading] = useState(false);
+  const [addItemsAvailable, setAddItemsAvailable] = useState([]);
+  const [addItemsSelected, setAddItemsSelected] = useState(new Set());
+  const [addItemsSaving, setAddItemsSaving] = useState(false);
   const [recalcing, setRecalcing] = useState(false);
   const [showShipmentPrompt, setShowShipmentPrompt] = useState(false);
   const [saldoPendiente, setSaldoPendiente] = useState("");
@@ -531,6 +538,59 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       toast.error(error.response?.data?.detail || "Error al recalcular");
     } finally {
       setRecalcing(false);
+    }
+  };
+
+  // Open the "add products to this invoice" dialog.
+  // Loads the same pending purchases the client has available. We keep only
+  // those NOT currently in this invoice (can't add a duplicate) and NOT
+  // attached to any other invoice (backend rejects that case anyway).
+  const openAddItemsDialog = async () => {
+    if (!currentInvoice?.customer_id) return;
+    setAddItemsDialogOpen(true);
+    setAddItemsLoading(true);
+    setAddItemsSelected(new Set());
+    setAddItemsAvailable([]);
+    try {
+      const res = await getPendingPurchases(currentInvoice.customer_id);
+      const currentIds = new Set((currentInvoice.purchases || []).map((p) => p.id));
+      const available = (res.data || []).filter((p) => !currentIds.has(p.id) && !p.invoice_id);
+      setAddItemsAvailable(available);
+    } catch (e) {
+      toast.error("No se pudieron cargar las compras pendientes");
+    } finally {
+      setAddItemsLoading(false);
+    }
+  };
+
+  const toggleAddItemSelected = (pid) => {
+    setAddItemsSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(pid)) next.delete(pid); else next.add(pid);
+      return next;
+    });
+  };
+
+  const handleAddItemsToInvoice = async () => {
+    if (addItemsSelected.size === 0) {
+      toast.error("Selecciona al menos una compra");
+      return;
+    }
+    setAddItemsSaving(true);
+    try {
+      const res = await addItemsToInvoice(currentInvoice.id, Array.from(addItemsSelected));
+      toast.success(res.data?.message || "Artículos agregados");
+      setAddItemsDialogOpen(false);
+      setAddItemsSelected(new Set());
+      // Refresh invoice so the new purchases appear in the table
+      try {
+        const fresh = await getInvoiceDetail(currentInvoice.id);
+        setCurrentInvoice(fresh.data);
+      } catch { /* non-fatal */ }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "No se pudieron agregar las compras");
+    } finally {
+      setAddItemsSaving(false);
     }
   };
 
@@ -1102,6 +1162,20 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
               )}
 
               {/* Purchases table */}
+              {!currentInvoice.is_annulled && currentInvoice.status !== "approved" && (
+                <div className="flex justify-end mb-2">
+                  <Button
+                    size="sm"
+                    onClick={openAddItemsDialog}
+                    className="h-8 rounded-lg text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                    data-testid="open-add-items-btn"
+                    title="Agregar más compras pendientes del mismo cliente a esta factura"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Agregar productos
+                  </Button>
+                </div>
+              )}
               <div className="border rounded-xl overflow-hidden" data-testid="invoice-purchases-table">
                 <table className="w-full">
                   <thead>
@@ -1762,6 +1836,107 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
           open={diagnosticDialogOpen}
           onOpenChange={setDiagnosticDialogOpen}
         />
+
+        {/* Add more items to this invoice */}
+        <Dialog open={addItemsDialogOpen} onOpenChange={setAddItemsDialogOpen}>
+          <DialogContent className="rounded-2xl max-w-2xl w-[95vw] max-h-[85vh] overflow-y-auto" data-testid="add-items-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <Plus className="h-5 w-5 text-emerald-600" />
+                Agregar productos a factura {currentInvoice?.invoice_number || ""}
+              </DialogTitle>
+            </DialogHeader>
+
+            {addItemsLoading ? (
+              <div className="text-center py-8 text-sm text-slate-500">
+                <Loader2 className="h-5 w-5 mx-auto mb-2 animate-spin text-emerald-600" />
+                Cargando compras pendientes…
+              </div>
+            ) : addItemsAvailable.length === 0 ? (
+              <div className="rounded-xl bg-slate-50 border border-slate-200 p-6 text-center text-sm text-slate-600">
+                No hay compras pendientes disponibles para este cliente.
+              </div>
+            ) : (
+              <>
+                <div className="text-[11px] text-slate-500 mb-2">
+                  Selecciona las compras del mismo cliente que quieras añadir a esta factura.
+                </div>
+                <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-96 overflow-y-auto">
+                  {addItemsAvailable.map((p) => {
+                    const checked = addItemsSelected.has(p.id);
+                    return (
+                      <label
+                        key={p.id}
+                        className={`flex items-center gap-2 px-3 py-2 text-xs cursor-pointer ${checked ? "bg-emerald-50" : "hover:bg-slate-50"}`}
+                        data-testid={`add-item-${p.id}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleAddItemSelected(p.id)}
+                          className="w-4 h-4 accent-emerald-600 flex-shrink-0"
+                        />
+                        <span className="font-mono text-[10px] text-slate-400 w-12 flex-shrink-0">{p.id.slice(0, 6)}</span>
+                        <span className="font-bold text-slate-800 w-16 flex-shrink-0 truncate">{p.store || "—"}</span>
+                        <span className="text-slate-600 truncate flex-1">{p.item_name || "—"}</span>
+                        <span className="text-[10px] text-slate-400 w-20 text-right flex-shrink-0">
+                          {p.created_at ? new Date(p.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short" }) : ""}
+                        </span>
+                        <span className="font-extrabold text-emerald-700 w-16 text-right flex-shrink-0">${(p.total || 0).toFixed(2)}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-between mt-3 text-xs">
+                  <span className="text-slate-600">
+                    {addItemsSelected.size} de {addItemsAvailable.length} seleccionadas · total: <b>${Array.from(addItemsSelected).reduce((sum, pid) => sum + ((addItemsAvailable.find((x) => x.id === pid) || {}).total || 0), 0).toFixed(2)}</b>
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => setAddItemsSelected(new Set(addItemsAvailable.map((p) => p.id)))}
+                    >
+                      Seleccionar todo
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => setAddItemsSelected(new Set())}
+                    >
+                      Limpiar
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 h-10 rounded-xl"
+                    onClick={() => setAddItemsDialogOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleAddItemsToInvoice}
+                    disabled={addItemsSelected.size === 0 || addItemsSaving}
+                    className="flex-1 h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                    data-testid="confirm-add-items-btn"
+                  >
+                    {addItemsSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : `Agregar ${addItemsSelected.size} compra${addItemsSelected.size === 1 ? "" : "s"}`}
+                  </Button>
+                </div>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
         <Dialog open={auditDialogOpen} onOpenChange={setAuditDialogOpen}>
           <DialogContent className="rounded-2xl max-w-md w-[95vw]" data-testid="audit-dialog">
             <DialogHeader>
