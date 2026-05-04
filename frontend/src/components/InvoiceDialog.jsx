@@ -587,6 +587,10 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
         const fresh = await getInvoiceDetail(currentInvoice.id);
         setCurrentInvoice(fresh.data);
       } catch { /* non-fatal */ }
+      // Also refresh the in-memory pending-purchases list so that if the admin
+      // switches to "Nueva Factura" afterwards, the added items no longer show
+      // up (the backend already excludes them — we just need the UI in sync).
+      loadPendingPurchases();
     } catch (e) {
       toast.error(e?.response?.data?.detail || "No se pudieron agregar las compras");
     } finally {
@@ -639,7 +643,14 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
           <Button
             variant={viewMode === "create" ? "default" : "outline"}
             size="sm"
-            onClick={() => { setViewMode("create"); setCurrentInvoice(null); }}
+            onClick={() => {
+              setViewMode("create");
+              setCurrentInvoice(null);
+              // Always refresh pending purchases when entering Nueva Factura so items
+              // already attached to another invoice (e.g. via the "Agregar productos"
+              // flow) stop appearing in the picker.
+              loadPendingPurchases();
+            }}
             className="rounded-lg"
             style={viewMode === "create" ? { background: '#1E3A5F' } : {}}
           >
