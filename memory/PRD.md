@@ -13,6 +13,7 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
 - PDFs: jsPDF · Object Store: Emergent internal
 
 ## Changelog (Feb 2026)
+- **[05-may]** **Cascada `saldo_pendiente` dinámica** (`recalculate_client_invoices`): ahora la deuda heredada se propaga entre facturas vivas en cada recálculo. Antes el campo `saldo_pendiente` quedaba congelado al crear la factura, y al anular una factura intermedia, las posteriores conservaban deuda inflada. Ahora F(n+1).saldo_pendiente = F(n).total_a_pagar de la factura viva anterior. La primera factura conserva su `saldo_pendiente` original (puede ser deuda legacy de onboarding). Tests en `/app/backend/tests/test_recalc_chain.py` cubren: cadena completa, anulación intermedia, depósitos en cadena, saldo a favor sobrante.
 - Inline editing purchase items + sync LIVE.
 - Auto-recalculo de `saldo_a_favor` en cadenas de facturas.
 - Shipments mapeados 1-a-1 a invoices.

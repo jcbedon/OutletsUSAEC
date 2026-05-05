@@ -644,24 +644,39 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
             "description": dep.get("description", "")
         })
     
-    # Update each invoice with its corresponding deposits
+    # Update each invoice with its corresponding deposits.
+    # We propagate two carries between LIVE invoices (already filtered: is_annulled != True):
+    #   - carry_saldo_a_favor: any positive credit left over after settling an invoice
+    #   - carry_saldo_pendiente: the previous live invoice's total_a_pagar becomes the
+    #     next invoice's saldo_pendiente (inherited debt). This guarantees that if an
+    #     intermediate invoice is annulled, the next one inherits debt directly from
+    #     the previous LIVE invoice (not from the now-defunct one frozen at creation).
+    # The first invoice keeps its stored saldo_pendiente, since it may legitimately
+    # represent legacy/manual onboarding debt that has no prior invoice to recompute from.
     carry_saldo_a_favor = 0
+    carry_saldo_pendiente = None  # None on first iteration => use stored value
     for inv_doc in all_invoices:
         inv_deposits = deposits_by_invoice.get(inv_doc["id"], [])
         total_deposits = round(sum(ad["amount_applied"] for ad in inv_deposits), 2)
-        
-        inv_total = inv_doc.get("total", 0) + inv_doc.get("saldo_pendiente", 0) + inv_doc.get("_effective_shipping", inv_doc.get("shipping_cost", 0) or 0)
+
+        if carry_saldo_pendiente is None:
+            saldo_pendiente_dyn = round(float(inv_doc.get("saldo_pendiente", 0) or 0), 2)
+        else:
+            saldo_pendiente_dyn = round(float(carry_saldo_pendiente), 2)
+
+        inv_total = (inv_doc.get("total", 0) or 0) + saldo_pendiente_dyn + inv_doc.get("_effective_shipping", inv_doc.get("shipping_cost", 0) or 0)
         saldo_ant = carry_saldo_a_favor
         total_credits = total_deposits + saldo_ant
-        
+
         if total_credits >= inv_total:
             total_a_pagar = 0
             saldo_a_favor = round(total_credits - inv_total, 2)
         else:
             total_a_pagar = round(inv_total - total_credits, 2)
             saldo_a_favor = 0
-        
+
         carry_saldo_a_favor = saldo_a_favor
+        carry_saldo_pendiente = total_a_pagar  # propagate to next LIVE invoice
 
         # Persist the effective shipping back to the invoice document so list views
         # and PDF (which read invoice.shipping_cost) stay consistent with the recalc.
@@ -672,6 +687,7 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
                 "applied_deposits": inv_deposits,
                 "deposits_applied": total_deposits,
                 "saldo_a_favor_anterior": saldo_ant,
+                "saldo_pendiente": saldo_pendiente_dyn,
                 "total_a_pagar": total_a_pagar,
                 "saldo_a_favor": saldo_a_favor,
                 "shipping_cost": round(effective_shipping, 2),
