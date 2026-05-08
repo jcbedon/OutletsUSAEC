@@ -23,36 +23,51 @@ def _get_emergent_key():
     return key
 
 
-def init_storage():
+def init_storage(force: bool = False):
     global storage_key
-    if storage_key:
+    if storage_key and not force:
         return storage_key
     key = _get_emergent_key()
+    if not key:
+        raise RuntimeError("EMERGENT_LLM_KEY no está configurada en el entorno")
     resp = requests.post(f"{STORAGE_URL}/init", json={"emergent_key": key}, timeout=30)
     resp.raise_for_status()
     storage_key = resp.json()["storage_key"]
-    logger.info("Object storage initialized")
+    logger.info("Object storage initialized" + (" (forced)" if force else ""))
     return storage_key
 
 
-def put_object(path: str, data: bytes, content_type: str) -> dict:
+def _request_with_retry(method: str, url: str, **kwargs):
+    """Wrap object-store HTTP calls so a stale storage_key auto-renews itself.
+    Re-runs the request once after re-initializing on 401/403 (auth failures).
+    """
+    global storage_key
     key = init_storage()
-    resp = requests.put(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key, "Content-Type": content_type},
+    headers = kwargs.pop("headers", {}) or {}
+    headers["X-Storage-Key"] = key
+    resp = requests.request(method, url, headers=headers, **kwargs)
+    if resp.status_code in (401, 403):
+        logger.warning(f"Object store auth failed ({resp.status_code}); refreshing storage_key and retrying once")
+        key = init_storage(force=True)
+        headers["X-Storage-Key"] = key
+        resp = requests.request(method, url, headers=headers, **kwargs)
+    resp.raise_for_status()
+    return resp
+
+
+def put_object(path: str, data: bytes, content_type: str) -> dict:
+    resp = _request_with_retry(
+        "PUT", f"{STORAGE_URL}/objects/{path}",
+        headers={"Content-Type": content_type},
         data=data, timeout=120
     )
-    resp.raise_for_status()
     return resp.json()
 
 
 def get_object(path: str):
-    key = init_storage()
-    resp = requests.get(
-        f"{STORAGE_URL}/objects/{path}",
-        headers={"X-Storage-Key": key}, timeout=60
+    resp = _request_with_retry(
+        "GET", f"{STORAGE_URL}/objects/{path}", timeout=60
     )
-    resp.raise_for_status()
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
 
 
