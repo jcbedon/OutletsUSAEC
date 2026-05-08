@@ -5550,10 +5550,16 @@ async def get_reports_summary(
         {"$group": {"_id": None, "total": {"$sum": {"$add": ["$price", {"$ifNull": ["$tax", 0]}]}}}}
     ]).to_list(1)
     total_sales = [{"total": total_sales_agg[0]["total"]}] if total_sales_agg else []
-    # Commissions from invoices
-    total_commissions = await db.invoices.aggregate([
-        {"$match": invoice_match}, {"$group": {"_id": None, "total": {"$sum": "$total_commission"}}}
+    # Commissions = sum of `commission` per purchase in the period.
+    # IMPORTANT: We pull from `purchases` (not invoices) so commissions show up
+    # immediately when a sale is registered — even before an invoice is created
+    # for that purchase. This mirrors how `total_sales` is computed above and
+    # keeps both KPIs consistent.
+    total_commissions_agg = await db.purchases.aggregate([
+        {"$match": purchase_match},
+        {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$commission", 0]}}}}
     ]).to_list(1)
+    total_commissions = total_commissions_agg if total_commissions_agg else []
     client_count = await db.users.count_documents({"role": "client", "tenant_id": tid})
     live_count = await db.lives.count_documents({"tenant_id": tid, **date_filter})
     pending_shipments = await db.shipments.count_documents({"status": {"$ne": "delivered"}, "tenant_id": tid})
