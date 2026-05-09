@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   ShoppingBag, 
   Truck, 
@@ -40,10 +41,45 @@ import {
   Download,
   ChevronDown,
   ChevronRight,
-  CheckCircle
+  CheckCircle,
+  Calendar,
+  Package
 } from "lucide-react";
 
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+
+// Week = Monday 12:00 local → next Monday 11:59:59 local (cutoff Monday at noon).
+// Same logic used everywhere else (AdminShipments, AdminDashboard, etc.).
+const getWeekKey = (dateStr) => {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const day = d.getDay();
+  const daysSinceMonday = (day - 1 + 7) % 7;
+  const candidate = new Date(d);
+  candidate.setDate(d.getDate() - daysSinceMonday);
+  candidate.setHours(12, 0, 0, 0);
+  if (candidate > d) candidate.setDate(candidate.getDate() - 7);
+  return candidate.toISOString().slice(0, 10);
+};
+
+const getWeekLabel = (dateStr) => {
+  const key = getWeekKey(dateStr);
+  if (!key) return "—";
+  const [y, m, d] = key.split("-").map(Number);
+  const startMonday = new Date(y, m - 1, d, 12, 0, 0);
+  const endMonday = new Date(startMonday);
+  endMonday.setDate(startMonday.getDate() + 7);
+  const fmt = (dt) => {
+    const day = dt.getDate();
+    const monthRaw = dt.toLocaleDateString('es-ES', { month: 'short' });
+    const month = monthRaw.charAt(0).toUpperCase() + monthRaw.slice(1).replace('.', '');
+    return `${day} ${month}`;
+  };
+  return `${fmt(startMonday)} - ${fmt(endMonday)}`;
+};
+
+const getCurrentWeekKey = () => getWeekKey(new Date().toISOString());
 
 export default function ClientDashboard() {
   const { user, logout } = useAuth();
@@ -69,6 +105,7 @@ export default function ClientDashboard() {
   const [shipmentDetailOpen, setShipmentDetailOpen] = useState(false);
   const [selectedShipment, setSelectedShipment] = useState(null);
   const [shipmentProducts, setShipmentProducts] = useState([]);
+  const [shipmentsWeekFilter, setShipmentsWeekFilter] = useState(() => getCurrentWeekKey());
   const [clientInvoices, setClientInvoices] = useState([]);
   const [downloadingPDF, setDownloadingPDF] = useState(null);
   const [expandedWeek, setExpandedWeek] = useState(null);
@@ -839,87 +876,195 @@ export default function ClientDashboard() {
 
           {/* Shipments Tab */}
           <TabsContent value="shipments" className="mt-4">
-            <ScrollArea className="h-[400px]">
-              {shipments.length === 0 ? (
-                <Card className="rounded-2xl border-dashed border-2 border-gray-200">
-                  <CardContent className="p-8 text-center">
-                    <Truck className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500 font-medium">Sin envíos</p>
-                    <p className="text-gray-400 text-sm mt-1">Tus envíos aparecerán aquí</p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="space-y-3">
-                  {shipments.map((shipment) => (
-                    <Card key={shipment.id} className="rounded-xl border-gray-100" data-testid="shipment-item">
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-start mb-3">
-                          <div>
-                            <p className="font-bold text-slate-800">
-                              {shipment.shipping_type === 'with_family' ? 'Con Familiar USA' : 'Sin Familiar USA'}
+            {(() => {
+              // Build week buckets from all shipments + always include current week
+              const weeksMap = {};
+              (shipments || []).forEach(s => {
+                const key = getWeekKey(s.created_at);
+                if (!key) return;
+                if (!weeksMap[key]) weeksMap[key] = { label: getWeekLabel(s.created_at), count: 0, packages: 0, pounds: 0, cost: 0 };
+                weeksMap[key].count += 1;
+                weeksMap[key].cost += s.shipping_cost || 0;
+                if (s.shipping_mode === 'pounds') {
+                  weeksMap[key].pounds += s.weight_pounds || 0;
+                } else {
+                  weeksMap[key].packages += s.package_count || 0;
+                }
+              });
+              const currentKey = getCurrentWeekKey();
+              if (!weeksMap[currentKey]) {
+                weeksMap[currentKey] = { label: getWeekLabel(new Date().toISOString()), count: 0, packages: 0, pounds: 0, cost: 0 };
+              }
+              const weekList = Object.entries(weeksMap).sort((a, b) => b[0].localeCompare(a[0]));
+
+              const filteredShipments = (shipmentsWeekFilter === 'all')
+                ? (shipments || [])
+                : (shipments || []).filter(s => getWeekKey(s.created_at) === shipmentsWeekFilter);
+
+              // KPIs for active filter
+              const kpiCount = filteredShipments.length;
+              const kpiPackages = filteredShipments.filter(s => s.shipping_mode !== 'pounds').reduce((sum, s) => sum + (s.package_count || 0), 0);
+              const kpiPounds = filteredShipments.filter(s => s.shipping_mode === 'pounds').reduce((sum, s) => sum + (s.weight_pounds || 0), 0);
+              const kpiCost = filteredShipments.reduce((sum, s) => sum + (s.shipping_cost || 0), 0);
+
+              const fmtDate = (iso) => {
+                if (!iso) return '—';
+                try {
+                  const d = new Date(iso);
+                  return d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' }) +
+                    ' · ' + d.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit' });
+                } catch { return iso; }
+              };
+
+              return (
+                <>
+                  {/* Week filter + KPIs */}
+                  <div className="mb-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-slate-500" />
+                      <Select value={shipmentsWeekFilter} onValueChange={setShipmentsWeekFilter}>
+                        <SelectTrigger className="h-9 rounded-lg text-xs bg-white flex-1" data-testid="client-shipments-week-filter">
+                          <SelectValue placeholder="Filtrar por semana" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all" data-testid="week-option-all">Todas las semanas</SelectItem>
+                          {weekList.map(([key, w]) => (
+                            <SelectItem key={key} value={key} className="text-xs" data-testid={`week-option-${key}`}>
+                              {w.label} ({w.count})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {kpiCount > 0 && (
+                      <div className="grid grid-cols-3 gap-2" data-testid="client-shipments-kpis">
+                        <Card className="rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+                          <CardContent className="p-3 text-center">
+                            <Package className="h-4 w-4 text-purple-700 mx-auto mb-1" />
+                            <p className="text-lg font-extrabold text-purple-800 leading-none">{kpiCount}</p>
+                            <p className="text-[10px] text-purple-600 mt-1 uppercase tracking-wide">Envíos</p>
+                          </CardContent>
+                        </Card>
+                        <Card className="rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+                          <CardContent className="p-3 text-center">
+                            <Truck className="h-4 w-4 text-blue-700 mx-auto mb-1" />
+                            <p className="text-lg font-extrabold text-blue-800 leading-none">
+                              {kpiPackages > 0 ? kpiPackages : kpiPounds > 0 ? kpiPounds.toFixed(1) : 0}
                             </p>
-                            <p className="text-sm text-gray-500">{shipment.country}</p>
-                            {(shipment.weight_pounds && shipment.weight_pounds > 0) && (
-                              <p className="text-sm text-blue-600 font-bold mt-1">
-                                {shipment.weight_pounds} lbs
-                              </p>
-                            )}
-                          </div>
-                          {getStatusBadge(shipment.status)}
-                        </div>
-                        
-                        {shipment.tracking_number && (
-                          <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                            <p className="text-xs text-gray-500">Tracking:</p>
-                            <p className="font-mono font-bold text-sm">{shipment.tracking_number}</p>
-                          </div>
-                        )}
+                            <p className="text-[10px] text-blue-600 mt-1 uppercase tracking-wide">
+                              {kpiPounds > 0 && kpiPackages === 0 ? 'Libras' : kpiPackages > 0 && kpiPounds === 0 ? 'Paquetes' : 'Pkg/lb'}
+                            </p>
+                          </CardContent>
+                        </Card>
+                        <Card className="rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200">
+                          <CardContent className="p-3 text-center">
+                            <FileText className="h-4 w-4 text-emerald-700 mx-auto mb-1" />
+                            <p className="text-lg font-extrabold text-emerald-800 leading-none">${kpiCost.toFixed(0)}</p>
+                            <p className="text-[10px] text-emerald-600 mt-1 uppercase tracking-wide">Costo</p>
+                          </CardContent>
+                        </Card>
+                      </div>
+                    )}
+                  </div>
 
-                        {shipment.additional_info && (
-                          <div className="bg-blue-50 rounded-lg p-3 mb-3">
-                            <p className="text-xs text-gray-500">Información adicional:</p>
-                            <p className="text-sm text-slate-700">{shipment.additional_info}</p>
-                          </div>
-                        )}
+                  <ScrollArea className="h-[400px]">
+                    {filteredShipments.length === 0 ? (
+                      <Card className="rounded-2xl border-dashed border-2 border-gray-200">
+                        <CardContent className="p-8 text-center">
+                          <Truck className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                          <p className="text-gray-500 font-medium">
+                            {shipmentsWeekFilter === 'all' ? 'Sin envíos' : 'Sin envíos en esta semana'}
+                          </p>
+                          <p className="text-gray-400 text-sm mt-1">
+                            {shipmentsWeekFilter === 'all'
+                              ? 'Tus envíos aparecerán aquí'
+                              : 'Cambia el filtro para ver otras semanas'}
+                          </p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="space-y-3">
+                        {filteredShipments.map((shipment) => (
+                          <Card key={shipment.id} className="rounded-xl border-gray-100" data-testid="shipment-item">
+                            <CardContent className="p-4">
+                              <div className="flex justify-between items-start mb-3">
+                                <div>
+                                  <p className="font-bold text-slate-800">
+                                    {shipment.shipping_type === 'with_family' ? 'Con Familiar USA' : 'Sin Familiar USA'}
+                                  </p>
+                                  <p className="text-sm text-gray-500">{shipment.country}</p>
+                                  <p className="text-xs text-slate-400 mt-1 flex items-center gap-1" data-testid={`shipment-date-${shipment.id}`}>
+                                    <Calendar className="h-3 w-3" />
+                                    {fmtDate(shipment.created_at)}
+                                  </p>
+                                  {!!shipment.weight_pounds && shipment.weight_pounds > 0 && (
+                                    <p className="text-sm text-blue-600 font-bold mt-1">
+                                      {shipment.weight_pounds} lbs
+                                    </p>
+                                  )}
+                                  {shipment.shipping_mode !== 'pounds' && !!shipment.package_count && shipment.package_count > 0 && (
+                                    <p className="text-sm text-purple-600 font-bold mt-1">
+                                      {shipment.package_count} paquete{shipment.package_count === 1 ? '' : 's'}
+                                    </p>
+                                  )}
+                                </div>
+                                {getStatusBadge(shipment.status)}
+                              </div>
 
-                        <div className="flex justify-between items-center text-sm">
-                          <button
-                            onClick={() => {
-                              setSelectedShipment(shipment);
-                              // Find the products for this shipment
-                              const prods = purchases.filter(p => shipment.purchase_ids.includes(p.id));
-                              setShipmentProducts(prods);
-                              setShipmentDetailOpen(true);
-                            }}
-                            className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-                            data-testid={`view-products-${shipment.id}`}
-                          >
-                            <ShoppingBag className="h-4 w-4" />
-                            Ver {shipment.purchase_ids?.length || 0} productos
-                          </button>
-                          <div className="flex items-center gap-2">
-                            {shipment.attachments && shipment.attachments.length > 0 && (
-                              <button
-                                onClick={() => {
-                                  setSelectedAttachments(shipment.attachments);
-                                  setAttachmentDialogOpen(true);
-                                }}
-                                className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100 px-2 py-1 rounded-lg transition-colors"
-                                data-testid={`view-attachments-${shipment.id}`}
-                              >
-                                <Paperclip className="h-3 w-3" />
-                                <span>{shipment.attachments.length} archivo(s)</span>
-                              </button>
-                            )}
-                            <span className="font-bold text-red-600">${shipment.shipping_cost?.toFixed(2) || '0.00'}</span>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
+                              {shipment.tracking_number && (
+                                <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                                  <p className="text-xs text-gray-500">Tracking:</p>
+                                  <p className="font-mono font-bold text-sm">{shipment.tracking_number}</p>
+                                </div>
+                              )}
+
+                              {shipment.additional_info && (
+                                <div className="bg-blue-50 rounded-lg p-3 mb-3">
+                                  <p className="text-xs text-gray-500">Información adicional:</p>
+                                  <p className="text-sm text-slate-700">{shipment.additional_info}</p>
+                                </div>
+                              )}
+
+                              <div className="flex justify-between items-center text-sm">
+                                <button
+                                  onClick={() => {
+                                    setSelectedShipment(shipment);
+                                    const prods = purchases.filter(p => shipment.purchase_ids.includes(p.id));
+                                    setShipmentProducts(prods);
+                                    setShipmentDetailOpen(true);
+                                  }}
+                                  className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                                  data-testid={`view-products-${shipment.id}`}
+                                >
+                                  <ShoppingBag className="h-4 w-4" />
+                                  Ver {shipment.purchase_ids?.length || 0} productos
+                                </button>
+                                <div className="flex items-center gap-2">
+                                  {shipment.attachments && shipment.attachments.length > 0 && (
+                                    <button
+                                      onClick={() => {
+                                        setSelectedAttachments(shipment.attachments);
+                                        setAttachmentDialogOpen(true);
+                                      }}
+                                      className="flex items-center gap-1 text-xs text-green-600 hover:text-green-700 bg-green-50 hover:bg-green-100 px-2 py-1 rounded-lg transition-colors"
+                                      data-testid={`view-attachments-${shipment.id}`}
+                                    >
+                                      <Paperclip className="h-3 w-3" />
+                                      <span>{shipment.attachments.length} archivo(s)</span>
+                                    </button>
+                                  )}
+                                  <span className="font-bold text-red-600">${shipment.shipping_cost?.toFixed(2) || '0.00'}</span>
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </ScrollArea>
+                </>
+              );
+            })()}
           </TabsContent>
 
           {/* Notifications Tab */}
