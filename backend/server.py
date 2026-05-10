@@ -1974,18 +1974,45 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
         ]).to_list(1)
         saldo_pend = agg[0]["total"] if agg else 0
     
-    # Get total_a_pagar and saldo_a_favor from the last invoice
+    # Compute pending_debt + saldo_a_favor LOCALLY from the latest invoice
+    # using the SAME formula the PDF uses (subtotal + commission + tax +
+    # shipping_cost_from_shipment + saldo_pendiente − deposits − saldo_a_favor_anterior).
+    # We never trust the cached `total_a_pagar` field because it can go stale
+    # if shipping_cost is updated only on the linked shipment doc.
     last_total_a_pagar = 0
     last_saldo_a_favor = 0
     if customer_id:
         last_inv = await db.invoices.find_one(
             {"tenant_id": tid, "customer_id": customer_id, "is_annulled": {"$ne": True}},
-            {"_id": 0, "total_a_pagar": 1, "saldo_a_favor": 1},
+            {"_id": 0, "id": 1, "subtotal": 1, "total_commission": 1, "total_tax": 1,
+             "shipping_cost": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1,
+             "deposits_applied": 1},
             sort=[("created_at", -1)]
         )
         if last_inv:
-            last_total_a_pagar = last_inv.get("total_a_pagar", 0) or 0
-            last_saldo_a_favor = last_inv.get("saldo_a_favor", 0) or 0
+            inv_subtotal = float(last_inv.get("subtotal", 0) or 0)
+            inv_commission = float(last_inv.get("total_commission", 0) or 0)
+            inv_tax = float(last_inv.get("total_tax", 0) or 0)
+            inv_saldo_pend = float(last_inv.get("saldo_pendiente", 0) or 0)
+            inv_saldo_favor_ant = float(last_inv.get("saldo_a_favor_anterior", 0) or 0)
+            inv_deposits = float(last_inv.get("deposits_applied", 0) or 0)
+            # Pull shipping cost from the linked shipment first (source of truth);
+            # fall back to invoice.shipping_cost if no shipment exists.
+            ship_cost = float(last_inv.get("shipping_cost", 0) or 0)
+            ship_doc = await db.shipments.find_one(
+                {"invoice_id": last_inv["id"], "tenant_id": tid},
+                {"_id": 0, "shipping_cost": 1}
+            )
+            if ship_doc:
+                ship_cost = float(ship_doc.get("shipping_cost", 0) or 0)
+            grand_total = inv_subtotal + inv_commission + inv_tax + ship_cost + inv_saldo_pend
+            credits = inv_deposits + inv_saldo_favor_ant
+            if credits >= grand_total:
+                last_total_a_pagar = 0
+                last_saldo_a_favor = round(credits - grand_total, 2)
+            else:
+                last_total_a_pagar = round(grand_total - credits, 2)
+                last_saldo_a_favor = 0
     
     # Sum pending deposit amounts (AI-detected if admin hasn't set amount yet)
     pending_cursor = db.wallet_transactions.find(
