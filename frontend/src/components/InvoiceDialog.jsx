@@ -323,7 +323,8 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
       purchases: currentInvoice.purchases,
       subtotal: currentInvoice.subtotal,
       total_tax: currentInvoice.total_tax,
-      total: currentInvoice.total
+      total: currentInvoice.total,
+      shipment_id: currentInvoice.shipment_id || null
     }));
     onOpenChange(false);
     navigate('/admin/shipments?from_invoice=true');

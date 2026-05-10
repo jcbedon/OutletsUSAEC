@@ -757,6 +757,26 @@ export default function AdminShipments() {
                   </div>
                 )}
 
+                {/* Warning: invoice already has a shipment attached */}
+                {invoiceData?.shipment_id && (
+                  <div
+                    className="p-4 rounded-xl bg-red-50 border-2 border-red-300 flex items-start gap-3"
+                    data-testid="invoice-has-shipment-warning"
+                    role="alert"
+                  >
+                    <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                    <div className="space-y-1">
+                      <p className="font-bold text-red-800 text-sm">Ya existe un envío en esta factura</p>
+                      <p className="text-xs text-red-700 leading-relaxed">
+                        La factura #{invoiceData.invoice_number} ya tiene un envío asociado. No puedes crear otro envío para la misma factura.
+                      </p>
+                      <p className="text-xs text-red-700">
+                        Si necesitas modificarlo, edita el envío existente desde el listado o elimínalo primero.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Client Select with Search - disabled when coming from invoice */}
                 <div>
                   <Label>Cliente</Label>
