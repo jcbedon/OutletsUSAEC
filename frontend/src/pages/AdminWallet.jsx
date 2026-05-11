@@ -22,6 +22,39 @@ import QRCode from "qrcode";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
+// Week = Monday 12:00 local → next Monday 11:59:59 local (cutoff Monday at noon).
+// Same logic used everywhere else (AdminShipments, AdminDashboard, ClientDashboard).
+const getWeekKey = (dateStr) => {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const day = d.getDay();
+  const daysSinceMonday = (day - 1 + 7) % 7;
+  const candidate = new Date(d);
+  candidate.setDate(d.getDate() - daysSinceMonday);
+  candidate.setHours(12, 0, 0, 0);
+  if (candidate > d) candidate.setDate(candidate.getDate() - 7);
+  return candidate.toISOString().slice(0, 10);
+};
+
+const getWeekLabel = (dateStr) => {
+  const key = getWeekKey(dateStr);
+  if (!key) return "—";
+  const [y, m, d] = key.split("-").map(Number);
+  const startMonday = new Date(y, m - 1, d, 12, 0, 0);
+  const endMonday = new Date(startMonday);
+  endMonday.setDate(startMonday.getDate() + 7);
+  const fmt = (dt) => {
+    const day = dt.getDate();
+    const monthRaw = dt.toLocaleDateString('es-ES', { month: 'short' });
+    const month = monthRaw.charAt(0).toUpperCase() + monthRaw.slice(1).replace('.', '');
+    return `${day} ${month}`;
+  };
+  return `${fmt(startMonday)} - ${fmt(endMonday)}`;
+};
+
+const getCurrentWeekKey = () => getWeekKey(new Date().toISOString());
+
 export default function AdminWallet() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -40,6 +73,7 @@ export default function AdminWallet() {
   const [showHistory, setShowHistory] = useState(false);
   const [historyFilter, setHistoryFilter] = useState("all");
   const [historySearch, setHistorySearch] = useState("");
+  const [historyWeekFilter, setHistoryWeekFilter] = useState(() => getCurrentWeekKey());
   
   // Recharge Report state
   const [showReport, setShowReport] = useState(false);
@@ -391,9 +425,38 @@ export default function AdminWallet() {
     const matchesFilter = historyFilter === "all" || d.status === historyFilter;
     const matchesSearch = historySearch === "" || 
       d.user_name?.toLowerCase().includes(historySearch.toLowerCase()) ||
-      d.customer_id?.toLowerCase().includes(historySearch.toLowerCase());
-    return matchesFilter && matchesSearch;
+      d.customer_id?.toLowerCase().includes(historySearch.toLowerCase()) ||
+      d.reference_number?.toLowerCase().includes(historySearch.toLowerCase());
+    const matchesWeek = historyWeekFilter === "all" || getWeekKey(d.created_at) === historyWeekFilter;
+    return matchesFilter && matchesSearch && matchesWeek;
   });
+
+  // Week buckets for the week-filter dropdown (always include current week).
+  const historyWeeksMap = {};
+  allDeposits.forEach(d => {
+    const key = getWeekKey(d.created_at);
+    if (!key) return;
+    if (!historyWeeksMap[key]) historyWeeksMap[key] = { label: getWeekLabel(d.created_at), count: 0, total: 0 };
+    historyWeeksMap[key].count += 1;
+    if (d.status === 'approved') historyWeeksMap[key].total += d.amount || 0;
+  });
+  const _currentWeekKey = getCurrentWeekKey();
+  if (!historyWeeksMap[_currentWeekKey]) {
+    historyWeeksMap[_currentWeekKey] = { label: getWeekLabel(new Date().toISOString()), count: 0, total: 0 };
+  }
+  const historyWeekList = Object.entries(historyWeeksMap).sort((a, b) => b[0].localeCompare(a[0]));
+
+  // Group filtered history by week (used when "Todas las semanas" is active)
+  const groupedHistoryByWeek = (() => {
+    const groups = {};
+    filteredHistory.forEach(d => {
+      const key = getWeekKey(d.created_at) || 'sin-fecha';
+      if (!groups[key]) groups[key] = { label: key === 'sin-fecha' ? 'Sin fecha' : getWeekLabel(d.created_at), items: [], totalApproved: 0 };
+      groups[key].items.push(d);
+      if (d.status === 'approved') groups[key].totalApproved += d.amount || 0;
+    });
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+  })();
 
   const filteredClients = clients
     .filter(c => 
@@ -841,17 +904,30 @@ export default function AdminWallet() {
         {/* History Filters */}
         {showHistory && (
           <div className="space-y-3 mb-4">
-            <div className="flex gap-3">
-              <div className="relative flex-1">
+            <div className="flex gap-3 flex-wrap">
+              <div className="relative flex-1 min-w-[200px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input 
-                  placeholder="Buscar por nombre o ID..."
+                  placeholder="Buscar por nombre, ID o comprobante..."
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
                   className="pl-9 rounded-xl"
                   data-testid="history-search-input"
                 />
               </div>
+              <Select value={historyWeekFilter} onValueChange={setHistoryWeekFilter}>
+                <SelectTrigger className="w-52 rounded-xl" data-testid="history-week-filter-trigger">
+                  <SelectValue placeholder="Filtrar por semana" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" data-testid="history-week-option-all">Todas las semanas</SelectItem>
+                  {historyWeekList.map(([key, w]) => (
+                    <SelectItem key={key} value={key} className="text-xs" data-testid={`history-week-option-${key}`}>
+                      {w.label} ({w.count})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select value={historyFilter} onValueChange={setHistoryFilter}>
                 <SelectTrigger className="w-40 rounded-xl" data-testid="history-filter-trigger">
                   <SelectValue />
@@ -1080,7 +1156,7 @@ export default function AdminWallet() {
               </div>
             )
           ) : (
-            // History View
+            // History View — grouped by week
             filteredHistory.length === 0 ? (
               <Card className="rounded-2xl border-dashed border-2 border-gray-200">
                 <CardContent className="p-8 text-center">
@@ -1090,68 +1166,83 @@ export default function AdminWallet() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="space-y-3">
-                {filteredHistory.map((deposit) => {
-                  const proofUrl = getProofUrl(deposit);
-                  return (
-                    <Card key={deposit.id} className={`rounded-xl ${deposit.is_deleted ? 'opacity-70 border-dashed border-2 border-red-200' : ''}`} data-testid="history-deposit-item">
-                      <CardContent className="p-4">
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <Badge variant="outline" className="font-bold text-xs">#{deposit.customer_id}</Badge>
-                              <span className="font-semibold text-slate-800">{deposit.user_name}</span>
-                              {getStatusBadge(deposit.status)}
-                              {deposit.is_deleted && (
-                                <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px] uppercase font-bold" data-testid="deposit-deleted-badge">Eliminada</Badge>
-                              )}
+              <div className="space-y-5">
+                {groupedHistoryByWeek.map(([weekKey, group]) => (
+                  <div key={weekKey} className="space-y-3" data-testid={`history-week-group-${weekKey}`}>
+                    <div className="flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-sm py-1 z-10 border-b border-slate-200">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                        Semana: {group.label}
+                      </p>
+                      <span className="text-xs font-semibold text-slate-600">
+                        {group.items.length} {group.items.length === 1 ? 'recarga' : 'recargas'}
+                        {group.totalApproved > 0 && (
+                          <span className="ml-2 text-green-700">· Aprobadas: ${group.totalApproved.toFixed(2)}</span>
+                        )}
+                      </span>
+                    </div>
+                    {group.items.map((deposit) => {
+                      const proofUrl = getProofUrl(deposit);
+                      return (
+                        <Card key={deposit.id} className={`rounded-xl ${deposit.is_deleted ? 'opacity-70 border-dashed border-2 border-red-200' : ''}`} data-testid="history-deposit-item">
+                          <CardContent className="p-4">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <Badge variant="outline" className="font-bold text-xs">#{deposit.customer_id}</Badge>
+                                  <span className="font-semibold text-slate-800">{deposit.user_name}</span>
+                                  {getStatusBadge(deposit.status)}
+                                  {deposit.is_deleted && (
+                                    <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px] uppercase font-bold" data-testid="deposit-deleted-badge">Eliminada</Badge>
+                                  )}
+                                </div>
+                                <p className="text-sm text-gray-500">{deposit.description}</p>
+                                <p className="text-xs text-gray-400 mt-1">
+                                  {new Date(deposit.created_at).toLocaleDateString('es-ES', {
+                                    day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                                  })}
+                                </p>
+                              </div>
+                              <div className="text-right flex items-center gap-2">
+                                {proofUrl && (
+                                  <Dialog>
+                                    <DialogTrigger asChild>
+                                      <Button variant="ghost" size="sm" className="text-gray-400 hover:text-gray-600">
+                                        <Image className="h-4 w-4" />
+                                      </Button>
+                                    </DialogTrigger>
+                                    <DialogContent className="rounded-2xl max-w-2xl">
+                                      <DialogHeader>
+                                        <DialogTitle>Comprobante - #{deposit.customer_id}</DialogTitle>
+                                      </DialogHeader>
+                                      <img src={proofUrl} alt="Comprobante" className="w-full rounded-xl" />
+                                    </DialogContent>
+                                  </Dialog>
+                                )}
+                                <div className="bg-gray-50 px-3 py-1 rounded-lg">
+                                  <p className={`text-xl font-bold ${deposit.status === 'approved' ? 'text-green-600' : deposit.status === 'rejected' ? 'text-red-600' : 'text-yellow-600'}`}>
+                                    ${deposit.amount.toFixed(2)}
+                                  </p>
+                                </div>
+                              </div>
                             </div>
-                            <p className="text-sm text-gray-500">{deposit.description}</p>
-                            <p className="text-xs text-gray-400 mt-1">
-                              {new Date(deposit.created_at).toLocaleDateString('es-ES', {
-                                day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
-                              })}
-                            </p>
-                          </div>
-                          <div className="text-right flex items-center gap-2">
-                            {proofUrl && (
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button variant="ghost" size="sm" className="text-gray-400 hover:text-gray-600">
-                                    <Image className="h-4 w-4" />
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent className="rounded-2xl max-w-2xl">
-                                  <DialogHeader>
-                                    <DialogTitle>Comprobante - #{deposit.customer_id}</DialogTitle>
-                                  </DialogHeader>
-                                  <img src={proofUrl} alt="Comprobante" className="w-full rounded-xl" />
-                                </DialogContent>
-                              </Dialog>
-                            )}
-                            <div className="bg-gray-50 px-3 py-1 rounded-lg">
-                              <p className={`text-xl font-bold ${deposit.status === 'approved' ? 'text-green-600' : deposit.status === 'rejected' ? 'text-red-600' : 'text-yellow-600'}`}>
-                                ${deposit.amount.toFixed(2)}
-                              </p>
+                            <div className="flex justify-end mt-2 pt-2 border-t border-gray-100">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50 rounded-lg"
+                                onClick={() => openDeleteDialog(deposit.id)}
+                                data-testid={`delete-deposit-${deposit.id}`}
+                              >
+                                <Trash2 className="h-3 w-3 mr-1" />
+                                Eliminar
+                              </Button>
                             </div>
-                          </div>
-                        </div>
-                        <div className="flex justify-end mt-2 pt-2 border-t border-gray-100">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 text-xs text-red-600 border-red-200 hover:bg-red-50 rounded-lg"
-                            onClick={() => openDeleteDialog(deposit.id)}
-                            data-testid={`delete-deposit-${deposit.id}`}
-                          >
-                            <Trash2 className="h-3 w-3 mr-1" />
-                            Eliminar
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             )
           )}
