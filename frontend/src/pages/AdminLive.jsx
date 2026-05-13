@@ -69,6 +69,39 @@ const DEFAULT_TAX_OPTIONS = [
   { value: "other", label: "Otro" }
 ];
 
+// Week boundary helper: Monday 12:00 local → next Monday 11:59:59 local.
+// Same logic used in AdminShipments, AdminWallet, ClientDashboard.
+const getWeekKey = (dateStr) => {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const day = d.getDay();
+  const daysSinceMonday = (day - 1 + 7) % 7;
+  const candidate = new Date(d);
+  candidate.setDate(d.getDate() - daysSinceMonday);
+  candidate.setHours(12, 0, 0, 0);
+  if (candidate > d) candidate.setDate(candidate.getDate() - 7);
+  return candidate.toISOString().slice(0, 10);
+};
+
+const getWeekLabel = (dateStr) => {
+  const key = getWeekKey(dateStr);
+  if (!key) return "—";
+  const [y, m, d] = key.split("-").map(Number);
+  const startMonday = new Date(y, m - 1, d, 12, 0, 0);
+  const endMonday = new Date(startMonday);
+  endMonday.setDate(startMonday.getDate() + 7);
+  const fmt = (dt) => {
+    const day = dt.getDate();
+    const monthRaw = dt.toLocaleDateString('es-ES', { month: 'short' });
+    const month = monthRaw.charAt(0).toUpperCase() + monthRaw.slice(1).replace('.', '');
+    return `${day} ${month}`;
+  };
+  return `${fmt(startMonday)} - ${fmt(endMonday)}`;
+};
+
+const getCurrentWeekKey = () => getWeekKey(new Date().toISOString());
+
 export default function AdminLive() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -82,6 +115,7 @@ export default function AdminLive() {
   const [activeLive, setActiveLive] = useState(null);
   const [selectedLive, setSelectedLive] = useState(null); // Live currently being viewed/edited
   const [lives, setLives] = useState([]);
+  const [livesWeekFilter, setLivesWeekFilter] = useState(() => getCurrentWeekKey());
   const [purchases, setPurchases] = useState([]);
   const [activeClients, setActiveClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -816,42 +850,124 @@ export default function AdminLive() {
                   </div>
                 )}
 
-                {/* Ended Lives */}
-                {lives.filter(l => l.status === "ended" || l.status === "completed").length > 0 && (
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-800 mb-4">Lives Finalizados</h2>
-                    <div className="space-y-3">
-                      {lives.filter(l => l.status === "ended" || l.status === "completed").map((live) => (
-                        <Card key={live.id} className="rounded-xl bg-gray-50">
-                          <CardContent className="p-4 flex items-center justify-between">
-                            <div>
-                              <p className="font-bold text-slate-800">{live.title}</p>
-                              <p className="text-sm text-blue-600 font-medium">
-                                <Store className="h-3 w-3 inline mr-1" />
-                                {live.store || "Sin tienda"}
-                              </p>
-                              <p className="text-sm text-gray-500">
-                                {live.purchase_count || 0} compras • ${(live.total_sales || 0).toFixed(2)} ventas
-                              </p>
-                              <p className="text-xs text-gray-400">
-                                Finalizado: {new Date(live.ended_at || live.created_at).toLocaleDateString('es-ES')}
-                              </p>
-                            </div>
-                            <Button 
-                              onClick={() => handleSelectLive(live)}
-                              variant="outline"
-                              className="font-bold rounded-xl"
-                              data-testid={`open-live-${live.id}`}
-                            >
-                              <Edit className="h-4 w-4 mr-2" />
-                              Abrir
-                            </Button>
+                {/* Ended Lives — filtered/grouped by week with Monday 12:00 cutoff */}
+                {(() => {
+                  const finalizedLives = lives.filter(l => l.status === "ended" || l.status === "completed");
+                  if (finalizedLives.length === 0) return null;
+
+                  // Build the week-bucket dropdown options (always include current week)
+                  const weeksMap = {};
+                  finalizedLives.forEach(l => {
+                    const ref = l.ended_at || l.created_at;
+                    const key = getWeekKey(ref);
+                    if (!key) return;
+                    if (!weeksMap[key]) weeksMap[key] = { label: getWeekLabel(ref), count: 0, sales: 0 };
+                    weeksMap[key].count += 1;
+                    weeksMap[key].sales += l.total_sales || 0;
+                  });
+                  const currentKey = getCurrentWeekKey();
+                  if (!weeksMap[currentKey]) {
+                    weeksMap[currentKey] = { label: getWeekLabel(new Date().toISOString()), count: 0, sales: 0 };
+                  }
+                  const weekList = Object.entries(weeksMap).sort((a, b) => b[0].localeCompare(a[0]));
+
+                  const filteredFinalized = livesWeekFilter === "all"
+                    ? finalizedLives
+                    : finalizedLives.filter(l => getWeekKey(l.ended_at || l.created_at) === livesWeekFilter);
+
+                  // Group by week only when "Todas las semanas"
+                  const groupedByWeek = livesWeekFilter === "all"
+                    ? (() => {
+                        const buckets = {};
+                        filteredFinalized.forEach(l => {
+                          const key = getWeekKey(l.ended_at || l.created_at) || "sin-fecha";
+                          if (!buckets[key]) buckets[key] = { label: key === "sin-fecha" ? "Sin fecha" : getWeekLabel(l.ended_at || l.created_at), items: [], totalSales: 0 };
+                          buckets[key].items.push(l);
+                          buckets[key].totalSales += l.total_sales || 0;
+                        });
+                        return Object.entries(buckets).sort((a, b) => b[0].localeCompare(a[0]));
+                      })()
+                    : null;
+
+                  const renderLiveCard = (live) => (
+                    <Card key={live.id} className="rounded-xl bg-gray-50">
+                      <CardContent className="p-4 flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-800">{live.title}</p>
+                          <p className="text-sm text-blue-600 font-medium">
+                            <Store className="h-3 w-3 inline mr-1" />
+                            {live.store || "Sin tienda"}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {live.purchase_count || 0} compras • ${(live.total_sales || 0).toFixed(2)} ventas
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            Finalizado: {new Date(live.ended_at || live.created_at).toLocaleDateString('es-ES')}
+                          </p>
+                        </div>
+                        <Button
+                          onClick={() => handleSelectLive(live)}
+                          variant="outline"
+                          className="font-bold rounded-xl"
+                          data-testid={`open-live-${live.id}`}
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          Abrir
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  );
+
+                  return (
+                    <div>
+                      <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
+                        <h2 className="text-lg font-bold text-slate-800">Lives Finalizados</h2>
+                        <Select value={livesWeekFilter} onValueChange={setLivesWeekFilter}>
+                          <SelectTrigger className="h-9 rounded-lg text-xs bg-white w-52" data-testid="lives-week-filter">
+                            <SelectValue placeholder="Filtrar por semana" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all" data-testid="lives-week-option-all">Todas las semanas</SelectItem>
+                            {weekList.map(([key, w]) => (
+                              <SelectItem key={key} value={key} className="text-xs" data-testid={`lives-week-option-${key}`}>
+                                {w.label} ({w.count})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {filteredFinalized.length === 0 ? (
+                        <Card className="rounded-xl border-dashed border-2 border-gray-200">
+                          <CardContent className="p-6 text-center">
+                            <p className="text-sm text-gray-500 font-medium">Sin lives finalizados en esta semana</p>
+                            <p className="text-xs text-gray-400 mt-1">Cambia el filtro para ver otras semanas</p>
                           </CardContent>
                         </Card>
-                      ))}
+                      ) : groupedByWeek ? (
+                        <div className="space-y-5">
+                          {groupedByWeek.map(([wk, group]) => (
+                            <div key={wk} className="space-y-3" data-testid={`lives-week-group-${wk}`}>
+                              <div className="flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-sm py-1 z-10 border-b border-slate-200">
+                                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                                  Semana: {group.label}
+                                </p>
+                                <span className="text-xs font-semibold text-slate-600">
+                                  {group.items.length} live{group.items.length === 1 ? '' : 's'} · ${group.totalSales.toFixed(2)}
+                                </span>
+                              </div>
+                              {group.items.map(renderLiveCard)}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {filteredFinalized.map(renderLiveCard)}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
           </div>

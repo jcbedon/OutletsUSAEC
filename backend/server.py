@@ -42,6 +42,64 @@ async def startup_event():
         logging.info("Object storage initialized successfully")
     except Exception as e:
         logging.warning(f"Object storage init failed (will retry on first upload): {e}")
+    # Spawn background scheduler that auto-closes any active live every Monday at 12:00 local (Ecuador, UTC-5).
+    import asyncio as _asyncio
+    _asyncio.create_task(_auto_close_lives_scheduler())
+
+
+async def _auto_close_lives_scheduler():
+    """Every Monday at 12:00 local Ecuador time (UTC-5 → 17:00 UTC), close any
+    live whose status is "active". Runs once per minute, fires exactly once per
+    Monday-noon transition. Robust against restarts: a per-week guard on the
+    database (`system_state.lives_auto_closed_week`) prevents double-runs.
+    """
+    import asyncio as _asyncio
+    from datetime import datetime as _dt, timezone as _tz
+    while True:
+        try:
+            now_utc = _dt.now(_tz.utc)
+            # Convert UTC time to local Ecuador (UTC-5) without external tz deps
+            local_now = now_utc - timedelta(hours=5)
+            # weekday: Monday=0
+            if local_now.weekday() == 0 and local_now.hour == 12:
+                # Compute a stable week-bucket key (yyyy-mm-dd of this Monday-noon)
+                week_key = local_now.strftime("%Y-%m-%d")
+                state = await db.system_state.find_one({"_id": "lives_auto_closed"}, {"_id": 1, "week": 1})
+                already_done = state and state.get("week") == week_key
+                if not already_done:
+                    res = await db.lives.update_many(
+                        {"status": "active"},
+                        {"$set": {"status": "completed", "ended_at": now_utc.isoformat(), "auto_closed": True}}
+                    )
+                    await db.system_state.update_one(
+                        {"_id": "lives_auto_closed"},
+                        {"$set": {"week": week_key, "closed_count": res.modified_count, "ran_at": now_utc.isoformat()}},
+                        upsert=True
+                    )
+                    if res.modified_count:
+                        logger.info(f"[auto_close_lives] Closed {res.modified_count} active live(s) at {now_utc.isoformat()} (week {week_key})")
+                    # Audit log entry (per-tenant not needed; system-wide event)
+                    try:
+                        await db.audit_logs.insert_one({
+                            "id": str(uuid.uuid4()),
+                            "tenant_id": "system",
+                            "user_id": "system",
+                            "user_name": "Sistema",
+                            "user_role": "system",
+                            "action": "auto_close_lives",
+                            "entity_type": "live",
+                            "entity_id": None,
+                            "entity_name": f"Cierre semanal automático ({week_key})",
+                            "details": {"closed_count": res.modified_count, "week_key": week_key},
+                            "ip_address": None,
+                            "created_at": now_utc.isoformat()
+                        })
+                    except Exception:
+                        pass
+        except Exception as _err:
+            logger.warning(f"[auto_close_lives] iteration failed: {_err}")
+        # Sleep ~60s. We accept a 1-minute drift around 12:00 (acceptable).
+        await _asyncio.sleep(60)
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
