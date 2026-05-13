@@ -1221,7 +1221,19 @@ export default function AdminShipments() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => navigate('/admin/pending-shipments')}
+                        className="h-9 rounded-lg text-xs gap-1.5 bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100"
+                        data-testid="open-pending-shipments-btn"
+                        title="Ver facturas con envío pendiente filtradas por semana"
+                      >
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        Facturas pendientes
+                      </Button>
                       <Button
                         type="button"
                         variant="outline"
