@@ -110,6 +110,7 @@ export default function ClientDashboard() {
   const [downloadingPDF, setDownloadingPDF] = useState(null);
   const [expandedWeek, setExpandedWeek] = useState(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsWeekFilter, setDetailsWeekFilter] = useState(() => getCurrentWeekKey());
   
   const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
 
@@ -1186,83 +1187,199 @@ export default function ClientDashboard() {
           </DialogHeader>
 
           {(() => {
-            const totalFacturado = (clientInvoices || [])
-              .filter(i => !i.is_annulled)
-              .reduce((s, i) => s + (i.total || 0) + (i.shipping_cost || 0), 0);
+            const activeInvoices = (clientInvoices || []).filter(i => !i.is_annulled);
             const recargasAprobadas = (transactions || []).filter(
               t => t.type === "deposit" && t.status === "approved" && !t.is_deleted
             );
-            const totalRecargado = recargasAprobadas.reduce((s, t) => s + (t.amount || 0), 0);
+            const allShipments = shipments || [];
+
+            // Build week buckets from invoices + recargas + shipments (always include current week)
+            const weeksMap = {};
+            const addWeek = (dateStr) => {
+              const key = getWeekKey(dateStr);
+              if (!key) return;
+              if (!weeksMap[key]) weeksMap[key] = { label: getWeekLabel(dateStr), count: 0 };
+              weeksMap[key].count += 1;
+            };
+            activeInvoices.forEach(i => addWeek(i.created_at));
+            recargasAprobadas.forEach(t => addWeek(t.approved_at || t.created_at));
+            allShipments.forEach(s => addWeek(s.created_at));
+            const _currentWk = getCurrentWeekKey();
+            if (!weeksMap[_currentWk]) {
+              weeksMap[_currentWk] = { label: getWeekLabel(new Date().toISOString()), count: 0 };
+            }
+            const weekList = Object.entries(weeksMap).sort((a, b) => b[0].localeCompare(a[0]));
+
+            const matchesWeek = (dateStr) => detailsWeekFilter === "all" || getWeekKey(dateStr) === detailsWeekFilter;
+
+            const filteredInvoices = activeInvoices.filter(i => matchesWeek(i.created_at));
+            const filteredRecargas = recargasAprobadas.filter(t => matchesWeek(t.approved_at || t.created_at));
+            const filteredShipments = allShipments.filter(s => matchesWeek(s.created_at));
+
+            // KPIs scoped to selected week (or all)
+            const totalFacturado = filteredInvoices.reduce((s, i) => s + (i.total || 0) + (i.shipping_cost || 0), 0);
+            const totalRecargado = filteredRecargas.reduce((s, t) => s + (t.amount || 0), 0);
+            const totalEnvios = filteredShipments.reduce((s, sh) => s + (sh.shipping_cost || 0), 0);
+
+            // Grouping helpers — only when "all" is selected
+            const groupByWeek = (items, getDate) => {
+              if (detailsWeekFilter !== "all") return null;
+              const buckets = {};
+              items.forEach(it => {
+                const key = getWeekKey(getDate(it)) || "sin-fecha";
+                if (!buckets[key]) buckets[key] = { label: key === "sin-fecha" ? "Sin fecha" : getWeekLabel(getDate(it)), items: [], total: 0 };
+                buckets[key].items.push(it);
+              });
+              return Object.entries(buckets).sort((a, b) => b[0].localeCompare(a[0]));
+            };
+            const invoiceGroups = groupByWeek(filteredInvoices, (i) => i.created_at);
+            const rechargeGroups = groupByWeek(filteredRecargas, (t) => t.approved_at || t.created_at);
+            const shipmentGroups = groupByWeek(filteredShipments, (s) => s.created_at);
+
+            const renderInvoiceRow = (inv) => {
+              const total = (inv.total || 0) + (inv.shipping_cost || 0);
+              return (
+                <div key={inv.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-3 py-2" data-testid="details-invoice-row">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-bold truncate text-slate-800">{inv.invoice_number}</p>
+                    <p className="text-[10px] text-gray-500">
+                      {new Date(inv.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </p>
+                  </div>
+                  <p className="font-extrabold ml-2 text-slate-900">${total.toFixed(2)}</p>
+                </div>
+              );
+            };
+            const renderRechargeRow = (tx) => (
+              <div key={tx.id} className="flex items-center justify-between text-xs bg-green-50/60 rounded-lg px-3 py-2" data-testid="details-recharge-row">
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-green-800">{tx.reference_number ? `Ref. ${tx.reference_number}` : 'Recarga'}</p>
+                  <p className="text-[10px] text-green-700/70">
+                    {new Date(tx.approved_at || tx.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+                <p className="font-extrabold text-green-700 ml-2">+${(tx.amount || 0).toFixed(2)}</p>
+              </div>
+            );
+            const renderShipmentRow = (sh) => (
+              <div key={sh.id} className="flex items-center justify-between text-xs bg-purple-50/60 rounded-lg px-3 py-2" data-testid="details-shipment-row">
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-purple-800 truncate">
+                    {sh.shipping_type === 'with_family' ? 'Con Familiar USA' : 'Sin Familiar USA'}
+                  </p>
+                  <p className="text-[10px] text-purple-700/70">
+                    {new Date(sh.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    {sh.tracking_number ? ` · ${sh.tracking_number}` : ''}
+                  </p>
+                </div>
+                <p className="font-extrabold text-purple-700 ml-2">${(sh.shipping_cost || 0).toFixed(2)}</p>
+              </div>
+            );
+
             return (
               <div className="space-y-4 pt-2 text-sm">
-                {/* Top summary */}
-                <div className="grid grid-cols-2 gap-2">
+                {/* Week filter */}
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-slate-500" />
+                  <Select value={detailsWeekFilter} onValueChange={setDetailsWeekFilter}>
+                    <SelectTrigger className="h-9 rounded-lg text-xs bg-white flex-1" data-testid="details-week-filter">
+                      <SelectValue placeholder="Filtrar por semana" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all" data-testid="details-week-option-all">Todas las semanas</SelectItem>
+                      {weekList.map(([key, w]) => (
+                        <SelectItem key={key} value={key} className="text-xs" data-testid={`details-week-option-${key}`}>
+                          {w.label} ({w.count})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* KPIs */}
+                <div className="grid grid-cols-3 gap-2">
                   <div className="rounded-xl bg-blue-50 border border-blue-100 p-3" data-testid="summary-invoices">
-                    <p className="text-[11px] uppercase font-semibold text-blue-700">Total Facturado</p>
-                    <p className="text-lg font-extrabold text-blue-900">${totalFacturado.toFixed(2)}</p>
-                    <p className="text-[10px] text-blue-700/70 mt-0.5">{(clientInvoices || []).filter(i => !i.is_annulled).length} factura(s)</p>
+                    <p className="text-[10px] uppercase font-semibold text-blue-700">Facturado</p>
+                    <p className="text-base font-extrabold text-blue-900 leading-tight">${totalFacturado.toFixed(2)}</p>
+                    <p className="text-[10px] text-blue-700/70 mt-0.5">{filteredInvoices.length} factura(s)</p>
                   </div>
                   <div className="rounded-xl bg-green-50 border border-green-100 p-3" data-testid="summary-recharges">
-                    <p className="text-[11px] uppercase font-semibold text-green-700">Total Recargado</p>
-                    <p className="text-lg font-extrabold text-green-900">${totalRecargado.toFixed(2)}</p>
-                    <p className="text-[10px] text-green-700/70 mt-0.5">{recargasAprobadas.length} recarga(s)</p>
+                    <p className="text-[10px] uppercase font-semibold text-green-700">Recargado</p>
+                    <p className="text-base font-extrabold text-green-900 leading-tight">${totalRecargado.toFixed(2)}</p>
+                    <p className="text-[10px] text-green-700/70 mt-0.5">{filteredRecargas.length} recarga(s)</p>
+                  </div>
+                  <div className="rounded-xl bg-purple-50 border border-purple-100 p-3" data-testid="summary-shipments">
+                    <p className="text-[10px] uppercase font-semibold text-purple-700">Envíos</p>
+                    <p className="text-base font-extrabold text-purple-900 leading-tight">${totalEnvios.toFixed(2)}</p>
+                    <p className="text-[10px] text-purple-700/70 mt-0.5">{filteredShipments.length} envío(s)</p>
                   </div>
                 </div>
 
                 {/* Invoices list */}
                 <div>
-                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Facturas compradas</p>
-                  {(clientInvoices || []).length === 0 ? (
-                    <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 text-center">Aún no tienes facturas.</p>
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Facturas</p>
+                  {filteredInvoices.length === 0 ? (
+                    <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 text-center">
+                      {detailsWeekFilter === "all" ? "Aún no tienes facturas." : "Sin facturas en esta semana."}
+                    </p>
+                  ) : invoiceGroups ? (
+                    <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+                      {invoiceGroups.map(([wk, g]) => (
+                        <div key={wk} className="space-y-1.5">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{g.label}</p>
+                          {g.items.map(renderInvoiceRow)}
+                        </div>
+                      ))}
+                    </div>
                   ) : (
                     <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {clientInvoices.map((inv) => {
-                        const total = (inv.total || 0) + (inv.shipping_cost || 0);
-                        return (
-                          <div key={inv.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-3 py-2" data-testid="details-invoice-row">
-                            <div className="min-w-0 flex-1">
-                              <p className={`font-bold truncate ${inv.is_annulled ? 'line-through text-red-500' : 'text-slate-800'}`}>
-                                {inv.invoice_number}
-                              </p>
-                              <p className="text-[10px] text-gray-500">
-                                {new Date(inv.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
-                                {inv.is_annulled ? ' · ANULADA' : ''}
-                              </p>
-                            </div>
-                            <p className={`font-extrabold ml-2 ${inv.is_annulled ? 'line-through text-red-400' : 'text-slate-900'}`}>
-                              ${total.toFixed(2)}
-                            </p>
-                          </div>
-                        );
-                      })}
+                      {filteredInvoices.map(renderInvoiceRow)}
                     </div>
                   )}
                 </div>
 
                 {/* Recharges list */}
                 <div>
-                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Recargas realizadas</p>
-                  {recargasAprobadas.length === 0 ? (
-                    <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 text-center">Aún no tienes recargas aprobadas.</p>
-                  ) : (
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                      {recargasAprobadas.map((tx) => (
-                        <div key={tx.id} className="flex items-center justify-between text-xs bg-green-50/60 rounded-lg px-3 py-2" data-testid="details-recharge-row">
-                          <div className="min-w-0 flex-1">
-                            <p className="font-bold text-green-800">
-                              {tx.reference_number ? `Ref. ${tx.reference_number}` : 'Recarga'}
-                            </p>
-                            <p className="text-[10px] text-green-700/70">
-                              {tx.approved_at
-                                ? new Date(tx.approved_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })
-                                : new Date(tx.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })}
-                            </p>
-                          </div>
-                          <p className="font-extrabold text-green-700 ml-2">
-                            +${(tx.amount || 0).toFixed(2)}
-                          </p>
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Recargas</p>
+                  {filteredRecargas.length === 0 ? (
+                    <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 text-center">
+                      {detailsWeekFilter === "all" ? "Aún no tienes recargas aprobadas." : "Sin recargas en esta semana."}
+                    </p>
+                  ) : rechargeGroups ? (
+                    <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+                      {rechargeGroups.map(([wk, g]) => (
+                        <div key={wk} className="space-y-1.5">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{g.label}</p>
+                          {g.items.map(renderRechargeRow)}
                         </div>
                       ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {filteredRecargas.map(renderRechargeRow)}
+                    </div>
+                  )}
+                </div>
+
+                {/* Shipments list */}
+                <div>
+                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Envíos</p>
+                  {filteredShipments.length === 0 ? (
+                    <p className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 text-center">
+                      {detailsWeekFilter === "all" ? "Aún no tienes envíos." : "Sin envíos en esta semana."}
+                    </p>
+                  ) : shipmentGroups ? (
+                    <div className="space-y-3 max-h-48 overflow-y-auto pr-1">
+                      {shipmentGroups.map(([wk, g]) => (
+                        <div key={wk} className="space-y-1.5">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{g.label}</p>
+                          {g.items.map(renderShipmentRow)}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {filteredShipments.map(renderShipmentRow)}
                     </div>
                   )}
                 </div>
