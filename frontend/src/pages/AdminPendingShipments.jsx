@@ -47,7 +47,16 @@ export default function AdminPendingShipments() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ clients: [], invoices_count: 0, clients_count: 0 });
   const [filter, setFilter] = useState("");
-  const [weekFilter, setWeekFilter] = useState("all");
+  const [weekFilter, setWeekFilter] = useState(() => {
+    const now = new Date();
+    const day = now.getDay();
+    const daysSinceMonday = (day - 1 + 7) % 7;
+    const candidate = new Date(now);
+    candidate.setDate(now.getDate() - daysSinceMonday);
+    candidate.setHours(12, 0, 0, 0);
+    if (candidate > now) candidate.setDate(candidate.getDate() - 7);
+    return candidate.toISOString().slice(0, 10);
+  });
 
   useEffect(() => {
     (async () => {
@@ -63,6 +72,7 @@ export default function AdminPendingShipments() {
   }, []);
 
   // Every Monday-bucket present across all pending invoices, desc.
+  // Always include the current week so the default filter has a matching option.
   const weekOptions = useMemo(() => {
     const set = new Set();
     (data.clients || []).forEach((c) => {
@@ -71,6 +81,8 @@ export default function AdminPendingShipments() {
         if (wk) set.add(wk);
       });
     });
+    const currentWeekKey = getWeekKey(new Date().toISOString());
+    if (currentWeekKey) set.add(currentWeekKey);
     return Array.from(set).sort((a, b) => b.localeCompare(a));
   }, [data.clients]);
 
@@ -100,6 +112,32 @@ export default function AdminPendingShipments() {
     () => filteredClients.reduce((acc, c) => acc + (c.invoices?.length || 0), 0),
     [filteredClients]
   );
+
+  // When viewing "Todas las semanas", split clients into per-week buckets so the UI
+  // can render a sticky "SEMANA: …" header above each group (matches the pattern
+  // used in AdminWallet and the client portal).
+  const clientsGroupedByWeek = useMemo(() => {
+    if (weekFilter !== "all") return null;
+    const buckets = {};
+    filteredClients.forEach((c) => {
+      (c.invoices || []).forEach((inv) => {
+        const wk = getWeekKey(inv.created_at) || "sin-fecha";
+        if (!buckets[wk]) buckets[wk] = {};
+        if (!buckets[wk][c.customer_id]) {
+          buckets[wk][c.customer_id] = { customer_id: c.customer_id, name: c.name, invoices: [] };
+        }
+        buckets[wk][c.customer_id].invoices.push(inv);
+      });
+    });
+    return Object.entries(buckets)
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([wk, byCustomer]) => ({
+        weekKey: wk,
+        label: wk === "sin-fecha" ? "Sin fecha" : getWeekLabelShort(wk),
+        clients: Object.values(byCustomer),
+        invoicesCount: Object.values(byCustomer).reduce((s, c) => s + c.invoices.length, 0),
+      }));
+  }, [filteredClients, weekFilter]);
 
   if (loading) {
     return (
@@ -195,6 +233,57 @@ export default function AdminPendingShipments() {
               </p>
             </CardContent>
           </Card>
+        ) : clientsGroupedByWeek ? (
+          <div className="space-y-5">
+            {clientsGroupedByWeek.map((group) => (
+              <div key={group.weekKey} className="space-y-3" data-testid={`pending-week-group-${group.weekKey}`}>
+                <div className="flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-sm py-1 z-10 border-b border-slate-200">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Semana: {group.label}
+                  </p>
+                  <span className="text-xs font-semibold text-slate-600">
+                    {group.clients.length} cliente{group.clients.length === 1 ? "" : "s"} · {group.invoicesCount} factura{group.invoicesCount === 1 ? "" : "s"}
+                  </span>
+                </div>
+                {group.clients.map((c) => (
+                  <Card key={`${group.weekKey}-${c.customer_id}`} className="rounded-2xl" data-testid={`pending-client-${c.customer_id}`}>
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between mb-2 gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Badge variant="outline" className="font-mono">{c.customer_id}</Badge>
+                          <span className="text-sm font-bold text-slate-800 truncate">{c.name || "Sin nombre"}</span>
+                        </div>
+                        <Badge className="bg-amber-100 text-amber-800 border-amber-200">{c.invoices.length} factura(s)</Badge>
+                      </div>
+                      <div className="space-y-1">
+                        {c.invoices.map((inv) => (
+                          <button
+                            key={inv.id}
+                            type="button"
+                            onClick={() => navigate(`/admin/invoices?invoice_id=${inv.id}&back=/admin/pending-shipments`)}
+                            className="w-full flex items-center justify-between gap-2 bg-slate-50 hover:bg-slate-100 transition-colors rounded-xl px-3 py-2 text-left"
+                            data-testid={`pending-invoice-${inv.invoice_number}`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <FileText className="h-3.5 w-3.5 text-slate-400 flex-shrink-0" />
+                              <span className="text-xs font-bold text-slate-700">{inv.invoice_number}</span>
+                              <span className="text-[10px] text-slate-500 truncate">
+                                {inv.created_at ? new Date(inv.created_at).toLocaleDateString("es-ES", { day: "2-digit", month: "short" }) : ""}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-xs font-extrabold text-slate-800">${Number(inv.total_a_pagar || 0).toFixed(2)}</span>
+                              <ChevronRight className="h-4 w-4 text-slate-400" />
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="space-y-3">
             {filteredClients.map((c) => (
