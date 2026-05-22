@@ -188,11 +188,13 @@ export default function SuperadminDashboard() {
           label: c.label || "",
           value_packages: c.value_packages ?? c.value ?? 0,
           value_pounds: c.value_pounds ?? c.value ?? 0,
+          courier_cost_packages: c.courier_cost_packages ?? 0,
+          courier_cost_pounds: c.courier_cost_pounds ?? 0,
         }))
       : [
-          { key: "G", label: "Categoría G (CON Núcleo Familiar)", value_packages: 32, value_pounds: 32 },
-          { key: "A", label: "Categoría A (Personal)", value_packages: 42, value_pounds: 42 },
-          { key: "B", label: "Categoría B (SIN Núcleo Familiar)", value_packages: 52, value_pounds: 52 }
+          { key: "G", label: "Categoría G (CON Núcleo Familiar)", value_packages: 32, value_pounds: 32, courier_cost_packages: 0, courier_cost_pounds: 0 },
+          { key: "A", label: "Categoría A (Personal)", value_packages: 42, value_pounds: 42, courier_cost_packages: 0, courier_cost_pounds: 0 },
+          { key: "B", label: "Categoría B (SIN Núcleo Familiar)", value_packages: 52, value_pounds: 52, courier_cost_packages: 0, courier_cost_pounds: 0 }
         ];
     setShippingCategories(cats);
     setShippingMode(tenant.shipping_mode === "pounds" ? "pounds" : "packages");
@@ -206,7 +208,7 @@ export default function SuperadminDashboard() {
   };
 
   const addShippingCategory = () => {
-    setShippingCategories([...shippingCategories, { key: "", label: "", value_packages: 0, value_pounds: 0 }]);
+    setShippingCategories([...shippingCategories, { key: "", label: "", value_packages: 0, value_pounds: 0, courier_cost_packages: 0, courier_cost_pounds: 0 }]);
   };
 
   const removeShippingCategory = (index) => {
@@ -222,8 +224,10 @@ export default function SuperadminDashboard() {
         label: String(c.label || "").trim(),
         value_packages: parseFloat(c.value_packages) || 0,
         value_pounds: parseFloat(c.value_pounds) || 0,
+        courier_cost_packages: parseFloat(c.courier_cost_packages) || 0,
+        courier_cost_pounds: parseFloat(c.courier_cost_pounds) || 0,
       }))
-      .filter(c => c.key && c.label && c.value_packages >= 0 && c.value_pounds >= 0);
+      .filter(c => c.key && c.label && c.value_packages >= 0 && c.value_pounds >= 0 && c.courier_cost_packages >= 0 && c.courier_cost_pounds >= 0);
     if (normalized.length === 0) {
       toast.error("Agrega al menos una categoría válida");
       return;
@@ -769,6 +773,47 @@ export default function SuperadminDashboard() {
                             className="h-10 rounded-lg pl-6 font-bold"
                             data-testid={`ship-cat-value-pounds-${idx}`}
                           />
+                        </div>
+                      </div>
+                    </div>
+                    {/* Courier-side costs: what the tenant pays to the shipping company.
+                        Used by the "Pago a Empresa Paquetería" KPI. */}
+                    <div className="mt-2 pt-2 border-t border-dashed border-slate-200">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-purple-700 mb-1.5">
+                        Pago a Empresa Paquetería
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="p-2 rounded-lg border-2 border-purple-200 bg-purple-50/40">
+                          <Label className="text-xs font-semibold text-purple-800">Por paquete</Label>
+                          <div className="relative">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={cat.courier_cost_packages ?? 0}
+                              onChange={(e) => updateShipField(idx, "courier_cost_packages", e.target.value)}
+                              onWheel={(e) => e.target.blur()}
+                              className="h-10 rounded-lg pl-6 font-bold"
+                              data-testid={`ship-cat-courier-packages-${idx}`}
+                            />
+                          </div>
+                        </div>
+                        <div className="p-2 rounded-lg border-2 border-purple-200 bg-purple-50/40">
+                          <Label className="text-xs font-semibold text-purple-800">Por libra</Label>
+                          <div className="relative">
+                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-sm">$</span>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={cat.courier_cost_pounds ?? 0}
+                              onChange={(e) => updateShipField(idx, "courier_cost_pounds", e.target.value)}
+                              onWheel={(e) => e.target.blur()}
+                              className="h-10 rounded-lg pl-6 font-bold"
+                              data-testid={`ship-cat-courier-pounds-${idx}`}
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>

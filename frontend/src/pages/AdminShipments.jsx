@@ -16,7 +16,8 @@ import {
   createUploadSession,
   getUploadSession,
   attachSessionFilesToShipment,
-  diagnoseShipments
+  diagnoseShipments,
+  toggleShipmentSent
 } from "@/lib/api";
 import { toast } from "sonner";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
@@ -507,6 +508,21 @@ export default function AdminShipments() {
       loadData();
     } catch (error) {
       toast.error("Error al actualizar estado");
+    }
+  };
+
+  // Toggle the manual "marked_sent" flag. Optimistic UI: flip locally and
+  // revert if the server rejects the change. Drives the "Pago a Empresa
+  // Paquetería" KPI on the admin dashboard.
+  const handleToggleSent = async (shipment) => {
+    const next = !shipment.marked_sent;
+    setShipments(prev => prev.map(s => s.id === shipment.id ? { ...s, marked_sent: next } : s));
+    try {
+      await toggleShipmentSent(shipment.id, next);
+      toast.success(next ? "Marcado como enviado" : "Marca removida");
+    } catch (error) {
+      setShipments(prev => prev.map(s => s.id === shipment.id ? { ...s, marked_sent: !next } : s));
+      toast.error(error.response?.data?.detail || "Error al actualizar");
     }
   };
 
@@ -1462,6 +1478,32 @@ export default function AdminShipments() {
                             </div>
                             {getStatusBadge(shipment.status)}
                           </div>
+
+                          {/* Marked-sent checkbox: drives "Pago a Empresa Paquetería" KPI */}
+                          <label
+                            className={`flex items-center gap-2 mb-3 px-3 py-2 rounded-lg cursor-pointer transition-colors border ${
+                              shipment.marked_sent
+                                ? 'bg-purple-50 border-purple-200 hover:bg-purple-100'
+                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+                            }`}
+                            data-testid={`marked-sent-toggle-${shipment.id}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!shipment.marked_sent}
+                              onChange={() => handleToggleSent(shipment)}
+                              className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                            />
+                            <span className={`text-xs font-bold uppercase tracking-wide ${shipment.marked_sent ? 'text-purple-800' : 'text-slate-600'}`}>
+                              Enviado a paquetería
+                            </span>
+                            {shipment.marked_sent && shipment.marked_sent_at && (
+                              <span className="text-[10px] text-purple-600 ml-auto">
+                                {new Date(shipment.marked_sent_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                                {shipment.marked_sent_by_name ? ` · ${shipment.marked_sent_by_name}` : ''}
+                              </span>
+                            )}
+                          </label>
 
                           <div className="bg-gray-50 rounded-xl p-3 mb-3 space-y-2">
                             <div className="flex items-start gap-2">

@@ -289,6 +289,13 @@ class Shipment(BaseModel):
     guide_verified_at: Optional[str] = None
     guide_verified_by: Optional[str] = None
     guide_verified_by_name: Optional[str] = None
+    # Manual "sent to courier" toggle: admin marks this when the parcel was
+    # physically dispatched to the shipping company. Drives the
+    # "Pago a Empresa Paquetería" KPI (only sent shipments count).
+    marked_sent: bool = False
+    marked_sent_at: Optional[str] = None
+    marked_sent_by: Optional[str] = None
+    marked_sent_by_name: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -1182,14 +1189,16 @@ async def update_tenant_tax_options_superadmin(tenant_id: str, data: dict, curre
 
 def _normalize_shipping_categories(raw):
     """Validate and normalize a list of shipping categories.
-    Each category stores independent prices for packages and pounds modes.
+    Each category stores independent prices for packages and pounds modes
+    (what we charge the client), plus the courier-side costs we pay to the
+    shipping company for each unit (packages and pounds).
     Accepts legacy `value` and maps it to both `value_packages` and `value_pounds` if those are missing.
     """
     out = []
     for item in raw or []:
         key = str(item.get("key", "")).strip().upper()
         label = str(item.get("label", "")).strip()
-        # Legacy fallback
+        # Legacy fallback for what we charge the client
         try:
             legacy_value = float(item.get("value", 0) or 0)
         except (TypeError, ValueError):
@@ -1202,13 +1211,25 @@ def _normalize_shipping_categories(raw):
             value_pounds = float(item.get("value_pounds", legacy_value) or 0)
         except (TypeError, ValueError):
             value_pounds = legacy_value
-        if not key or not label or value_packages < 0 or value_pounds < 0:
+        # New: what we pay the courier (defaults to 0 when not provided)
+        try:
+            courier_cost_packages = float(item.get("courier_cost_packages", 0) or 0)
+        except (TypeError, ValueError):
+            courier_cost_packages = 0
+        try:
+            courier_cost_pounds = float(item.get("courier_cost_pounds", 0) or 0)
+        except (TypeError, ValueError):
+            courier_cost_pounds = 0
+        if not key or not label or value_packages < 0 or value_pounds < 0 or courier_cost_packages < 0 or courier_cost_pounds < 0:
             continue
         out.append({
             "key": key,
             "label": label,
             "value_packages": round(value_packages, 2),
             "value_pounds": round(value_pounds, 2),
+            # Courier-side prices (paid to the shipping company)
+            "courier_cost_packages": round(courier_cost_packages, 2),
+            "courier_cost_pounds": round(courier_cost_pounds, 2),
             # Keep legacy `value` in sync with packages price for backward compatibility
             "value": round(value_packages, 2),
         })
@@ -1216,7 +1237,8 @@ def _normalize_shipping_categories(raw):
 
 
 def _ensure_category_dual_prices(categories):
-    """Ensure every category in the list has both value_packages and value_pounds fields.
+    """Ensure every category has dual prices (packages/pounds) for both
+    the client-facing price and the courier-side cost we pay.
     Used to migrate legacy docs on-the-fly when sending to the frontend.
     """
     if not isinstance(categories, list):
@@ -1228,6 +1250,8 @@ def _ensure_category_dual_prices(categories):
         legacy = c.get("value", 0) or 0
         c.setdefault("value_packages", c.get("value_packages", legacy))
         c.setdefault("value_pounds", c.get("value_pounds", legacy))
+        c.setdefault("courier_cost_packages", c.get("courier_cost_packages", 0))
+        c.setdefault("courier_cost_pounds", c.get("courier_cost_pounds", 0))
         c["value"] = c.get("value_packages", legacy)
         out.append(c)
     return out
@@ -3732,6 +3756,62 @@ async def toggle_shipment_guide_verified(shipment_id: str, data: dict = None, cu
         "guide_verified_by_name": update_set["guide_verified_by_name"],
     }
 
+
+@api_router.put("/shipments/{shipment_id}/toggle-sent")
+async def toggle_shipment_sent(shipment_id: str, data: dict = None, current_user: dict = Depends(get_current_user)):
+    """Toggle the manual `marked_sent` flag on a shipment.
+
+    Used when the parcel was physically dispatched to the courier company.
+    Drives the "Pago a Empresa Paquetería" dashboard KPI.
+    Body: {"sent": true|false} — if omitted, toggles the current value.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    shipment = await db.shipments.find_one({"id": shipment_id, "tenant_id": tid}, {"_id": 0})
+    if not shipment:
+        raise HTTPException(status_code=404, detail="Envío no encontrado")
+
+    new_val = bool(shipment.get("marked_sent", False))
+    if data is not None and "sent" in data:
+        new_val = bool(data.get("sent"))
+    else:
+        new_val = not new_val
+
+    actor_name = await get_actor_name(current_user["user_id"])
+    now = datetime.now(timezone.utc).isoformat()
+    update_set = {
+        "marked_sent": new_val,
+        "marked_sent_at": now if new_val else None,
+        "marked_sent_by": current_user["user_id"] if new_val else None,
+        "marked_sent_by_name": actor_name if new_val else None,
+        "updated_at": now,
+    }
+    await db.shipments.update_one(
+        {"id": shipment_id, "tenant_id": tid},
+        {"$set": update_set}
+    )
+    try:
+        await log_audit_action(
+            tenant_id=tid,
+            user_id=current_user["user_id"],
+            user_name=actor_name,
+            user_role=current_user["role"],
+            action="toggle_shipment_sent",
+            entity_type="shipment",
+            entity_id=shipment_id,
+            entity_name=shipment.get("tracking_number") or shipment_id,
+            details={"marked_sent": new_val, "customer_id": shipment.get("customer_id")}
+        )
+    except Exception:
+        pass
+    return {
+        "message": "Envío marcado como enviado" if new_val else "Marca de enviado removida",
+        "marked_sent": new_val,
+        "marked_sent_at": update_set["marked_sent_at"],
+        "marked_sent_by_name": update_set["marked_sent_by_name"],
+    }
+
 @api_router.put("/shipments/{shipment_id}/status")
 async def update_shipment_status(shipment_id: str, status: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
@@ -5626,7 +5706,8 @@ async def get_reports_summary(
     # creation week, which is wrong if the shipment (and its cost) was added later.
     all_shipments = await db.shipments.find(
         shipment_match,
-        {"_id": 0, "weight_pounds": 1, "package_count": 1, "shipping_cost": 1}
+        {"_id": 0, "weight_pounds": 1, "package_count": 1, "shipping_cost": 1,
+         "shipping_category": 1, "shipping_mode": 1, "marked_sent": 1}
     ).to_list(5000)
     total_shipping_val = sum((s.get("shipping_cost") or 0) for s in all_shipments)
     total_shipping = [{"total": total_shipping_val}] if all_shipments else []
@@ -5634,6 +5715,42 @@ async def get_reports_summary(
     # Number of shipment documents in the period — distinct from total_packages
     # because one shipment can group multiple physical packages.
     shipments_count = len(all_shipments)
+
+    # Courier payment KPI: sum the courier-side cost (paid to the shipping company)
+    # ONLY for shipments physically dispatched (`marked_sent=True`).
+    # The cost is pulled from the tenant's per-category configuration depending
+    # on whether the shipment is billed by packages or by pounds.
+    tenant_doc = await db.tenants.find_one({"id": tid}, {"_id": 0, "shipping_categories": 1, "shipping_mode": 1}) or {}
+    cats_list = _ensure_category_dual_prices(tenant_doc.get("shipping_categories", []))
+    cat_map = {str(c.get("key", "")).upper(): c for c in cats_list}
+    total_courier_payment = 0.0
+    sent_count = 0
+    for s in all_shipments:
+        if not s.get("marked_sent"):
+            continue
+        sent_count += 1
+        cat_key = str(s.get("shipping_category") or "").upper()
+        cat = cat_map.get(cat_key)
+        if not cat:
+            continue
+        s_mode = s.get("shipping_mode") or tenant_doc.get("shipping_mode", "packages")
+        if s_mode == "pounds":
+            qty = float(s.get("weight_pounds", 0) or 0)
+            rate = float(cat.get("courier_cost_pounds", 0) or 0)
+        else:
+            qty = float(s.get("package_count", 0) or 0)
+            rate = float(cat.get("courier_cost_packages", 0) or 0)
+        total_courier_payment += qty * rate
+    # Snapshot of current courier prices so the dashboard can display them
+    courier_prices_snapshot = [
+        {
+            "key": c.get("key"),
+            "label": c.get("label"),
+            "courier_cost_packages": c.get("courier_cost_packages", 0),
+            "courier_cost_pounds": c.get("courier_cost_pounds", 0),
+        }
+        for c in cats_list
+    ]
     
     # Unique buyers in this period
     buyers_agg = await db.purchases.aggregate([
@@ -5659,6 +5776,9 @@ async def get_reports_summary(
         "total_shipping": total_shipping[0]["total"] if total_shipping else 0,
         "total_packages": total_packages,
         "shipments_count": shipments_count,
+        "total_courier_payment": round(total_courier_payment, 2),
+        "sent_shipments_count": sent_count,
+        "courier_prices": courier_prices_snapshot,
         "buyers_count": buyers_count,
         "top_customers": top_customers
     }

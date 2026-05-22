@@ -96,6 +96,8 @@ export const updateShipmentStatus = (shipmentId, status) =>
   api.put(`/shipments/${shipmentId}/status`, null, { params: { status } });
 export const toggleShipmentGuideVerified = (shipmentId, verified) =>
   api.put(`/shipments/${shipmentId}/verify-guide`, { verified });
+export const toggleShipmentSent = (shipmentId, sent) =>
+  api.put(`/shipments/${shipmentId}/toggle-sent`, { sent });
 export const updateShipment = (shipmentId, data) => api.put(`/shipments/${shipmentId}`, data);
 export const deleteShipment = (shipmentId) => api.delete(`/shipments/${shipmentId}`);
 export const getUserShipments = (userId) => api.get(`/shipments/user/${userId}`);
