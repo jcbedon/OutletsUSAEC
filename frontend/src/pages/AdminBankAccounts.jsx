@@ -20,6 +20,8 @@ import {
   TrendingUp,
   TrendingDown,
   ReceiptText,
+  HelpCircle,
+  Sparkles,
 } from "lucide-react";
 import {
   getBankAccountsSummary,
@@ -27,6 +29,8 @@ import {
   manualBankDeposit,
   manualBankWithdrawal,
   backfillBankAccountRecharges,
+  listUnassignedRecharges,
+  assignBankAccountToRecharge,
 } from "@/lib/api";
 import { generateBankStatementPDF } from "@/lib/bankStatementPDF";
 
@@ -59,6 +63,12 @@ export default function AdminBankAccounts() {
   const [withdrawalOpen, setWithdrawalOpen] = useState(false);
   const [form, setForm] = useState({ amount: "", description: "", reference_number: "" });
   const [submitting, setSubmitting] = useState(false);
+  // ── Unassigned recharges (depósitos sin cuenta identificada) ──
+  const [unassignedOpen, setUnassignedOpen] = useState(false);
+  const [unassignedData, setUnassignedData] = useState({ unassigned: [], accounts: [], total: 0 });
+  const [unassignedLoading, setUnassignedLoading] = useState(false);
+  // Per-row pending choice {tx_id: accountId} before pressing "Asignar"
+  const [pendingAssign, setPendingAssign] = useState({});
 
   const loadSummary = async () => {
     setLoading(true);
@@ -171,6 +181,53 @@ export default function AdminBankAccounts() {
     }
   };
 
+  const openUnassigned = async () => {
+    setUnassignedOpen(true);
+    setUnassignedLoading(true);
+    try {
+      const res = await listUnassignedRecharges();
+      setUnassignedData(res.data);
+      // Pre-fill suggestions so user can press "Asignar" with one click.
+      const initial = {};
+      (res.data.unassigned || []).forEach((tx) => {
+        if (tx.suggested_bank_account_id) initial[tx.id] = tx.suggested_bank_account_id;
+      });
+      setPendingAssign(initial);
+    } catch (e) {
+      toast.error("Error al cargar recargas sin asignar");
+    } finally {
+      setUnassignedLoading(false);
+    }
+  };
+
+  const assignSingleRecharge = async (txId) => {
+    const accountId = pendingAssign[txId];
+    if (!accountId) {
+      toast.error("Selecciona una cuenta primero");
+      return;
+    }
+    try {
+      await assignBankAccountToRecharge(txId, accountId);
+      toast.success("Recarga asignada");
+      // Remove from local list immediately
+      setUnassignedData((prev) => ({
+        ...prev,
+        unassigned: prev.unassigned.filter((t) => t.id !== txId),
+        total: Math.max(0, (prev.total || 0) - 1),
+      }));
+      setPendingAssign((prev) => {
+        const cp = { ...prev };
+        delete cp[txId];
+        return cp;
+      });
+      // Refresh summary + the selected account ledger silently
+      loadSummary();
+      if (selected?.id === accountId) loadLedger(accountId);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Error al asignar");
+    }
+  };
+
   const exportPDF = () => {
     if (!selected) return;
     try {
@@ -256,12 +313,12 @@ export default function AdminBankAccounts() {
                 </span>
                 <button
                   type="button"
-                  onClick={handleBackfill}
+                  onClick={openUnassigned}
                   className="text-xs font-semibold underline text-amber-200 hover:text-white transition-colors"
-                  data-testid="backfill-btn"
-                  title="Asignar todas las recargas históricas a la cuenta seleccionada"
+                  data-testid="open-unassigned-btn"
+                  title="Asignar cuenta a cada recarga manualmente"
                 >
-                  Asignar a {selected ? selected.bank_name : "cuenta"} →
+                  Revisar y asignar →
                 </button>
               </div>
             )}
@@ -574,6 +631,109 @@ export default function AdminBankAccounts() {
                 {submitting ? "Guardando…" : "Registrar retiro"}
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Unassigned Recharges Dialog ──
+          Shows every approved deposit that the AI couldn't match to one of the
+          configured bank accounts. For each row we suggest the most likely
+          account (when matchable) and let the admin confirm or override with
+          a dropdown of every active account. */}
+      <Dialog open={unassignedOpen} onOpenChange={setUnassignedOpen}>
+        <DialogContent className="rounded-2xl max-w-4xl max-h-[92vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <HelpCircle className="h-5 w-5 text-amber-600" />
+              Recargas sin cuenta identificada
+            </DialogTitle>
+            <p className="text-xs text-slate-500 mt-1">
+              La IA no pudo identificar la cuenta bancaria para estos depósitos. Asígnale manualmente la cuenta correcta a cada uno.
+            </p>
+          </DialogHeader>
+
+          <div className="space-y-3 pt-2">
+            {unassignedLoading ? (
+              <div className="text-center py-8 text-slate-500">Cargando…</div>
+            ) : unassignedData.unassigned.length === 0 ? (
+              <div className="text-center py-12 bg-emerald-50 rounded-xl border border-emerald-100">
+                <Sparkles className="h-10 w-10 mx-auto text-emerald-500 mb-2" />
+                <p className="font-bold text-emerald-800">Todas las recargas tienen cuenta asignada</p>
+                <p className="text-xs text-emerald-700 mt-1">Excelente. No queda nada por revisar.</p>
+              </div>
+            ) : (
+              unassignedData.unassigned.map((tx) => (
+                <div
+                  key={tx.id}
+                  className="rounded-xl border border-amber-200 bg-amber-50/40 p-3 grid grid-cols-1 md:grid-cols-12 gap-3 items-center"
+                  data-testid={`unassigned-row-${tx.id}`}
+                >
+                  <div className="md:col-span-3">
+                    <p className="text-xs font-bold text-slate-800">{tx.user_name}</p>
+                    <p className="text-[10px] text-slate-500 font-mono">#{tx.customer_id}</p>
+                    <p className="text-[10px] text-slate-500">
+                      {tx.approved_at
+                        ? new Date(tx.approved_at).toLocaleDateString("es-EC", { day: "2-digit", month: "short", year: "numeric" })
+                        : ""}
+                    </p>
+                    <p className="text-lg font-extrabold text-amber-700">{fmtMoney(tx.amount)}</p>
+                  </div>
+                  <div className="md:col-span-5 text-xs">
+                    <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Detectado por IA</p>
+                    <div className="space-y-0.5 text-slate-700">
+                      <p>
+                        <span className="font-bold">Cuenta destino:</span>{" "}
+                        <span className="font-mono">{tx.ai_detected_destination_account || "—"}</span>
+                      </p>
+                      <p>
+                        <span className="font-bold">Beneficiario:</span>{" "}
+                        {tx.ai_detected_beneficiary_name || "—"}
+                      </p>
+                      <p>
+                        <span className="font-bold">Referencia:</span>{" "}
+                        <span className="font-mono">{tx.reference_number || tx.ai_detected_reference_number || "—"}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <div className="md:col-span-4 flex flex-col gap-2">
+                    <select
+                      value={pendingAssign[tx.id] || ""}
+                      onChange={(e) => setPendingAssign((p) => ({ ...p, [tx.id]: e.target.value }))}
+                      className="h-9 rounded-lg border border-slate-200 px-2 text-xs font-medium"
+                      data-testid={`assign-select-${tx.id}`}
+                    >
+                      <option value="">Selecciona una cuenta…</option>
+                      {unassignedData.accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.bank_name} · {a.owner_name} · ••{String(a.account_number).slice(-4)}
+                        </option>
+                      ))}
+                    </select>
+                    {tx.suggested_bank_account_id && (
+                      <p className="text-[10px] text-emerald-700 font-medium flex items-center gap-1">
+                        <Sparkles className="h-3 w-3" />
+                        Sugerido: {unassignedData.accounts.find((a) => a.id === tx.suggested_bank_account_id)?.bank_name}
+                      </p>
+                    )}
+                    <Button
+                      size="sm"
+                      onClick={() => assignSingleRecharge(tx.id)}
+                      className="bg-amber-600 hover:bg-amber-700 text-white rounded-lg h-8 text-xs"
+                      disabled={!pendingAssign[tx.id]}
+                      data-testid={`assign-btn-${tx.id}`}
+                    >
+                      Asignar
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 mt-3">
+            <Button variant="outline" onClick={() => setUnassignedOpen(false)}>
+              Cerrar
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

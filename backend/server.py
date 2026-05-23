@@ -1370,32 +1370,83 @@ def _normalize_bank_accounts(raw):
     return out
 
 
-def _find_matching_bank_account(accounts: list, ocr_text: str, account_number_hint: str = None, owner_name_hint: str = None):
-    """Best-effort match of a recharge to one of the tenant's bank accounts.
+def _normalize_text_for_match(s: str) -> str:
+    """Lowercase, strip accents, collapse whitespace — for fuzzy name matching."""
+    if not s:
+        return ""
+    import unicodedata
+    s = unicodedata.normalize("NFD", str(s))
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return " ".join(s.lower().split())
 
-    Strategy (in order):
-      1) Exact match on account_number (full or last 4 digits) inside OCR text or hint.
-      2) Substring match on owner_name in the OCR text.
+
+def _find_matching_bank_account(accounts: list, ocr_text: str, account_number_hint: str = None, owner_name_hint: str = None):
+    """Match a recharge to one of the tenant's bank accounts.
+
+    Required rule (per product spec):
+      A match needs BOTH:
+        1) At least one token of the OCR owner-name (any given-name or surname,
+           order-insensitive, accent-insensitive) is present in the configured
+           account's `owner_name`, AND
+        2) The last 4 digits of the OCR destination account match the
+           configured `account_number` (either as a substring or the trailing 4).
+
+    Falls back to:
+      - Exact full account-number substring match if the AI-extracted account
+        wasn't trimmed by OCR.
     Returns the account dict or None.
     """
-    text_pool = " ".join([str(x) for x in (ocr_text, account_number_hint, owner_name_hint) if x]).lower()
-    if not text_pool:
+    accounts = [a for a in (accounts or []) if a.get("is_active", True) is not False]
+    if not accounts:
         return None
-    # Account-number match (prefer longer matches)
-    for acc in sorted(accounts, key=lambda a: -len(str(a.get("account_number", "")))):
-        num = str(acc.get("account_number", "")).strip()
-        if not num:
-            continue
-        if num.lower() in text_pool:
-            return acc
-        # Last 4 digits
-        if len(num) >= 4 and num[-4:] in text_pool:
-            return acc
-    # Owner name match
+
+    text_pool_raw = " ".join([str(x) for x in (ocr_text, account_number_hint, owner_name_hint) if x])
+    text_pool = _normalize_text_for_match(text_pool_raw)
+    digits_in_text = "".join(c for c in text_pool_raw if c.isdigit())
+
+    # Parse hints
+    hint_account = "".join(c for c in str(account_number_hint or "") if c.isdigit())
+    hint_owner_norm = _normalize_text_for_match(owner_name_hint or "")
+    hint_owner_tokens = {t for t in hint_owner_norm.split() if len(t) >= 3}
+
     for acc in accounts:
-        name = str(acc.get("owner_name", "")).strip().lower()
-        if name and name in text_pool:
+        acc_num = str(acc.get("account_number", "")).strip()
+        acc_num_digits = "".join(c for c in acc_num if c.isdigit())
+        if not acc_num_digits:
+            continue
+        last4 = acc_num_digits[-4:]
+        owner_norm = _normalize_text_for_match(acc.get("owner_name", ""))
+        owner_tokens = {t for t in owner_norm.split() if len(t) >= 3}
+
+        # ── Number match (any of these counts) ──
+        number_match = False
+        if hint_account:
+            # Strong: hint includes the full account number (or its last 4).
+            if acc_num_digits and acc_num_digits in hint_account:
+                number_match = True
+            elif last4 and hint_account.endswith(last4):
+                number_match = True
+            elif last4 and last4 in hint_account:
+                number_match = True
+        if not number_match and digits_in_text:
+            # Weaker: last 4 of the configured account appear in the OCR digits.
+            if acc_num_digits in digits_in_text or last4 in digits_in_text:
+                number_match = True
+
+        # ── Owner match (any token in common) ──
+        owner_match = False
+        if hint_owner_tokens and owner_tokens & hint_owner_tokens:
+            owner_match = True
+        elif owner_tokens:
+            # Look for any token of the configured owner in the full OCR text.
+            for tok in owner_tokens:
+                if tok and tok in text_pool:
+                    owner_match = True
+                    break
+
+        if number_match and owner_match:
             return acc
+
     return None
 
 
@@ -1593,6 +1644,57 @@ async def manual_withdrawal_account(account_id: str, data: dict, current_user: d
         pass
     tx.pop("_id", None)
     return {"message": "Retiro registrado", "transaction": tx}
+
+
+@api_router.get("/admin/bank-accounts/unassigned-recharges")
+async def list_unassigned_recharges(current_user: dict = Depends(get_current_user)):
+    """Lists approved recharges that don't have a `bank_account_id` set yet.
+    Includes the AI-extracted destination_account/beneficiary so the admin can
+    pick the right account from a dropdown without leaving the screen.
+    """
+    if current_user["role"] not in ("admin", "employee"):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    txs = await db.wallet_transactions.find({
+        "tenant_id": tid,
+        "type": "deposit",
+        "status": "approved",
+        "is_deleted": {"$ne": True},
+        "$or": [{"bank_account_id": None}, {"bank_account_id": {"$exists": False}}, {"bank_account_id": ""}]
+    }, {
+        "_id": 0, "id": 1, "amount": 1, "customer_id": 1, "user_name": 1,
+        "reference_number": 1, "approved_at": 1, "created_at": 1, "description": 1,
+        "ai_scan": 1, "proof_url": 1, "proof_path": 1
+    }).sort("approved_at", -1).to_list(500)
+
+    # Include the active accounts so the frontend can render the dropdown.
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1})
+    accounts = [a for a in (tenant or {}).get("bank_accounts", []) if a.get("is_active", True) is not False]
+
+    # Annotate each tx with a suggested match (if any) using the same matcher.
+    enriched = []
+    for tx in txs:
+        ai = tx.get("ai_scan") or {}
+        suggestion = _find_matching_bank_account(
+            accounts,
+            str(ai.get("raw_text") or ai.get("text") or ""),
+            account_number_hint=ai.get("detected_destination_account"),
+            owner_name_hint=ai.get("detected_beneficiary_name"),
+        )
+        enriched.append({
+            **tx,
+            "ai_detected_destination_account": ai.get("detected_destination_account"),
+            "ai_detected_beneficiary_name": ai.get("detected_beneficiary_name"),
+            "ai_detected_reference_number": ai.get("detected_reference_number"),
+            "ai_confidence": ai.get("confidence"),
+            "suggested_bank_account_id": suggestion["id"] if suggestion else None,
+        })
+
+    return {
+        "unassigned": enriched,
+        "accounts": accounts,
+        "total": len(enriched)
+    }
 
 
 @api_router.post("/admin/bank-accounts/backfill-recharges")
@@ -2836,11 +2938,11 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
     await recalculate_client_invoices(tid, transaction["customer_id"])
 
     # ── Bank ledger: attribute this recharge to a tenant bank account ──
-    # Matching strategy (in priority order):
-    #   1) Admin already set `bank_account_id` manually on the tx.
-    #   2) OCR detected the destination account/beneficiary → match against tenant accounts.
-    #   3) Fallback: if the tenant only has 1 active account, attribute to it (default).
-    #   4) Otherwise leave unassigned (admin reasigna desde "Recargas sin asignar").
+    # Matching rules (strict, per product spec):
+    #   1) Honor manual `bank_account_id` if admin already set it.
+    #   2) Else match by BOTH owner-name token AND last-4 of account number in the OCR.
+    #   3) If no match → leave unassigned. The dashboard surfaces "Recargas sin
+    #      asignar" with manual assignment UI.
     try:
         tenant_doc = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1})
         all_accounts = (tenant_doc or {}).get("bank_accounts", [])
@@ -2853,7 +2955,6 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
             owner_hint = transaction.get("beneficiary_name_hint")
             if isinstance(ai, dict):
                 ocr_text = str(ai.get("raw_text") or ai.get("text") or "")
-                # Prefer the OCR-extracted fields when available
                 account_hint = account_hint or ai.get("detected_destination_account")
                 owner_hint = owner_hint or ai.get("detected_beneficiary_name")
             match = _find_matching_bank_account(
@@ -2867,13 +2968,6 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
                 await db.wallet_transactions.update_one(
                     {"id": transaction_id, "tenant_id": tid},
                     {"$set": {"bank_account_id": target_id, "bank_account_auto_matched": True}}
-                )
-            elif len(active_accounts) == 1:
-                # Sole-account fallback — assign to it automatically.
-                target_id = active_accounts[0]["id"]
-                await db.wallet_transactions.update_one(
-                    {"id": transaction_id, "tenant_id": tid},
-                    {"$set": {"bank_account_id": target_id, "bank_account_auto_matched": True, "bank_account_assigned_via": "single_account_default"}}
                 )
         if target_id:
             # Replace any previous recharge ledger row tied to this tx (idempotent re-approval).
