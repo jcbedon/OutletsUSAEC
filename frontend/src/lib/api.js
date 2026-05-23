@@ -44,6 +44,7 @@ export const getBankAccountTransactions = (accountId, params = {}) => api.get(`/
 export const manualBankDeposit = (accountId, data) => api.post(`/admin/bank-accounts/${accountId}/deposit`, data);
 export const manualBankWithdrawal = (accountId, data) => api.post(`/admin/bank-accounts/${accountId}/withdrawal`, data);
 export const assignBankAccountToRecharge = (txId, bankAccountId) => api.put(`/admin/wallet-transactions/${txId}/assign-bank-account`, { bank_account_id: bankAccountId });
+export const getShippingCategoriesAdmin = () => api.get("/admin/settings/shipping-categories");
 
 // Admin Tenant
 export const getMyTenant = () => api.get("/admin/tenant");

@@ -1285,6 +1285,19 @@ def _ensure_category_dual_prices(categories):
     return out
 
 
+@api_router.get("/admin/settings/shipping-categories")
+async def get_shipping_categories_admin(current_user: dict = Depends(get_current_user)):
+    """Returns the current shipping categories with client-side prices and
+    courier-side costs. Used by AdminShipments to render the live "Pago a Empresa
+    Paquetería" widget without hitting the full reports/summary endpoint.
+    """
+    if current_user["role"] not in ("admin", "employee"):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tenant = await db.tenants.find_one({"id": current_user["tenant_id"]}, {"_id": 0, "shipping_categories": 1, "shipping_mode": 1})
+    cats = _ensure_category_dual_prices((tenant or {}).get("shipping_categories", []))
+    return {"shipping_categories": cats, "shipping_mode": (tenant or {}).get("shipping_mode", "packages")}
+
+
 @api_router.put("/admin/settings/shipping-categories")
 async def update_shipping_categories_admin(data: dict, current_user: dict = Depends(get_current_user)):
     """Tenant admin updates shipping categories used when creating shipments."""

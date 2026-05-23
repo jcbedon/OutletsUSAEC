@@ -17,7 +17,8 @@ import {
   getUploadSession,
   attachSessionFilesToShipment,
   diagnoseShipments,
-  toggleShipmentSent
+  toggleShipmentSent,
+  getShippingCategoriesAdmin
 } from "@/lib/api";
 import { toast } from "sonner";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
@@ -94,6 +95,12 @@ export default function AdminShipments() {
     return candidate.toISOString().slice(0, 10);
   };
   const [weekFilter, setWeekFilter] = useState(() => getCurrentWeekKey());
+  // Courier (paquetería) pricing — used to compute "Pago a Empresa Paquetería"
+  // live whenever any shipment is toggled as "Enviado".
+  const [courierCats, setCourierCats] = useState([]);
+  const [tenantShippingMode, setTenantShippingMode] = useState("packages");
+  // Bumps each time a checkbox flips → drives the truck-icon flying animation.
+  const [courierAnimTick, setCourierAnimTick] = useState(0);
   const [diagDialogOpen, setDiagDialogOpen] = useState(false);
   const [diagLoading, setDiagLoading] = useState(false);
   const [diagData, setDiagData] = useState(null);
@@ -322,6 +329,10 @@ export default function AdminShipments() {
         shipping_mode: tenantRes.data.shipping_mode === "pounds" ? "pounds" : "packages",
         shipping_categories: categories
       });
+      // Snapshot for the live courier-payment widget (independent slice so we
+      // don't have to re-derive from tenantSettings everywhere).
+      setCourierCats(categories || []);
+      setTenantShippingMode(tenantRes.data.shipping_mode === "pounds" ? "pounds" : "packages");
     } catch (error) {
       toast.error("Error al cargar datos");
     } finally {
@@ -517,6 +528,9 @@ export default function AdminShipments() {
   const handleToggleSent = async (shipment) => {
     const next = !shipment.marked_sent;
     setShipments(prev => prev.map(s => s.id === shipment.id ? { ...s, marked_sent: next } : s));
+    // Bump the animation tick so the courier truck icon does its fly-through
+    // motion every time the user flips a checkbox — keeps the UI responsive.
+    setCourierAnimTick(t => t + 1);
     try {
       await toggleShipmentSent(shipment.id, next);
       toast.success(next ? "Marcado como enviado" : "Marca removida");
@@ -1213,8 +1227,91 @@ export default function AdminShipments() {
           const totalShipping = filtered.reduce((sum, s) => sum + (s.shipping_cost || 0), 0);
           const totalPackages = filtered.reduce((sum, s) => sum + (s.package_count || 0), 0);
 
+          // Live courier payment: only shipments marked_sent contribute, priced
+          // from the tenant's per-category courier costs. Computed client-side
+          // so it animates instantly when the admin flips a checkbox.
+          const catMap = {};
+          (courierCats || []).forEach(c => { catMap[String(c.key || "").toUpperCase()] = c; });
+          let courierPaymentTotal = 0;
+          let sentCount = 0;
+          filtered.forEach(s => {
+            if (!s.marked_sent) return;
+            sentCount += 1;
+            const cat = catMap[String(s.shipping_category || "").toUpperCase()];
+            if (!cat) return;
+            const mode = s.shipping_mode || tenantShippingMode || "packages";
+            const qty = mode === "pounds" ? Number(s.weight_pounds || 0) : Number(s.package_count || 0);
+            const rate = mode === "pounds" ? Number(cat.courier_cost_pounds || 0) : Number(cat.courier_cost_packages || 0);
+            courierPaymentTotal += qty * rate;
+          });
+
           return (
             <>
+              {/* ── Live courier payment widget ──
+                  Total = Σ (cantidad × tarifa courier) over shipments with
+                  marked_sent=true in the active week filter. The truck icon
+                  animates on every checkbox toggle via the `courierAnimTick`
+                  state, keyed into the element below to restart the CSS keyframe. */}
+              <div className="mb-4 rounded-xl border border-purple-200 bg-gradient-to-br from-purple-50 via-fuchsia-50 to-purple-50 p-4 shadow-sm" data-testid="courier-payment-widget">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {/* Animated truck — re-mounted each tick so the keyframe restarts */}
+                    <div className="relative w-12 h-12 flex items-center justify-center bg-white rounded-xl border-2 border-purple-200 overflow-hidden">
+                      <Truck
+                        key={courierAnimTick}
+                        className="h-6 w-6 text-purple-700 courier-truck-anim"
+                        style={{
+                          animation: courierAnimTick > 0 ? "courierTruckFly 0.65s cubic-bezier(0.22,1,0.36,1)" : "none",
+                        }}
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-purple-700">
+                        Pago a Empresa Paquetería
+                      </p>
+                      <p
+                        key={`val-${courierAnimTick}`}
+                        className="text-2xl font-extrabold text-purple-900 leading-tight"
+                        style={{ animation: courierAnimTick > 0 ? "courierValuePop 0.4s ease-out" : "none" }}
+                        data-testid="courier-payment-total"
+                      >
+                        ${courierPaymentTotal.toFixed(2)}
+                      </p>
+                      <p className="text-[10px] text-purple-700/80 mt-0.5">
+                        {sentCount} envío{sentCount === 1 ? '' : 's'} marcados como enviados
+                      </p>
+                    </div>
+                  </div>
+                  {courierCats && courierCats.length > 0 && (
+                    <div className="text-right" data-testid="courier-prices-legend">
+                      <p className="text-[9px] uppercase tracking-wider font-semibold text-purple-600/80 mb-0.5">Tarifas actuales</p>
+                      <div className="flex flex-col gap-0.5 items-end">
+                        {courierCats.map((p) => (
+                          <span key={p.key} className="text-[10px] text-purple-700">
+                            <strong>{p.key}:</strong> ${Number(p.courier_cost_packages || 0).toFixed(2)}/pkg · ${Number(p.courier_cost_pounds || 0).toFixed(2)}/lb
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {/* Keyframes used by the courier-payment widget. Scoped via a
+                  style tag so we don't need to edit the global stylesheet. */}
+              <style>{`
+                @keyframes courierTruckFly {
+                  0%   { transform: translateX(-110%) translateY(0) rotate(-4deg); opacity: 0; }
+                  35%  { transform: translateX(-30%)  translateY(-2px) rotate(0deg); opacity: 1; }
+                  60%  { transform: translateX(0)     translateY(0); }
+                  80%  { transform: translateX(8%)    translateY(0); }
+                  100% { transform: translateX(0)     translateY(0); }
+                }
+                @keyframes courierValuePop {
+                  0%   { transform: scale(1); color: rgb(88,28,135); }
+                  35%  { transform: scale(1.18); color: rgb(126,34,206); }
+                  100% { transform: scale(1); color: rgb(88,28,135); }
+                }
+              `}</style>
               {/* Total shipping + week selector */}
               <div className="flex flex-wrap items-center gap-3 mb-4">
                 <Card className="rounded-xl flex-1 bg-gradient-to-r from-purple-50 to-purple-100 border-purple-200">

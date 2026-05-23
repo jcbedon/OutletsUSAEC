@@ -306,7 +306,7 @@ export default function AdminDashboard() {
             <option value="all">Total</option>
           </select>
         </div>
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-3">
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-6">
           {[
             { key: "clients", icon: Users, value: summary?.client_count || 0, label: "Clientes", bg: "bg-slate-50", iconBg: "rgba(30,58,95,0.1)", iconColor: "#1E3A5F", prefix: "" },
             { key: "sales", icon: DollarSign, value: `$${summary?.total_sales?.toFixed(0) || 0}`, label: "Ventas", bg: "bg-green-50", iconBg: "rgba(46,204,113,0.1)", iconColor: "#2ECC71", prefix: "", onClick: openSalesDetail },
@@ -323,59 +323,6 @@ export default function AdminDashboard() {
               <p className="text-[10px] text-gray-500 mt-0.5">{stat.label}</p>
             </div>
           ))}
-        </div>
-
-        {/* Courier payment card: sum of courier-side costs for shipments that
-            were marked as physically dispatched. The little legend below lists
-            the current per-category rates so the admin sees what's being applied. */}
-        <div
-          className="rounded-xl border border-purple-100 bg-gradient-to-br from-purple-50 to-fuchsia-50 p-3 mb-6 cursor-pointer hover:ring-2 hover:ring-purple-200 hover:ring-offset-1 transition-all"
-          onClick={() => navigate("/admin/shipments")}
-          data-testid="stat-courier-payment"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: "rgba(147,51,234,0.12)" }}>
-                <Truck className="h-5 w-5" style={{ color: "#7e22ce" }} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] uppercase tracking-wider font-bold text-purple-700">
-                  Pago a Empresa Paquetería
-                </p>
-                <p className="text-xl font-extrabold text-purple-900 leading-tight">
-                  ${(summary?.total_courier_payment || 0).toFixed(2)}
-                </p>
-                <p className="text-[10px] text-purple-700/80 mt-0.5">
-                  {summary?.sent_shipments_count || 0} envío{(summary?.sent_shipments_count || 0) === 1 ? '' : 's'} marcados como enviados
-                </p>
-              </div>
-            </div>
-            {Array.isArray(summary?.courier_prices) && summary.courier_prices.length > 0 && (
-              <div className="hidden sm:flex flex-col items-end text-right" data-testid="courier-prices-legend">
-                <p className="text-[9px] uppercase tracking-wider font-semibold text-purple-600/80 mb-0.5">Tarifas actuales</p>
-                <div className="flex flex-wrap gap-x-3 gap-y-0.5 justify-end max-w-md">
-                  {summary.courier_prices.map((p) => (
-                    <span key={p.key} className="text-[10px] text-purple-700">
-                      <strong>{p.key}:</strong> ${Number(p.courier_cost_packages || 0).toFixed(2)}/pkg · ${Number(p.courier_cost_pounds || 0).toFixed(2)}/lb
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          {/* Mobile-only legend (stacked under value) */}
-          {Array.isArray(summary?.courier_prices) && summary.courier_prices.length > 0 && (
-            <div className="sm:hidden mt-2 pt-2 border-t border-purple-100">
-              <p className="text-[9px] uppercase tracking-wider font-semibold text-purple-600/80 mb-0.5">Tarifas actuales</p>
-              <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-                {summary.courier_prices.map((p) => (
-                  <span key={p.key} className="text-[10px] text-purple-700">
-                    <strong>{p.key}:</strong> ${Number(p.courier_cost_packages || 0).toFixed(2)}/pkg · ${Number(p.courier_cost_pounds || 0).toFixed(2)}/lb
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Menu Grid */}
