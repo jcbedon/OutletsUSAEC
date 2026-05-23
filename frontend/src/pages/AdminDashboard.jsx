@@ -26,7 +26,8 @@ import {
   ClipboardList,
   FileText,
   Search,
-  ShoppingBag
+  ShoppingBag,
+  Landmark
 } from "lucide-react";
 import { uploadTenantLogo } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
@@ -180,6 +181,7 @@ export default function AdminDashboard() {
       { icon: Gift, label: "Referidos", path: "/admin/referrals", color: "#27ae60", description: "Configurar bonos", adminOnly: true },
       { icon: BarChart3, label: "Reportes", path: "/admin/reports", color: "#2a4f7f", description: "Ver estadísticas", permission: "view_reports" },
       { icon: TrendingUp, label: "Estadisticas", path: "/admin/stats", color: "#E74C3C", description: "Ver ganancias del negocio", permission: "view_statistics" },
+      { icon: Landmark, label: "Cuentas", path: "/admin/bank-accounts", color: "#4F46E5", description: "Banca y movimientos", adminOnly: true },
     ];
     
     // Admin sees everything

@@ -142,6 +142,34 @@ class Tenant(BaseModel):
     ])
     # Client ID settings
     allow_custom_client_id: bool = False  # Allow admin to enter custom client ID instead of auto-generated
+    # Bank accounts owned by the tenant. Each one tracks recharges that landed
+    # in it and supports manual deposits/withdrawals as a mini-bank ledger.
+    bank_accounts: List[dict] = Field(default_factory=list)
+    # Each item: {id, owner_name, owner_id (cedula), account_number, bank_name, currency, is_active, created_at}
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class BankTransaction(BaseModel):
+    """Ledger entries for a tenant bank account. Three kinds:
+    - "recharge" — auto-created when a client deposit is approved and attributed.
+    - "manual_deposit" — admin pushes money into the account.
+    - "withdrawal" — admin pulls money out.
+    """
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    tenant_id: str
+    bank_account_id: str
+    kind: str  # "recharge" | "manual_deposit" | "withdrawal"
+    amount: float
+    description: Optional[str] = None
+    # Cross-references (optional, set when origin is a wallet transaction).
+    source_transaction_id: Optional[str] = None
+    customer_id: Optional[str] = None
+    customer_name: Optional[str] = None
+    reference_number: Optional[str] = None
+    # Auditing
+    created_by: Optional[str] = None
+    created_by_name: Optional[str] = None
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 class User(BaseModel):
@@ -1292,6 +1320,315 @@ async def update_shipping_categories_superadmin(tenant_id: str, data: dict, curr
     await db.tenants.update_one({"id": tenant_id}, {"$set": update_fields})
     return {"message": "Categorías de envío actualizadas para el tenant", **update_fields}
 
+
+# ==================== BANK ACCOUNTS (Superadmin config + Admin operations) ====================
+
+def _normalize_bank_accounts(raw):
+    """Validate and normalize a list of bank accounts.
+    Each account: owner_name, owner_id, account_number, bank_name, currency, is_active.
+    `id` is auto-generated for new ones, preserved for existing ones.
+    """
+    out = []
+    seen_ids = set()
+    for item in raw or []:
+        if not isinstance(item, dict):
+            continue
+        owner_name = str(item.get("owner_name", "")).strip()
+        account_number = str(item.get("account_number", "")).strip()
+        bank_name = str(item.get("bank_name", "")).strip()
+        if not owner_name or not account_number or not bank_name:
+            continue
+        acc_id = str(item.get("id") or "").strip() or str(uuid.uuid4())
+        if acc_id in seen_ids:
+            acc_id = str(uuid.uuid4())
+        seen_ids.add(acc_id)
+        out.append({
+            "id": acc_id,
+            "owner_name": owner_name,
+            "owner_id": str(item.get("owner_id", "")).strip(),
+            "account_number": account_number,
+            "bank_name": bank_name,
+            "currency": str(item.get("currency", "USD")).strip().upper() or "USD",
+            "is_active": item.get("is_active", True) is not False,
+            "created_at": item.get("created_at") or datetime.now(timezone.utc).isoformat(),
+        })
+    return out
+
+
+def _find_matching_bank_account(accounts: list, ocr_text: str, account_number_hint: str = None, owner_name_hint: str = None):
+    """Best-effort match of a recharge to one of the tenant's bank accounts.
+
+    Strategy (in order):
+      1) Exact match on account_number (full or last 4 digits) inside OCR text or hint.
+      2) Substring match on owner_name in the OCR text.
+    Returns the account dict or None.
+    """
+    text_pool = " ".join([str(x) for x in (ocr_text, account_number_hint, owner_name_hint) if x]).lower()
+    if not text_pool:
+        return None
+    # Account-number match (prefer longer matches)
+    for acc in sorted(accounts, key=lambda a: -len(str(a.get("account_number", "")))):
+        num = str(acc.get("account_number", "")).strip()
+        if not num:
+            continue
+        if num.lower() in text_pool:
+            return acc
+        # Last 4 digits
+        if len(num) >= 4 and num[-4:] in text_pool:
+            return acc
+    # Owner name match
+    for acc in accounts:
+        name = str(acc.get("owner_name", "")).strip().lower()
+        if name and name in text_pool:
+            return acc
+    return None
+
+
+@api_router.get("/superadmin/tenants/{tenant_id}/bank-accounts")
+async def list_bank_accounts_superadmin(tenant_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "superadmin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "bank_accounts": 1})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    return {"bank_accounts": tenant.get("bank_accounts", [])}
+
+
+@api_router.put("/superadmin/tenants/{tenant_id}/bank-accounts")
+async def update_bank_accounts_superadmin(tenant_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] != "superadmin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "id": 1})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    normalized = _normalize_bank_accounts(data.get("bank_accounts", []))
+    await db.tenants.update_one({"id": tenant_id}, {"$set": {"bank_accounts": normalized}})
+    return {"message": "Cuentas bancarias actualizadas", "bank_accounts": normalized}
+
+
+@api_router.get("/admin/bank-accounts")
+async def list_bank_accounts_admin(current_user: dict = Depends(get_current_user)):
+    """Admin/employee can list their own tenant accounts."""
+    if current_user["role"] not in ("admin", "employee"):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tenant = await db.tenants.find_one({"id": current_user["tenant_id"]}, {"_id": 0, "bank_accounts": 1})
+    return {"bank_accounts": (tenant or {}).get("bank_accounts", [])}
+
+
+async def _compute_account_balance(tenant_id: str, account_id: str) -> dict:
+    """Sum recharge + manual deposits (credits) − withdrawals (debits)."""
+    pipeline = [
+        {"$match": {"tenant_id": tenant_id, "bank_account_id": account_id}},
+        {"$group": {
+            "_id": "$kind",
+            "total": {"$sum": "$amount"},
+            "count": {"$sum": 1}
+        }}
+    ]
+    cur = db.bank_transactions.aggregate(pipeline)
+    sums = {"recharge": 0.0, "manual_deposit": 0.0, "withdrawal": 0.0}
+    counts = {"recharge": 0, "manual_deposit": 0, "withdrawal": 0}
+    async for row in cur:
+        k = row.get("_id")
+        if k in sums:
+            sums[k] = float(row.get("total", 0) or 0)
+            counts[k] = int(row.get("count", 0) or 0)
+    credits = sums["recharge"] + sums["manual_deposit"]
+    debits = sums["withdrawal"]
+    return {
+        "balance": round(credits - debits, 2),
+        "total_recharges": round(sums["recharge"], 2),
+        "total_manual_deposits": round(sums["manual_deposit"], 2),
+        "total_withdrawals": round(debits, 2),
+        "recharge_count": counts["recharge"],
+        "manual_deposit_count": counts["manual_deposit"],
+        "withdrawal_count": counts["withdrawal"],
+    }
+
+
+@api_router.get("/admin/bank-accounts/summary")
+async def get_bank_accounts_summary(current_user: dict = Depends(get_current_user)):
+    """Per-account balances and aggregate totals for the Cuentas dashboard."""
+    if current_user["role"] not in ("admin", "employee"):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1, "business_name": 1, "logo_url": 1})
+    accounts = (tenant or {}).get("bank_accounts", [])
+    rows = []
+    grand_balance = 0.0
+    for acc in accounts:
+        stats = await _compute_account_balance(tid, acc["id"])
+        rows.append({**acc, **stats})
+        grand_balance += stats["balance"]
+    # Unassigned approved recharges (no bank_account_id set yet) — needs admin attention.
+    unassigned = await db.wallet_transactions.count_documents({
+        "tenant_id": tid, "type": "deposit", "status": "approved",
+        "is_deleted": {"$ne": True},
+        "$or": [{"bank_account_id": None}, {"bank_account_id": {"$exists": False}}]
+    })
+    return {
+        "accounts": rows,
+        "grand_balance": round(grand_balance, 2),
+        "unassigned_recharges_count": unassigned,
+        "tenant_name": (tenant or {}).get("business_name"),
+        "tenant_logo": (tenant or {}).get("logo_url"),
+    }
+
+
+@api_router.get("/admin/bank-accounts/{account_id}/transactions")
+async def list_account_transactions(account_id: str, start_date: Optional[str] = None, end_date: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ("admin", "employee"):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    q = {"tenant_id": tid, "bank_account_id": account_id}
+    if start_date and end_date:
+        q["created_at"] = {"$gte": start_date, "$lte": end_date}
+    txs = await db.bank_transactions.find(q, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    stats = await _compute_account_balance(tid, account_id)
+    return {"transactions": txs, **stats}
+
+
+@api_router.post("/admin/bank-accounts/{account_id}/deposit")
+async def manual_deposit_account(account_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ("admin", "employee"):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    amount = float(data.get("amount", 0) or 0)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
+    description = str(data.get("description", "")).strip() or "Depósito manual"
+    tid = current_user["tenant_id"]
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1})
+    accs = [a for a in (tenant or {}).get("bank_accounts", []) if a.get("id") == account_id]
+    if not accs:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    actor_name = await get_actor_name(current_user["user_id"])
+    tx = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "bank_account_id": account_id,
+        "kind": "manual_deposit",
+        "amount": round(amount, 2),
+        "description": description,
+        "source_transaction_id": None,
+        "customer_id": None,
+        "customer_name": None,
+        "reference_number": data.get("reference_number"),
+        "created_by": current_user["user_id"],
+        "created_by_name": actor_name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.bank_transactions.insert_one(tx)
+    try:
+        await log_audit_action(
+            tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+            user_role=current_user["role"], action="bank_manual_deposit",
+            entity_type="bank_transaction", entity_id=tx["id"],
+            entity_name=f"{accs[0].get('bank_name')} #{accs[0].get('account_number')}",
+            details={"amount": tx["amount"], "account_id": account_id, "description": description}
+        )
+    except Exception:
+        pass
+    tx.pop("_id", None)
+    return {"message": "Depósito manual registrado", "transaction": tx}
+
+
+@api_router.post("/admin/bank-accounts/{account_id}/withdrawal")
+async def manual_withdrawal_account(account_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    if current_user["role"] not in ("admin", "employee"):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    amount = float(data.get("amount", 0) or 0)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
+    description = str(data.get("description", "")).strip() or "Retiro manual"
+    tid = current_user["tenant_id"]
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1})
+    accs = [a for a in (tenant or {}).get("bank_accounts", []) if a.get("id") == account_id]
+    if not accs:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    # Optional: prevent negative balances unless override flag is set.
+    stats = await _compute_account_balance(tid, account_id)
+    if amount > stats["balance"] and not data.get("allow_overdraft"):
+        raise HTTPException(status_code=400, detail=f"Saldo insuficiente. Disponible: ${stats['balance']:.2f}")
+    actor_name = await get_actor_name(current_user["user_id"])
+    tx = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "bank_account_id": account_id,
+        "kind": "withdrawal",
+        "amount": round(amount, 2),
+        "description": description,
+        "source_transaction_id": None,
+        "customer_id": None,
+        "customer_name": None,
+        "reference_number": data.get("reference_number"),
+        "created_by": current_user["user_id"],
+        "created_by_name": actor_name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.bank_transactions.insert_one(tx)
+    try:
+        await log_audit_action(
+            tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+            user_role=current_user["role"], action="bank_withdrawal",
+            entity_type="bank_transaction", entity_id=tx["id"],
+            entity_name=f"{accs[0].get('bank_name')} #{accs[0].get('account_number')}",
+            details={"amount": tx["amount"], "account_id": account_id, "description": description}
+        )
+    except Exception:
+        pass
+    tx.pop("_id", None)
+    return {"message": "Retiro registrado", "transaction": tx}
+
+
+@api_router.put("/admin/wallet-transactions/{tx_id}/assign-bank-account")
+async def assign_bank_account_to_recharge(tx_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Admin manually attaches/changes the bank account for an approved deposit.
+    This is the override used when AI couldn't auto-match the recharge.
+    """
+    if current_user["role"] not in ("admin", "employee"):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    new_account_id = (data.get("bank_account_id") or "").strip() or None
+    wtx = await db.wallet_transactions.find_one({"id": tx_id, "tenant_id": tid}, {"_id": 0})
+    if not wtx:
+        raise HTTPException(status_code=404, detail="Transacción no encontrada")
+    if wtx.get("type") != "deposit":
+        raise HTTPException(status_code=400, detail="Solo se pueden reasignar recargas (depósitos)")
+
+    # Validate the new account exists (when not clearing)
+    if new_account_id:
+        tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1})
+        ids = {a.get("id") for a in (tenant or {}).get("bank_accounts", [])}
+        if new_account_id not in ids:
+            raise HTTPException(status_code=404, detail="Cuenta bancaria no encontrada")
+
+    old_account_id = wtx.get("bank_account_id")
+    await db.wallet_transactions.update_one(
+        {"id": tx_id, "tenant_id": tid},
+        {"$set": {"bank_account_id": new_account_id}}
+    )
+    # Sync the bank ledger: remove old recharge entry, create new one (only if tx is approved).
+    await db.bank_transactions.delete_many({"tenant_id": tid, "source_transaction_id": tx_id, "kind": "recharge"})
+    if new_account_id and wtx.get("status") == "approved" and not wtx.get("is_deleted"):
+        actor_name = await get_actor_name(current_user["user_id"])
+        await db.bank_transactions.insert_one({
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "bank_account_id": new_account_id,
+            "kind": "recharge",
+            "amount": float(wtx.get("amount", 0) or 0),
+            "description": wtx.get("description") or "Recarga de cliente",
+            "source_transaction_id": tx_id,
+            "customer_id": wtx.get("customer_id"),
+            "customer_name": wtx.get("user_name") or wtx.get("description"),
+            "reference_number": wtx.get("reference_number"),
+            "created_by": current_user["user_id"],
+            "created_by_name": actor_name,
+            "created_at": wtx.get("approved_at") or wtx.get("created_at") or datetime.now(timezone.utc).isoformat(),
+        })
+    return {"message": "Cuenta reasignada", "old": old_account_id, "new": new_account_id}
+
+
 @api_router.get("/superadmin/tenants/{tenant_id}/details")
 async def get_tenant_details(tenant_id: str, current_user: dict = Depends(get_current_user)):
     """Get full tenant details including tax options"""
@@ -2393,7 +2730,59 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
     
     # Recalculate invoice deposits for this client
     await recalculate_client_invoices(tid, transaction["customer_id"])
-    
+
+    # ── Bank ledger: attribute this recharge to a tenant bank account ──
+    # Strategy:
+    #   1) If the admin already manually set `bank_account_id` on the transaction, honor it.
+    #   2) Otherwise try to auto-detect by matching OCR text / hints against the
+    #      tenant's configured accounts (account_number or owner_name).
+    # If a match is found we insert a `bank_transactions` row of kind="recharge"
+    # so the Cuentas dashboard can sum it. If nothing matches we leave it
+    # unassigned (the dashboard surfaces a "Sin asignar" counter so admin can fix).
+    try:
+        tenant_doc = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1})
+        accounts = (tenant_doc or {}).get("bank_accounts", [])
+        target_id = transaction.get("bank_account_id")
+        if not target_id and accounts:
+            ocr_text = ""
+            ai = transaction.get("ai_scan") or {}
+            if isinstance(ai, dict):
+                ocr_text = str(ai.get("raw_text") or ai.get("text") or "")
+            match = _find_matching_bank_account(
+                accounts,
+                ocr_text,
+                account_number_hint=transaction.get("bank_account_number_hint"),
+                owner_name_hint=transaction.get("beneficiary_name_hint"),
+            )
+            if match:
+                target_id = match["id"]
+                await db.wallet_transactions.update_one(
+                    {"id": transaction_id, "tenant_id": tid},
+                    {"$set": {"bank_account_id": target_id, "bank_account_auto_matched": True}}
+                )
+        if target_id:
+            # Replace any previous recharge ledger row tied to this tx (idempotent re-approval).
+            await db.bank_transactions.delete_many({
+                "tenant_id": tid, "source_transaction_id": transaction_id, "kind": "recharge"
+            })
+            await db.bank_transactions.insert_one({
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "bank_account_id": target_id,
+                "kind": "recharge",
+                "amount": float(transaction.get("amount", 0) or 0),
+                "description": transaction.get("description") or "Recarga de cliente",
+                "source_transaction_id": transaction_id,
+                "customer_id": transaction.get("customer_id"),
+                "customer_name": user_name,
+                "reference_number": transaction.get("reference_number"),
+                "created_by": current_user["user_id"],
+                "created_by_name": user_name,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+    except Exception as _bank_err:
+        logger.warning(f"[bank_ledger] failed to attribute recharge {transaction_id}: {_bank_err}")
+
     return {"message": "Depósito aprobado", "new_balance": new_balance}
 
 @api_router.post("/wallet/reject-deposit/{transaction_id}")

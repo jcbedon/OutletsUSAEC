@@ -35,6 +35,16 @@ export const resetTenantAdminPassword = (tenantId, newPassword) => api.put(`/sup
 export const getTenantAdminInfo = (tenantId) => api.get(`/superadmin/tenants/${tenantId}/admin-info`);
 export const updateTenantSettings = (tenantId, settings) => api.put(`/superadmin/tenants/${tenantId}/settings`, settings);
 
+// Bank accounts (per-tenant)
+export const getTenantBankAccounts = (tenantId) => api.get(`/superadmin/tenants/${tenantId}/bank-accounts`);
+export const updateTenantBankAccounts = (tenantId, bank_accounts) => api.put(`/superadmin/tenants/${tenantId}/bank-accounts`, { bank_accounts });
+export const listBankAccounts = () => api.get("/admin/bank-accounts");
+export const getBankAccountsSummary = () => api.get("/admin/bank-accounts/summary");
+export const getBankAccountTransactions = (accountId, params = {}) => api.get(`/admin/bank-accounts/${accountId}/transactions`, { params });
+export const manualBankDeposit = (accountId, data) => api.post(`/admin/bank-accounts/${accountId}/deposit`, data);
+export const manualBankWithdrawal = (accountId, data) => api.post(`/admin/bank-accounts/${accountId}/withdrawal`, data);
+export const assignBankAccountToRecharge = (txId, bankAccountId) => api.put(`/admin/wallet-transactions/${txId}/assign-bank-account`, { bank_account_id: bankAccountId });
+
 // Admin Tenant
 export const getMyTenant = () => api.get("/admin/tenant");
 export const uploadTenantLogo = (formData) => api.post("/admin/tenant/logo", formData, { headers: { "Content-Type": "multipart/form-data" } });

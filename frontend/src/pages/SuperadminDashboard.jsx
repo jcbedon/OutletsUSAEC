@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/App";
 import { useNavigate } from "react-router-dom";
-import { listTenants, createTenant, updateTenantStatus, getSuperadminStats, updateTenantTaxOptionsSuperadmin, updateTenantTrackingUrl, resetTenantAdminPassword, getTenantAdminInfo, updateTenantSettings, updateShippingCategoriesSuperadmin } from "@/lib/api";
+import { listTenants, createTenant, updateTenantStatus, getSuperadminStats, updateTenantTaxOptionsSuperadmin, updateTenantTrackingUrl, resetTenantAdminPassword, getTenantAdminInfo, updateTenantSettings, updateShippingCategoriesSuperadmin, getTenantBankAccounts, updateTenantBankAccounts } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Percent, X, Link, Truck, Key, Eye, EyeOff, FileText, Package, DollarSign } from "lucide-react";
+import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Percent, X, Link, Truck, Key, Eye, EyeOff, FileText, Package, DollarSign, Landmark, Trash2 } from "lucide-react";
 
 export default function SuperadminDashboard() {
   const { user, logout } = useAuth();
@@ -38,6 +38,9 @@ export default function SuperadminDashboard() {
 
   // Shipping categories state
   const [shipDialogOpen, setShipDialogOpen] = useState(false);
+  const [bankDialogOpen, setBankDialogOpen] = useState(false);
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [savingBankAccounts, setSavingBankAccounts] = useState(false);
   const [shippingCategories, setShippingCategories] = useState([]);
   const [shippingMode, setShippingMode] = useState("packages");
   
@@ -248,6 +251,58 @@ export default function SuperadminDashboard() {
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al guardar");
+    }
+  };
+
+  // ── Bank accounts dialog (Superadmin → per-tenant) ──
+  const openBankAccountsDialog = async (tenant) => {
+    setSelectedTenant(tenant);
+    setBankAccounts([]);
+    setBankDialogOpen(true);
+    try {
+      const res = await getTenantBankAccounts(tenant.id);
+      setBankAccounts(res.data.bank_accounts || []);
+    } catch (e) {
+      toast.error("Error al cargar cuentas bancarias");
+    }
+  };
+
+  const updateBankField = (idx, key, val) => {
+    setBankAccounts((prev) => prev.map((a, i) => (i === idx ? { ...a, [key]: val } : a)));
+  };
+
+  const addBankAccount = () => {
+    setBankAccounts((prev) => [
+      ...prev,
+      { id: "", owner_name: "", owner_id: "", account_number: "", bank_name: "", currency: "USD", is_active: true },
+    ]);
+  };
+
+  const removeBankAccount = (idx) => {
+    setBankAccounts((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSaveBankAccounts = async () => {
+    if (!selectedTenant) return;
+    const cleaned = bankAccounts
+      .map((a) => ({
+        ...a,
+        owner_name: String(a.owner_name || "").trim(),
+        owner_id: String(a.owner_id || "").trim(),
+        account_number: String(a.account_number || "").trim(),
+        bank_name: String(a.bank_name || "").trim(),
+        currency: String(a.currency || "USD").trim().toUpperCase(),
+      }))
+      .filter((a) => a.owner_name && a.account_number && a.bank_name);
+    setSavingBankAccounts(true);
+    try {
+      await updateTenantBankAccounts(selectedTenant.id, cleaned);
+      toast.success("Cuentas bancarias actualizadas");
+      setBankDialogOpen(false);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Error al guardar");
+    } finally {
+      setSavingBankAccounts(false);
     }
   };
 
@@ -510,6 +565,15 @@ export default function SuperadminDashboard() {
                         >
                           <DollarSign className="h-4 w-4 mr-1" />
                           Envíos
+                        </Button>
+                        <Button
+                          variant="outline" size="sm"
+                          className="rounded-lg border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                          onClick={() => openBankAccountsDialog(tenant)}
+                          data-testid={`config-bank-accounts-${tenant.id}`}
+                        >
+                          <Landmark className="h-4 w-4 mr-1" />
+                          Cuentas
                         </Button>
                         <Button
                           variant="outline" size="sm"
@@ -839,6 +903,142 @@ export default function SuperadminDashboard() {
                 data-testid="ship-cat-save"
               >
                 Guardar Categorías
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Bank Accounts Dialog (Superadmin) */}
+        <Dialog open={bankDialogOpen} onOpenChange={setBankDialogOpen}>
+          <DialogContent className="rounded-2xl max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Landmark className="h-5 w-5 text-indigo-600" />
+                Cuentas Bancarias - {selectedTenant?.business_name}
+              </DialogTitle>
+              <p className="text-xs text-slate-500 mt-1">
+                Configura aquí las cuentas donde los clientes pueden enviar sus recargas. El sistema usará el número de cuenta o el nombre del beneficiario para atribuir cada recarga aprobada.
+              </p>
+            </DialogHeader>
+
+            <div className="space-y-3 pt-2">
+              {bankAccounts.length === 0 && (
+                <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                  <Landmark className="h-10 w-10 mx-auto text-slate-300 mb-2" />
+                  <p className="text-sm text-slate-500 font-medium">Sin cuentas bancarias configuradas</p>
+                  <p className="text-xs text-slate-400 mt-1">Agrega la primera para empezar a atribuir recargas</p>
+                </div>
+              )}
+
+              {bankAccounts.map((acc, idx) => (
+                <div
+                  key={idx}
+                  className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50/40 to-white p-3 space-y-2"
+                  data-testid={`bank-account-row-${idx}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">
+                      Cuenta #{idx + 1}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => removeBankAccount(idx)}
+                      className="h-7 w-7 p-0 text-red-500 hover:bg-red-50"
+                      data-testid={`remove-bank-account-${idx}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-700">Nombre del banco</Label>
+                      <Input
+                        value={acc.bank_name || ""}
+                        onChange={(e) => updateBankField(idx, "bank_name", e.target.value)}
+                        placeholder="Ej: Banco Pichincha"
+                        className="h-9 rounded-lg"
+                        data-testid={`bank-name-${idx}`}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-700">Número de cuenta</Label>
+                      <Input
+                        value={acc.account_number || ""}
+                        onChange={(e) => updateBankField(idx, "account_number", e.target.value)}
+                        placeholder="Ej: 2200123456"
+                        className="h-9 rounded-lg font-mono"
+                        data-testid={`account-number-${idx}`}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-700">Nombre del dueño</Label>
+                      <Input
+                        value={acc.owner_name || ""}
+                        onChange={(e) => updateBankField(idx, "owner_name", e.target.value)}
+                        placeholder="Ej: Juan Pérez"
+                        className="h-9 rounded-lg"
+                        data-testid={`owner-name-${idx}`}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-700">Cédula / ID</Label>
+                      <Input
+                        value={acc.owner_id || ""}
+                        onChange={(e) => updateBankField(idx, "owner_id", e.target.value)}
+                        placeholder="Ej: 1712345678"
+                        className="h-9 rounded-lg font-mono"
+                        data-testid={`owner-id-${idx}`}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-semibold text-slate-700">Moneda</Label>
+                      <Input
+                        value={acc.currency || "USD"}
+                        onChange={(e) => updateBankField(idx, "currency", e.target.value.toUpperCase())}
+                        placeholder="USD"
+                        maxLength={3}
+                        className="h-9 rounded-lg uppercase"
+                        data-testid={`currency-${idx}`}
+                      />
+                    </div>
+                    <label className="flex items-end gap-2 pb-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={acc.is_active !== false}
+                        onChange={(e) => updateBankField(idx, "is_active", e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                      />
+                      <span className="text-xs font-semibold text-slate-700">Cuenta activa</span>
+                    </label>
+                  </div>
+                </div>
+              ))}
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={addBankAccount}
+                className="w-full h-10 rounded-xl border-dashed border-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                data-testid="add-bank-account-btn"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Agregar cuenta bancaria
+              </Button>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 mt-3">
+              <Button type="button" variant="outline" onClick={() => setBankDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleSaveBankAccounts}
+                disabled={savingBankAccounts}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                data-testid="save-bank-accounts-btn"
+              >
+                {savingBankAccounts ? "Guardando..." : "Guardar Cuentas"}
               </Button>
             </div>
           </DialogContent>

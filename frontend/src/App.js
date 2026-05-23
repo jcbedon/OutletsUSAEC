@@ -22,6 +22,7 @@ import AdminAuditLog from "@/pages/AdminAuditLog";
 import AdminInvoices from "@/pages/AdminInvoices";
 import AdminPackagesReport from "@/pages/AdminPackagesReport";
 import AdminPendingShipments from "@/pages/AdminPendingShipments";
+import AdminBankAccounts from "@/pages/AdminBankAccounts";
 import SuperadminDashboard from "@/pages/SuperadminDashboard";
 
 const AuthContext = createContext(null);
@@ -130,6 +131,7 @@ function App() {
           <Route path="/admin/invoices" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminInvoices /></ProtectedRoute>} />
           <Route path="/admin/packages-report" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminPackagesReport /></ProtectedRoute>} />
           <Route path="/admin/pending-shipments" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminPendingShipments /></ProtectedRoute>} />
+          <Route path="/admin/bank-accounts" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminBankAccounts /></ProtectedRoute>} />
 
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
