@@ -142,6 +142,8 @@ class Tenant(BaseModel):
     ])
     # Client ID settings
     allow_custom_client_id: bool = False  # Allow admin to enter custom client ID instead of auto-generated
+    # Feature toggles per tenant (controlled by superadmin)
+    show_shipments_diagnostic: bool = False  # Show the "Diagnóstico" button in /admin/shipments
     # Bank accounts owned by the tenant. Each one tracks recharges that landed
     # in it and supports manual deposits/withdrawals as a mini-bank ledger.
     bank_accounts: List[dict] = Field(default_factory=list)
@@ -1593,6 +1595,84 @@ async def manual_withdrawal_account(account_id: str, data: dict, current_user: d
     return {"message": "Retiro registrado", "transaction": tx}
 
 
+@api_router.post("/admin/bank-accounts/backfill-recharges")
+async def backfill_recharges(data: dict = None, current_user: dict = Depends(get_current_user)):
+    """Backfill the bank ledger for historical approved recharges.
+
+    For each approved deposit without a `bank_account_id`, attribute it to the
+    target account (provided in body as `bank_account_id`) and insert the
+    matching `bank_transactions` row. Useful right after configuring bank
+    accounts for the first time — fills the ledger with everything that came
+    before the feature existed.
+
+    Body: { "bank_account_id": "<id>" }  (required if tenant has >1 account)
+    """
+    if current_user["role"] not in ("admin", "employee"):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    data = data or {}
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1})
+    active = [a for a in (tenant or {}).get("bank_accounts", []) if a.get("is_active", True) is not False]
+    if not active:
+        raise HTTPException(status_code=400, detail="No hay cuentas bancarias activas configuradas")
+    target_id = data.get("bank_account_id")
+    if not target_id:
+        if len(active) != 1:
+            raise HTTPException(status_code=400, detail="Especifica bank_account_id; hay varias cuentas activas")
+        target_id = active[0]["id"]
+    if not any(a["id"] == target_id for a in active):
+        raise HTTPException(status_code=404, detail="Cuenta bancaria no encontrada")
+
+    # Find approved deposits without bank_account_id (or with empty)
+    cursor = db.wallet_transactions.find({
+        "tenant_id": tid,
+        "type": "deposit",
+        "status": "approved",
+        "is_deleted": {"$ne": True},
+        "$or": [{"bank_account_id": None}, {"bank_account_id": {"$exists": False}}, {"bank_account_id": ""}]
+    }, {"_id": 0})
+
+    actor_name = await get_actor_name(current_user["user_id"])
+    assigned = 0
+    async for tx in cursor:
+        # Idempotency: if there's already a recharge ledger row tied to this tx, skip insert.
+        existing = await db.bank_transactions.find_one({
+            "tenant_id": tid, "source_transaction_id": tx["id"], "kind": "recharge"
+        })
+        await db.wallet_transactions.update_one(
+            {"id": tx["id"], "tenant_id": tid},
+            {"$set": {"bank_account_id": target_id, "bank_account_assigned_via": "backfill"}}
+        )
+        if not existing:
+            await db.bank_transactions.insert_one({
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "bank_account_id": target_id,
+                "kind": "recharge",
+                "amount": float(tx.get("amount", 0) or 0),
+                "description": tx.get("description") or "Recarga de cliente (backfill)",
+                "source_transaction_id": tx["id"],
+                "customer_id": tx.get("customer_id"),
+                "customer_name": tx.get("user_name"),
+                "reference_number": tx.get("reference_number"),
+                "created_by": current_user["user_id"],
+                "created_by_name": actor_name,
+                "created_at": tx.get("approved_at") or tx.get("created_at") or datetime.now(timezone.utc).isoformat(),
+            })
+        assigned += 1
+    try:
+        await log_audit_action(
+            tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+            user_role=current_user["role"], action="bank_backfill_recharges",
+            entity_type="bank_transaction", entity_id=target_id,
+            entity_name="Backfill de recargas históricas",
+            details={"assigned_count": assigned, "bank_account_id": target_id}
+        )
+    except Exception:
+        pass
+    return {"message": f"Se asignaron {assigned} recargas a la cuenta", "assigned_count": assigned, "bank_account_id": target_id}
+
+
 @api_router.put("/admin/wallet-transactions/{tx_id}/assign-bank-account")
 async def assign_bank_account_to_recharge(tx_id: str, data: dict, current_user: dict = Depends(get_current_user)):
     """Admin manually attaches/changes the bank account for an approved deposit.
@@ -1779,7 +1859,11 @@ async def update_tenant_settings(tenant_id: str, data: dict, current_user: dict 
     # Client ID settings
     if "allow_custom_client_id" in data:
         update_fields["allow_custom_client_id"] = bool(data["allow_custom_client_id"])
-    
+
+    # Feature toggles
+    if "show_shipments_diagnostic" in data:
+        update_fields["show_shipments_diagnostic"] = bool(data["show_shipments_diagnostic"])
+
     if update_fields:
         await db.tenants.update_one({"id": tenant_id}, {"$set": update_fields})
     
@@ -2542,6 +2626,9 @@ async def request_deposit_with_proof(
                         "detected_amount": detected_amount,
                         "currency": scan.get("currency"),
                         "confidence": scan.get("confidence"),
+                        "detected_destination_account": scan.get("detected_destination_account"),
+                        "detected_beneficiary_name": scan.get("detected_beneficiary_name"),
+                        "raw_text": scan.get("raw"),
                         "scanned_at": datetime.now(timezone.utc).isoformat()
                     }
                 }
@@ -2590,16 +2677,18 @@ async def _scan_proof_image(proof_url: str, session_id: str = "ocr"):
             system_message=(
                 "You extract payment information from deposit receipt images. "
                 "Return STRICT JSON with exactly these fields: "
-                '{"reference_number": "<string or null>", "amount": <number or null>, "currency": "<string or null>", "confidence": "<low|medium|high>"}. '
+                '{"reference_number": "<string or null>", "amount": <number or null>, "currency": "<string or null>", "confidence": "<low|medium|high>", "destination_account": "<string or null>", "beneficiary_name": "<string or null>"}. '
                 "Rules: reference_number is the voucher/transaction/receipt number (usually long digits). "
                 "amount is the numeric amount deposited (no currency symbols). "
+                "destination_account is the bank account number that received the deposit (where the money was transferred TO). "
+                "beneficiary_name is the name of the person/company that received the money. "
                 "If a value cannot be confidently read, use null. No extra text, only JSON."
             )
         ).with_model("gemini", "gemini-2.5-flash")
         image_file = FileContentWithMimeType(file_path=tmp_path, mime_type=content_type)
         prompt = (
-            "Analiza este comprobante de depósito y extrae el número de comprobante/referencia "
-            "y el monto depositado. Responde únicamente con JSON."
+            "Analiza este comprobante de depósito y extrae: número de comprobante, monto, "
+            "número de cuenta destino y nombre del beneficiario. Responde únicamente con JSON."
         )
         raw = await chat.send_message(UserMessage(text=prompt, file_contents=[image_file]))
     except Exception:
@@ -2633,7 +2722,9 @@ async def _scan_proof_image(proof_url: str, session_id: str = "ocr"):
         "detected_amount": detected_amount,
         "currency": parsed.get("currency"),
         "confidence": parsed.get("confidence"),
-        "raw": text[:500]
+        "detected_destination_account": (parsed.get("destination_account") or "").strip() or None if isinstance(parsed.get("destination_account"), str) else None,
+        "detected_beneficiary_name": (parsed.get("beneficiary_name") or "").strip() or None if isinstance(parsed.get("beneficiary_name"), str) else None,
+        "raw": text[:1500]
     }
 
 
@@ -2745,33 +2836,44 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
     await recalculate_client_invoices(tid, transaction["customer_id"])
 
     # ── Bank ledger: attribute this recharge to a tenant bank account ──
-    # Strategy:
-    #   1) If the admin already manually set `bank_account_id` on the transaction, honor it.
-    #   2) Otherwise try to auto-detect by matching OCR text / hints against the
-    #      tenant's configured accounts (account_number or owner_name).
-    # If a match is found we insert a `bank_transactions` row of kind="recharge"
-    # so the Cuentas dashboard can sum it. If nothing matches we leave it
-    # unassigned (the dashboard surfaces a "Sin asignar" counter so admin can fix).
+    # Matching strategy (in priority order):
+    #   1) Admin already set `bank_account_id` manually on the tx.
+    #   2) OCR detected the destination account/beneficiary → match against tenant accounts.
+    #   3) Fallback: if the tenant only has 1 active account, attribute to it (default).
+    #   4) Otherwise leave unassigned (admin reasigna desde "Recargas sin asignar").
     try:
         tenant_doc = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1})
-        accounts = (tenant_doc or {}).get("bank_accounts", [])
+        all_accounts = (tenant_doc or {}).get("bank_accounts", [])
+        active_accounts = [a for a in all_accounts if a.get("is_active", True) is not False]
         target_id = transaction.get("bank_account_id")
-        if not target_id and accounts:
-            ocr_text = ""
+        if not target_id and active_accounts:
             ai = transaction.get("ai_scan") or {}
+            ocr_text = ""
+            account_hint = transaction.get("bank_account_number_hint")
+            owner_hint = transaction.get("beneficiary_name_hint")
             if isinstance(ai, dict):
                 ocr_text = str(ai.get("raw_text") or ai.get("text") or "")
+                # Prefer the OCR-extracted fields when available
+                account_hint = account_hint or ai.get("detected_destination_account")
+                owner_hint = owner_hint or ai.get("detected_beneficiary_name")
             match = _find_matching_bank_account(
-                accounts,
+                active_accounts,
                 ocr_text,
-                account_number_hint=transaction.get("bank_account_number_hint"),
-                owner_name_hint=transaction.get("beneficiary_name_hint"),
+                account_number_hint=account_hint,
+                owner_name_hint=owner_hint,
             )
             if match:
                 target_id = match["id"]
                 await db.wallet_transactions.update_one(
                     {"id": transaction_id, "tenant_id": tid},
                     {"$set": {"bank_account_id": target_id, "bank_account_auto_matched": True}}
+                )
+            elif len(active_accounts) == 1:
+                # Sole-account fallback — assign to it automatically.
+                target_id = active_accounts[0]["id"]
+                await db.wallet_transactions.update_one(
+                    {"id": transaction_id, "tenant_id": tid},
+                    {"$set": {"bank_account_id": target_id, "bank_account_auto_matched": True, "bank_account_assigned_via": "single_account_default"}}
                 )
         if target_id:
             # Replace any previous recharge ledger row tied to this tx (idempotent re-approval).

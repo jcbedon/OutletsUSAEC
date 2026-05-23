@@ -26,6 +26,7 @@ import {
   getBankAccountTransactions,
   manualBankDeposit,
   manualBankWithdrawal,
+  backfillBankAccountRecharges,
 } from "@/lib/api";
 import { generateBankStatementPDF } from "@/lib/bankStatementPDF";
 
@@ -148,6 +149,28 @@ export default function AdminBankAccounts() {
     }
   };
 
+  // Assign all historical approved recharges (without bank_account_id) to the
+  // currently selected account. Useful right after configuring bank accounts.
+  const handleBackfill = async () => {
+    if (!selected) return;
+    const unassigned = summary?.unassigned_recharges_count || 0;
+    if (unassigned === 0) {
+      toast.info("No hay recargas sin asignar");
+      return;
+    }
+    const ok = window.confirm(
+      `¿Asignar las ${unassigned} recargas históricas a "${selected.bank_name} - ${selected.owner_name}"? Esta acción se puede revertir reasignando individualmente.`
+    );
+    if (!ok) return;
+    try {
+      const res = await backfillBankAccountRecharges(selected.id);
+      toast.success(`${res.data.assigned_count} recargas asignadas`);
+      await Promise.all([loadSummary(), loadLedger(selected.id)]);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Error al asignar recargas");
+    }
+  };
+
   const exportPDF = () => {
     if (!selected) return;
     try {
@@ -226,10 +249,21 @@ export default function AdminBankAccounts() {
           <div className="mt-2 flex flex-wrap gap-3 text-xs text-indigo-200">
             <span>{summary?.accounts?.length || 0} cuenta{(summary?.accounts?.length || 0) === 1 ? "" : "s"} activas</span>
             {summary?.unassigned_recharges_count > 0 && (
-              <span className="inline-flex items-center gap-1 text-amber-300" data-testid="unassigned-warning">
-                <AlertCircle className="h-3 w-3" />
-                {summary.unassigned_recharges_count} recarga(s) sin cuenta asignada
-              </span>
+              <div className="inline-flex items-center gap-2" data-testid="unassigned-warning">
+                <span className="inline-flex items-center gap-1 text-amber-300">
+                  <AlertCircle className="h-3 w-3" />
+                  {summary.unassigned_recharges_count} recarga(s) sin cuenta asignada
+                </span>
+                <button
+                  type="button"
+                  onClick={handleBackfill}
+                  className="text-xs font-semibold underline text-amber-200 hover:text-white transition-colors"
+                  data-testid="backfill-btn"
+                  title="Asignar todas las recargas históricas a la cuenta seleccionada"
+                >
+                  Asignar a {selected ? selected.bank_name : "cuenta"} →
+                </button>
+              </div>
             )}
           </div>
         </div>
