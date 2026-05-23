@@ -144,14 +144,23 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
 ### P3
 - AI OCR confidence indicator en Admin Wallet.
 
+## Changelog (May 2026)
+- **[23-may]** **Flujo OCR Banking "Sin asignar" VERIFICADO E2E**:
+  - Backend: `_find_matching_bank_account` requiere match doble (último-4 cuenta + token de owner), `GET /admin/bank-accounts/unassigned-recharges` lista recargas aprobadas sin `bank_account_id` con sugerencia de cuenta, `PUT /admin/wallet-transactions/{tx_id}/assign-bank-account` reasigna y sincroniza el `bank_transactions` ledger (delete old + insert new). `GET /admin/bank-accounts/summary` expone `unassigned_recharges_count`.
+  - Frontend: `/admin/bank-accounts` muestra banner "N recarga(s) sin cuenta asignada" + modal "Recargas sin cuenta identificada" con dropdown por fila y botón "Asignar".
+  - Probado: 17 → 16 sin asignar al asignar 1; reasignar de Pichincha → Guayaquil mueve el saldo correctamente; validaciones 404 para tx/cuenta inválidas.
+
 ## Known Env Issues
 - Object Store falla al init en preview; OK en producción.
 
 ## Key Files
 - `/app/backend/server.py`
 - `/app/frontend/src/lib/invoicePDF.js`
+- `/app/frontend/src/lib/bankStatementPDF.js`
+- `/app/frontend/src/lib/courierManifestPDF.js`
 - `/app/frontend/src/components/InvoiceDialog.jsx`
 - `/app/frontend/src/pages/ClientDashboard.jsx`
 - `/app/frontend/src/pages/AdminShipments.jsx`
 - `/app/frontend/src/pages/AdminWallet.jsx`
+- `/app/frontend/src/pages/AdminBankAccounts.jsx`
 - `/app/frontend/src/pages/SuperadminDashboard.jsx`
