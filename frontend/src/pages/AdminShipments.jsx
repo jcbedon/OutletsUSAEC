@@ -20,6 +20,7 @@ import {
   toggleShipmentSent,
   getShippingCategoriesAdmin
 } from "@/lib/api";
+import { generateCourierManifestPDF } from "@/lib/courierManifestPDF";
 import { toast } from "sonner";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { Button } from "@/components/ui/button";
@@ -55,7 +56,8 @@ import {
   ChevronDown,
   Smartphone,
   RefreshCw,
-  Stethoscope
+  Stethoscope,
+  FileDown
 } from "lucide-react";
 import QRCode from "qrcode";
 import axios from "axios";
@@ -101,6 +103,8 @@ export default function AdminShipments() {
   const [tenantShippingMode, setTenantShippingMode] = useState("packages");
   // Bumps each time a checkbox flips → drives the truck-icon flying animation.
   const [courierAnimTick, setCourierAnimTick] = useState(0);
+  // Tenant snapshot (logo + name) for PDFs.
+  const [tenantInfo, setTenantInfo] = useState({ name: "", logo: null });
   const [diagDialogOpen, setDiagDialogOpen] = useState(false);
   const [diagLoading, setDiagLoading] = useState(false);
   const [diagData, setDiagData] = useState(null);
@@ -333,6 +337,10 @@ export default function AdminShipments() {
       // don't have to re-derive from tenantSettings everywhere).
       setCourierCats(categories || []);
       setTenantShippingMode(tenantRes.data.shipping_mode === "pounds" ? "pounds" : "packages");
+      setTenantInfo({
+        name: tenantRes.data.business_name || tenantRes.data.name || "",
+        logo: tenantRes.data.logo_url || tenantRes.data.logo || null,
+      });
     } catch (error) {
       toast.error("Error al cargar datos");
     } finally {
@@ -537,6 +545,40 @@ export default function AdminShipments() {
     } catch (error) {
       setShipments(prev => prev.map(s => s.id === shipment.id ? { ...s, marked_sent: !next } : s));
       toast.error(error.response?.data?.detail || "Error al actualizar");
+    }
+  };
+
+  // Build & download the courier manifest PDF for the currently active
+  // week filter. Includes only shipments physically dispatched
+  // (`marked_sent=true`). The total at the bottom matches the live widget.
+  const handleExportCourierManifest = async () => {
+    const filtered = (weekFilter === "all"
+      ? shipments
+      : shipments.filter(s => getWeekKey(s.created_at) === weekFilter)
+    ).filter(s => s.marked_sent);
+
+    if (filtered.length === 0) {
+      toast.error("No hay envíos marcados como enviados en el período seleccionado");
+      return;
+    }
+    const periodLabel = (() => {
+      if (weekFilter === "all") return "Todas las semanas";
+      const w = weekList.find(([k]) => k === weekFilter);
+      return w ? `Semana ${w[1].label}` : weekFilter;
+    })();
+    try {
+      await generateCourierManifestPDF({
+        tenantName: tenantInfo.name,
+        tenantLogo: tenantInfo.logo,
+        periodLabel,
+        shipments: filtered,
+        categories: courierCats,
+        tenantMode: tenantShippingMode,
+      });
+      toast.success("Manifiesto PDF generado");
+    } catch (e) {
+      console.error(e);
+      toast.error("Error al generar PDF");
     }
   };
 
@@ -1283,15 +1325,27 @@ export default function AdminShipments() {
                     </div>
                   </div>
                   {courierCats && courierCats.length > 0 && (
-                    <div className="text-right" data-testid="courier-prices-legend">
-                      <p className="text-[9px] uppercase tracking-wider font-semibold text-purple-600/80 mb-0.5">Tarifas actuales</p>
-                      <div className="flex flex-col gap-0.5 items-end">
-                        {courierCats.map((p) => (
-                          <span key={p.key} className="text-[10px] text-purple-700">
-                            <strong>{p.key}:</strong> ${Number(p.courier_cost_packages || 0).toFixed(2)}/pkg · ${Number(p.courier_cost_pounds || 0).toFixed(2)}/lb
-                          </span>
-                        ))}
+                    <div className="flex items-end gap-3" data-testid="courier-prices-legend">
+                      <div className="text-right">
+                        <p className="text-[9px] uppercase tracking-wider font-semibold text-purple-600/80 mb-0.5">Tarifas actuales</p>
+                        <div className="flex flex-col gap-0.5 items-end">
+                          {courierCats.map((p) => (
+                            <span key={p.key} className="text-[10px] text-purple-700">
+                              <strong>{p.key}:</strong> ${Number(p.courier_cost_packages || 0).toFixed(2)}/pkg · ${Number(p.courier_cost_pounds || 0).toFixed(2)}/lb
+                            </span>
+                          ))}
+                        </div>
                       </div>
+                      <Button
+                        type="button"
+                        onClick={handleExportCourierManifest}
+                        className="h-9 rounded-lg text-xs gap-1.5 bg-purple-700 hover:bg-purple-800 text-white shadow-sm"
+                        data-testid="export-courier-pdf-btn"
+                        title="Descargar manifiesto PDF para entregar a la paquetería"
+                      >
+                        <FileDown className="h-4 w-4" />
+                        PDF Paquetería
+                      </Button>
                     </div>
                   )}
                 </div>
