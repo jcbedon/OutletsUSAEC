@@ -156,6 +156,7 @@ export default function AdminLive() {
     customer_id: "",
     item_name: "",
     price: "",
+    quantity: "1",        // Cantidad de unidades a registrar de una sola vez
     tax_option: "8.25",  // Selected tax option value
     custom_tax: "",       // For "other" option
     apply_commission: true,
@@ -526,27 +527,41 @@ export default function AdminLive() {
     if (submittingRef.current) return;
     submittingRef.current = true;
     const price = parseFloat(purchaseForm.price);
+    // Cantidad de unidades a registrar (cada una se crea como purchase
+    // independiente para preservar la edición/borrado individual y la lógica
+    // existente de facturas/saldos). Default 1, mínimo 1, máximo 50.
+    const qty = Math.max(1, Math.min(50, parseInt(purchaseForm.quantity || "1", 10) || 1));
     setSubmitting(true);
 
     try {
       const taxRate = getEffectiveTaxRate(purchaseForm.tax_option, purchaseForm.custom_tax);
-      
-      const result = await createPurchase({
-        customer_id: purchaseForm.customer_id,
-        item_name: purchaseForm.item_name,
-        store: selectedLive.store || "Sin tienda",
-        price: price,
-        live_id: selectedLive.id,
-        tax_rate: taxRate,
-        apply_tax: taxRate > 0,
-        apply_commission: purchaseForm.apply_commission,
-        commission_amount: parseFloat(purchaseForm.commission_amount) || 0
-      });
 
-      toast.success(
-        `${result.data.customer_name}: ${purchaseForm.item_name} - Total: $${result.data.total.toFixed(2)} (Saldo: $${result.data.new_balance.toFixed(2)})`,
-        { duration: 3000 }
-      );
+      let lastResult = null;
+      for (let i = 0; i < qty; i++) {
+        lastResult = await createPurchase({
+          customer_id: purchaseForm.customer_id,
+          item_name: purchaseForm.item_name,
+          store: selectedLive.store || "Sin tienda",
+          price: price,
+          live_id: selectedLive.id,
+          tax_rate: taxRate,
+          apply_tax: taxRate > 0,
+          apply_commission: purchaseForm.apply_commission,
+          commission_amount: parseFloat(purchaseForm.commission_amount) || 0
+        });
+      }
+
+      if (qty > 1) {
+        toast.success(
+          `${lastResult.data.customer_name}: ${qty}× ${purchaseForm.item_name} registrados (Saldo: $${lastResult.data.new_balance.toFixed(2)})`,
+          { duration: 3500 }
+        );
+      } else {
+        toast.success(
+          `${lastResult.data.customer_name}: ${purchaseForm.item_name} - Total: $${lastResult.data.total.toFixed(2)} (Saldo: $${lastResult.data.new_balance.toFixed(2)})`,
+          { duration: 3000 }
+        );
+      }
 
       // Reset form but keep tax option and commission for next purchase
       const lastTaxOption = purchaseForm.tax_option;
@@ -556,6 +571,7 @@ export default function AdminLive() {
         customer_id: "",
         item_name: "",
         price: "",
+        quantity: "1",
         tax_option: lastTaxOption,
         custom_tax: lastCustomTax,
         apply_commission: true,
@@ -1172,21 +1188,40 @@ export default function AdminLive() {
 
                     {/* Price */}
                     <div>
-                      <Label className="text-sm font-medium">Precio (USD)</Label>
-                      <div className="relative mt-1">
-                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                      <div className="flex items-end justify-between gap-2">
+                        <Label className="text-sm font-medium">Precio (USD)</Label>
+                        <Label className="text-[11px] font-medium text-gray-500" htmlFor="purchase-qty">Cant.</Label>
+                      </div>
+                      <div className="relative mt-1 flex gap-2 items-stretch">
+                        <div className="relative flex-1">
+                          <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            value={purchaseForm.price}
+                            onChange={(e) => setPurchaseForm({ ...purchaseForm, price: e.target.value })}
+                            onWheel={(e) => e.target.blur()}
+                            onInvalid={(e) => e.preventDefault()}
+                            className="pl-10 h-14 text-2xl font-bold text-center rounded-xl"
+                            data-testid="purchase-price"
+                          />
+                        </div>
                         <Input
+                          id="purchase-qty"
                           type="number"
-                          inputMode="decimal"
-                          step="0.01"
-                          min="0"
-                          placeholder="0.00"
-                          value={purchaseForm.price}
-                          onChange={(e) => setPurchaseForm({ ...purchaseForm, price: e.target.value })}
+                          inputMode="numeric"
+                          step="1"
+                          min="1"
+                          max="50"
+                          value={purchaseForm.quantity}
+                          onChange={(e) => setPurchaseForm({ ...purchaseForm, quantity: e.target.value })}
                           onWheel={(e) => e.target.blur()}
-                          onInvalid={(e) => e.preventDefault()}
-                          className="pl-10 h-14 text-2xl font-bold text-center rounded-xl"
-                          data-testid="purchase-price"
+                          className="w-16 h-14 text-lg font-semibold text-center rounded-xl"
+                          title="Cantidad de unidades a registrar"
+                          data-testid="purchase-quantity"
                         />
                       </div>
                       
@@ -1271,6 +1306,7 @@ export default function AdminLive() {
                             const priceWithTax = price + taxAmount;
                             const commission = purchaseForm.apply_commission ? parseFloat(purchaseForm.commission_amount || 0) : 0;
                             const total = priceWithTax + commission;
+                            const qty = Math.max(1, Math.min(50, parseInt(purchaseForm.quantity || "1", 10) || 1));
                             const taxLabel = purchaseForm.tax_option === "other" 
                               ? `${purchaseForm.custom_tax || 0}%`
                               : purchaseForm.tax_option === "0" 
@@ -1303,6 +1339,12 @@ export default function AdminLive() {
                                   <span>Se descuenta del saldo:</span>
                                   <span className="text-red-600">${total.toFixed(2)}</span>
                                 </div>
+                                {qty > 1 && (
+                                  <div className="flex justify-between text-xs mt-2 pt-2 border-t border-dashed text-gray-600" data-testid="purchase-qty-total">
+                                    <span>× {qty} unidades =</span>
+                                    <span className="font-bold text-red-700">${(total * qty).toFixed(2)}</span>
+                                  </div>
+                                )}
                               </>
                             );
                           })()}
