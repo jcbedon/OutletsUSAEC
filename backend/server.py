@@ -3238,19 +3238,24 @@ async def admin_create_recharge(
     proof_url = f"/api/uploads/{obj_path}"
 
     # ── Resolve which bank account this recharge belongs to ──
-    # Priority: explicit `bank_account_id` from the form, else auto-assign when
-    # the tenant has exactly one active account, else leave unassigned so the
-    # admin can resolve it from the "Recargas sin asignar" UI.
+    # The bank account is now MANDATORY so every recharge always lands in the
+    # ledger immediately (no "Sin asignar" leak). When only one active account
+    # exists the frontend auto-fills it; with multiple, the admin must choose.
     tenant_doc = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1})
     all_accounts = (tenant_doc or {}).get("bank_accounts", [])
     active_accounts = [a for a in all_accounts if a.get("is_active", True) is not False]
+    if not active_accounts:
+        raise HTTPException(status_code=400, detail="No hay cuentas bancarias activas. Crea una primero en /admin/bank-accounts.")
     resolved_bank_account_id = None
     if bank_account_id:
         if not any(a.get("id") == bank_account_id for a in active_accounts):
             raise HTTPException(status_code=404, detail="Cuenta bancaria no encontrada o inactiva")
         resolved_bank_account_id = bank_account_id
     elif len(active_accounts) == 1:
+        # Single-account tenants: auto-pick to keep the UX seamless.
         resolved_bank_account_id = active_accounts[0]["id"]
+    else:
+        raise HTTPException(status_code=400, detail="Debes seleccionar la cuenta bancaria de destino")
 
     # Update wallet balance immediately
     new_balance = wallet["available"] + amount
@@ -3313,28 +3318,27 @@ async def admin_create_recharge(
     # Recalculate invoice deposits for this client
     await recalculate_client_invoices(tid, user["customer_id"])
 
-    # ── Bank ledger: log to the chosen bank account so the recharge is
-    # reflected in /admin/bank-accounts. If no account was resolved, the
-    # transaction stays as "Sin asignar" and the admin can attach it manually.
-    if resolved_bank_account_id:
-        try:
-            await db.bank_transactions.insert_one({
-                "id": str(uuid.uuid4()),
-                "tenant_id": tid,
-                "bank_account_id": resolved_bank_account_id,
-                "kind": "recharge",
-                "amount": float(amount),
-                "description": description or "Recarga creada por administrador",
-                "source_transaction_id": tx.id,
-                "customer_id": user["customer_id"],
-                "customer_name": user["name"],
-                "reference_number": None,
-                "created_by": current_user["user_id"],
-                "created_by_name": actor_name,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            })
-        except Exception as _bank_err:
-            logger.warning(f"[bank_ledger] failed to attribute admin-recharge {tx.id}: {_bank_err}")
+    # ── Bank ledger: always log to the chosen bank account so the recharge
+    # appears in /admin/bank-accounts. `resolved_bank_account_id` is now
+    # guaranteed to be set thanks to the validations above.
+    try:
+        await db.bank_transactions.insert_one({
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "bank_account_id": resolved_bank_account_id,
+            "kind": "recharge",
+            "amount": float(amount),
+            "description": description or "Recarga creada por administrador",
+            "source_transaction_id": tx.id,
+            "customer_id": user["customer_id"],
+            "customer_name": user["name"],
+            "reference_number": None,
+            "created_by": current_user["user_id"],
+            "created_by_name": actor_name,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as _bank_err:
+        logger.warning(f"[bank_ledger] failed to attribute admin-recharge {tx.id}: {_bank_err}")
 
     return {
         "message": "Recarga creada exitosamente",

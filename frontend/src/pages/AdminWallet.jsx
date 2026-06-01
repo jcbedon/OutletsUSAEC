@@ -306,6 +306,14 @@ export default function AdminWallet() {
       toast.error("El comprobante es obligatorio");
       return;
     }
+    if (bankAccounts.length === 0) {
+      toast.error("No hay cuentas bancarias activas. Crea una primero en /admin/bank-accounts");
+      return;
+    }
+    if (!rechargeBankAccountId) {
+      toast.error("Selecciona la cuenta bancaria de destino");
+      return;
+    }
     
     setCreatingRecharge(true);
     try {
@@ -796,17 +804,18 @@ export default function AdminWallet() {
                   />
                 </div>
 
-                {/* Cuenta bancaria de destino — visible cuando hay más de una.
-                    Si solo hay una, se asigna automáticamente sin saturar la UI. */}
+                {/* Cuenta bancaria de destino — obligatoria. Si solo hay una
+                    cuenta activa, queda preseleccionada; si hay varias el admin
+                    debe elegir explícitamente para que la recarga aterrice en
+                    el ledger correcto. */}
                 {bankAccounts.length > 1 && (
                   <div className="space-y-2">
-                    <Label>Cuenta bancaria de destino <span className="text-gray-400 text-xs">(opcional)</span></Label>
-                    <Select value={rechargeBankAccountId || "__none__"} onValueChange={(v) => setRechargeBankAccountId(v === "__none__" ? "" : v)}>
+                    <Label>Cuenta bancaria de destino <span className="text-red-500">*</span></Label>
+                    <Select value={rechargeBankAccountId || ""} onValueChange={(v) => setRechargeBankAccountId(v)}>
                       <SelectTrigger className="rounded-xl h-12" data-testid="recharge-bank-account-select">
-                        <SelectValue placeholder="Sin asignar (resolver luego)" />
+                        <SelectValue placeholder="Selecciona una cuenta..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__none__">Sin asignar (resolver luego)</SelectItem>
                         {bankAccounts.map((acc) => (
                           <SelectItem key={acc.id} value={acc.id}>
                             {acc.bank_name} · {acc.owner_name} · ••{String(acc.account_number || "").slice(-4)}
@@ -822,6 +831,11 @@ export default function AdminWallet() {
                 {bankAccounts.length === 1 && (
                   <p className="text-xs text-gray-500 -mt-2" data-testid="recharge-bank-account-info">
                     Se registrará en: <span className="font-semibold">{bankAccounts[0].bank_name} · ••{String(bankAccounts[0].account_number || "").slice(-4)}</span>
+                  </p>
+                )}
+                {bankAccounts.length === 0 && (
+                  <p className="text-xs text-red-600 -mt-2 font-medium" data-testid="recharge-no-bank-accounts-warning">
+                    ⚠ No hay cuentas bancarias activas. Crea una en <span className="underline">/admin/bank-accounts</span> antes de registrar recargas.
                   </p>
                 )}
 
