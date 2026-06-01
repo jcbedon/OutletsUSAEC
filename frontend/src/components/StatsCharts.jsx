@@ -177,10 +177,11 @@ export function ClientsDebtsChart({ data }) {
     return <div className="h-[300px] flex items-center justify-center text-gray-400">Sin datos de clientes</div>;
   }
   
-  // Prepare chart data - show clients with significant balances (positive or negative)
+  // Prepare chart data — keep clients with non-zero pending balance only.
+  // The caller (AdminStats.jsx) already trimmed the list to `chartLimit`, so we
+  // don't apply a second slice here to honor the user's "Top N" selection.
   const chartData = data
     .filter(c => Math.abs(c.pending_balance) > 0.01)
-    .slice(0, 15)
     .map((c) => ({
       name: c.name.length > 12 ? c.name.slice(0, 12) + "..." : c.name,
       fullName: c.name,
