@@ -3194,6 +3194,7 @@ async def admin_create_recharge(
     user_id: str = FastAPIForm(...),
     amount: float = FastAPIForm(...),
     description: str = FastAPIForm(None),
+    bank_account_id: str = FastAPIForm(None),
     proof: UploadFile = File(...),
     current_user: dict = Depends(get_current_user)
 ):
@@ -3235,7 +3236,22 @@ async def admin_create_recharge(
     file_data = await proof.read()
     obj_path = object_store.upload_file(file_data, filename, "proofs")
     proof_url = f"/api/uploads/{obj_path}"
-    
+
+    # ── Resolve which bank account this recharge belongs to ──
+    # Priority: explicit `bank_account_id` from the form, else auto-assign when
+    # the tenant has exactly one active account, else leave unassigned so the
+    # admin can resolve it from the "Recargas sin asignar" UI.
+    tenant_doc = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1})
+    all_accounts = (tenant_doc or {}).get("bank_accounts", [])
+    active_accounts = [a for a in all_accounts if a.get("is_active", True) is not False]
+    resolved_bank_account_id = None
+    if bank_account_id:
+        if not any(a.get("id") == bank_account_id for a in active_accounts):
+            raise HTTPException(status_code=404, detail="Cuenta bancaria no encontrada o inactiva")
+        resolved_bank_account_id = bank_account_id
+    elif len(active_accounts) == 1:
+        resolved_bank_account_id = active_accounts[0]["id"]
+
     # Update wallet balance immediately
     new_balance = wallet["available"] + amount
     await db.wallets.update_one(
@@ -3258,6 +3274,8 @@ async def admin_create_recharge(
     tx_dict = tx.model_dump()
     tx_dict["proof_url"] = proof_url
     tx_dict["created_by_admin"] = True
+    if resolved_bank_account_id:
+        tx_dict["bank_account_id"] = resolved_bank_account_id
     await db.wallet_transactions.insert_one(tx_dict)
     
     # Create notification for client
@@ -3287,18 +3305,43 @@ async def admin_create_recharge(
             "amount": amount,
             "description": description or "Recarga creada por administrador",
             "new_balance": new_balance,
-            "proof_url": proof_url
+            "proof_url": proof_url,
+            "bank_account_id": resolved_bank_account_id,
         }
     )
     
     # Recalculate invoice deposits for this client
     await recalculate_client_invoices(tid, user["customer_id"])
-    
+
+    # ── Bank ledger: log to the chosen bank account so the recharge is
+    # reflected in /admin/bank-accounts. If no account was resolved, the
+    # transaction stays as "Sin asignar" and the admin can attach it manually.
+    if resolved_bank_account_id:
+        try:
+            await db.bank_transactions.insert_one({
+                "id": str(uuid.uuid4()),
+                "tenant_id": tid,
+                "bank_account_id": resolved_bank_account_id,
+                "kind": "recharge",
+                "amount": float(amount),
+                "description": description or "Recarga creada por administrador",
+                "source_transaction_id": tx.id,
+                "customer_id": user["customer_id"],
+                "customer_name": user["name"],
+                "reference_number": None,
+                "created_by": current_user["user_id"],
+                "created_by_name": actor_name,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+        except Exception as _bank_err:
+            logger.warning(f"[bank_ledger] failed to attribute admin-recharge {tx.id}: {_bank_err}")
+
     return {
         "message": "Recarga creada exitosamente",
         "transaction_id": tx.id,
         "new_balance": new_balance,
-        "amount_credited": amount
+        "amount_credited": amount,
+        "bank_account_id": resolved_bank_account_id,
     }
 
 # ==================== RECHARGE QR UPLOAD ENDPOINTS ====================

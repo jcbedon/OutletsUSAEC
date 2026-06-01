@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount, scanDepositProof } from "@/lib/api";
+import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount, scanDepositProof, listBankAccounts } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -106,6 +106,11 @@ export default function AdminWallet() {
   const [creatingRecharge, setCreatingRecharge] = useState(false);
   const [rechargeClientSearchOpen, setRechargeClientSearchOpen] = useState(false);
   const [rechargeClientSearch, setRechargeClientSearch] = useState("");
+  // Active bank accounts of the tenant — used to attribute the recharge to a
+  // specific account so it shows up in the bank ledger. When the tenant has
+  // only one account we don't even need to render the selector.
+  const [bankAccounts, setBankAccounts] = useState([]);
+  const [rechargeBankAccountId, setRechargeBankAccountId] = useState("");
   const rechargeFileInputRef = useRef(null);
   
   // QR Upload state
@@ -126,16 +131,25 @@ export default function AdminWallet() {
 
   const loadData = async () => {
     try {
-      const [pendingRes, allRes, clientsRes, deletedRes] = await Promise.all([
+      const [pendingRes, allRes, clientsRes, deletedRes, banksRes] = await Promise.all([
         getPendingDeposits(),
         getAllDeposits(includeDeleted),
         getAllClients(),
-        getDeletedDeposits().catch(() => ({ data: [] }))
+        getDeletedDeposits().catch(() => ({ data: [] })),
+        listBankAccounts().catch(() => ({ data: { bank_accounts: [] } })),
       ]);
       setPendingDeposits(pendingRes.data);
       setAllDeposits(allRes.data);
       setClients(clientsRes.data);
       setDeletedDeposits(deletedRes.data || []);
+      const active = ((banksRes.data?.bank_accounts) || []).filter((a) => a.is_active !== false);
+      setBankAccounts(active);
+      // When only one active account exists, preselect it so the manual
+      // recharge always lands somewhere even if the admin doesn't touch the
+      // selector.
+      if (active.length === 1) {
+        setRechargeBankAccountId(active[0].id);
+      }
     } catch (error) {
       toast.error("Error al cargar datos");
     } finally {
@@ -300,6 +314,9 @@ export default function AdminWallet() {
       formData.append("amount", parseFloat(rechargeAmount));
       formData.append("description", rechargeDescription || "Recarga creada por administrador");
       formData.append("proof", rechargeProof);
+      if (rechargeBankAccountId) {
+        formData.append("bank_account_id", rechargeBankAccountId);
+      }
       
       await adminCreateRecharge(formData);
       toast.success("Recarga creada exitosamente");
@@ -321,6 +338,9 @@ export default function AdminWallet() {
     setRechargeProofPreview(null);
     setRechargeClientSearch("");
     setRechargeClientSearchOpen(false);
+    // Preserve auto-selection when there's exactly one active account so the
+    // next recharge still lands in the ledger without extra clicks.
+    setRechargeBankAccountId(bankAccounts.length === 1 ? bankAccounts[0].id : "");
     if (rechargeFileInputRef.current) {
       rechargeFileInputRef.current.value = "";
     }
@@ -775,6 +795,35 @@ export default function AdminWallet() {
                     data-testid="recharge-amount-input"
                   />
                 </div>
+
+                {/* Cuenta bancaria de destino — visible cuando hay más de una.
+                    Si solo hay una, se asigna automáticamente sin saturar la UI. */}
+                {bankAccounts.length > 1 && (
+                  <div className="space-y-2">
+                    <Label>Cuenta bancaria de destino <span className="text-gray-400 text-xs">(opcional)</span></Label>
+                    <Select value={rechargeBankAccountId || "__none__"} onValueChange={(v) => setRechargeBankAccountId(v === "__none__" ? "" : v)}>
+                      <SelectTrigger className="rounded-xl h-12" data-testid="recharge-bank-account-select">
+                        <SelectValue placeholder="Sin asignar (resolver luego)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Sin asignar (resolver luego)</SelectItem>
+                        {bankAccounts.map((acc) => (
+                          <SelectItem key={acc.id} value={acc.id}>
+                            {acc.bank_name} · {acc.owner_name} · ••{String(acc.account_number || "").slice(-4)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-gray-500">
+                      Aparecerá como recarga en esta cuenta del ledger bancario.
+                    </p>
+                  </div>
+                )}
+                {bankAccounts.length === 1 && (
+                  <p className="text-xs text-gray-500 -mt-2" data-testid="recharge-bank-account-info">
+                    Se registrará en: <span className="font-semibold">{bankAccounts[0].bank_name} · ••{String(bankAccounts[0].account_number || "").slice(-4)}</span>
+                  </p>
+                )}
 
                 {/* Descripción */}
                 <div className="space-y-2">
