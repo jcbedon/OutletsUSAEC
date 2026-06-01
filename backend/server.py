@@ -6941,9 +6941,14 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
     ]).to_list(len(cust_ids) or 1)
     saldo_pend_dict = {s["_id"]: s["total_saldo"] for s in saldo_pend_agg}
 
-    # Latest non-annulled invoice per customer (date + total_a_pagar of just that invoice).
-    # We use this so the debts table can show "deuda según la última factura" instead of
-    # the cumulative pendiente, which is what the user requested.
+    # Latest non-annulled invoice per customer (date + total_a_pagar + saldo_a_favor).
+    # Per the chained-invoice architecture (`recalculate_client_invoices`), the
+    # CURRENT financial state of a client lives entirely on their last invoice:
+    #   - `saldo_a_favor` > 0  → client has credit (no debt)
+    #   - `total_a_pagar` > 0  → client owes that exact amount on the open invoice
+    #   - both 0               → al día
+    # Older invoices' `saldo_pendiente` is just a historical snapshot of the
+    # inherited debt at creation time, it must NOT be re-summed (would double-count).
     last_inv_agg = await db.invoices.aggregate([
         {"$match": {"tenant_id": tid, "customer_id": {"$in": cust_ids}, "is_annulled": {"$ne": True}}},
         {"$sort": {"created_at": -1}},
@@ -6951,6 +6956,7 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
             "_id": "$customer_id",
             "last_date": {"$first": "$created_at"},
             "last_total_a_pagar": {"$first": "$total_a_pagar"},
+            "last_saldo_a_favor": {"$first": "$saldo_a_favor"},
             "last_invoice_number": {"$first": "$invoice_number"},
         }}
     ]).to_list(len(cust_ids) or 1)
@@ -6958,6 +6964,7 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         x["_id"]: {
             "date": x.get("last_date"),
             "amount": float(x.get("last_total_a_pagar") or 0),
+            "saldo_a_favor": float(x.get("last_saldo_a_favor") or 0),
             "number": x.get("last_invoice_number"),
         }
         for x in last_inv_agg
@@ -6971,12 +6978,22 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         purch = purchases_dict.get(uid, {"total_spent": 0, "purchase_count": 0})
         ship = shipments_dict.get(uid, {"total_shipping": 0, "shipment_count": 0})
         saldo_ant = saldo_pend_dict.get(client.get("customer_id"), 0)
-        
-        # Pending balance = wallet balance - shipping - saldo pendiente (deuda anterior)
-        pending_balance = round(wallet_balance - ship["total_shipping"] - saldo_ant, 2)
-        
-        # If pending_balance is negative, the client has debt
-        debt_amount = abs(pending_balance) if pending_balance < 0 else 0
+        last_inv = last_inv_dict.get(client.get("customer_id"))
+        last_total_a_pagar = (last_inv or {}).get("amount", 0)
+        last_saldo_a_favor = (last_inv or {}).get("saldo_a_favor", 0)
+
+        # `pending_balance`: positive = credit, negative = debt. Mirrors the
+        # same calculation used by `/admin/clients` so that the Stats "Deudas"
+        # panel never reports fake debt for clients who actually have credit.
+        if last_saldo_a_favor > 0:
+            pending_balance = round(last_saldo_a_favor, 2)
+            debt_amount = 0
+        elif last_total_a_pagar > 0:
+            pending_balance = round(-last_total_a_pagar, 2)
+            debt_amount = round(last_total_a_pagar, 2)
+        else:
+            pending_balance = 0
+            debt_amount = 0
         
         if debt_amount > 0:
             total_debt += debt_amount
