@@ -149,15 +149,26 @@ export default function AdminStats() {
   const filteredSummary = useMemo(() => {
     const clients = filteredClients;
     const withDebt = clients.filter(c => c.pending_balance < 0);
+    const withCredit = clients.filter(c => c.pending_balance > 0);
     const totalDebt = withDebt.reduce((sum, c) => sum + c.debt_amount, 0);
+    const totalCredit = withCredit.reduce((sum, c) => sum + c.pending_balance, 0);
     
     return {
       total_clients: clients.length,
       clients_with_debt: withDebt.length,
+      clients_with_credit: withCredit.length,
       clients_positive_balance: clients.length - withDebt.length,
-      total_debt: totalDebt
+      total_debt: totalDebt,
+      total_credit: totalCredit,
     };
   }, [filteredClients]);
+
+  // Top clientes con saldo a favor (ordenados de mayor a menor crédito).
+  const topCreditClients = useMemo(() => {
+    return [...(debtsData?.clients || [])]
+      .filter(c => (c.pending_balance || 0) > 0.01)
+      .sort((a, b) => (b.pending_balance || 0) - (a.pending_balance || 0));
+  }, [debtsData?.clients]);
 
   if (loading) {
     return (
@@ -475,7 +486,7 @@ export default function AdminStats() {
               </Card>
 
               {/* Summary Cards - Using filtered data */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                 <Card className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200">
                   <CardContent className="p-4">
                     <Users className="h-5 w-5 text-slate-600 mb-2" />
@@ -502,6 +513,13 @@ export default function AdminStats() {
                     <DollarSign className="h-5 w-5 text-orange-600 mb-2" />
                     <p className="text-2xl font-extrabold text-orange-700">{formatMoney(filteredSummary.total_debt)}</p>
                     <p className="text-xs text-orange-600">Deuda Total</p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200" data-testid="kpi-total-credit">
+                  <CardContent className="p-4">
+                    <Wallet className="h-5 w-5 text-emerald-600 mb-2" />
+                    <p className="text-2xl font-extrabold text-emerald-700">{formatMoney(filteredSummary.total_credit)}</p>
+                    <p className="text-xs text-emerald-600">Saldo a Favor ({filteredSummary.clients_with_credit || 0})</p>
                   </CardContent>
                 </Card>
               </div>
@@ -683,6 +701,75 @@ export default function AdminStats() {
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Top Clientes con Saldo a Favor — pendant of "Detalle de Clientes" focused
+                  on positive balances. Hidden when no client has credit. */}
+              {topCreditClients.length > 0 && (
+                <Card className="rounded-xl border-emerald-200">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <CardTitle className="text-lg flex items-center gap-2 text-emerald-700">
+                        <Wallet className="h-5 w-5 text-emerald-600" />
+                        Clientes con Saldo a Favor
+                        <Badge className="ml-1 bg-emerald-100 text-emerald-700 border-emerald-200">
+                          {topCreditClients.length} clientes
+                        </Badge>
+                      </CardTitle>
+                      <div className="text-right">
+                        <p className="text-xs text-emerald-600">Total a Favor</p>
+                        <p className="text-xl font-extrabold text-emerald-700" data-testid="top-credit-total">
+                          {formatMoney(topCreditClients.reduce((s, c) => s + (c.pending_balance || 0), 0))}
+                        </p>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-emerald-50/50">
+                            <th className="text-left p-2 font-medium w-12">#</th>
+                            <th className="text-left p-2 font-medium">Cliente</th>
+                            <th className="text-left p-2 font-medium">ID</th>
+                            <th className="text-right p-2 font-medium">Saldo a Favor</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {topCreditClients.slice(0, tableLimit).map((client, idx) => (
+                            <tr
+                              key={client.id}
+                              className="border-b hover:bg-emerald-50/40"
+                              data-testid={`credit-row-${client.customer_id}`}
+                            >
+                              <td className="p-2 font-semibold text-gray-500">
+                                {idx + 1}
+                                {idx === 0 && <span className="ml-1">🏆</span>}
+                              </td>
+                              <td className="p-2">
+                                <div className="font-medium text-slate-800">{client.name}</div>
+                                <div className="text-xs text-gray-500">{client.whatsapp}</div>
+                              </td>
+                              <td className="p-2">
+                                <Badge variant="outline" className="text-xs">{client.customer_id}</Badge>
+                              </td>
+                              <td className="p-2 text-right">
+                                <span className="font-bold text-emerald-600">
+                                  +{formatMoney(client.pending_balance)}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {topCreditClients.length > tableLimit && (
+                        <p className="text-xs text-gray-500 text-center mt-3">
+                          Mostrando {tableLimit} de {topCreditClients.length}. Cambia "Mostrar" arriba para ver más.
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </TabsContent>
 
