@@ -44,6 +44,28 @@ export default function AdminStats() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const logoUrl = user?.tenant_logo || DEFAULT_LOGO;
+  // Permission helpers. Admins always see everything. For employees we honor
+  // the granular keys; the legacy `view_statistics` toggle acts as a master
+  // that auto-grants any sub-permission that hasn't been explicitly set
+  // (backwards-compat with employees created before granular permissions
+  // existed).
+  const isAdmin = user?.role === "admin";
+  const userPermissions = user?.permissions || {};
+  const masterStats = !!userPermissions.view_statistics;
+  const hasStatsPerm = (key) => {
+    if (isAdmin) return true;
+    if (userPermissions[key] === true) return true;
+    // Legacy: if master is on AND no granular tabs were explicitly turned on,
+    // grant access so existing employees don't get locked out.
+    const anyGranular = [
+      "stats_resumen", "stats_tiendas", "stats_deudas",
+      "stats_inactivos", "stats_graficas", "stats_detalle",
+      "stats_view_money_kpis",
+    ].some((k) => userPermissions[k] === true);
+    return masterStats && !anyGranular;
+  };
+  const canSeeMoneyKpis = hasStatsPerm("stats_view_money_kpis");
+
   const [stats, setStats] = useState(null);
   const [debtsData, setDebtsData] = useState(null);
   const [inactiveData, setInactiveData] = useState(null);
@@ -270,7 +292,9 @@ export default function AdminStats() {
           ))}
         </div>
 
-        {/* Summary Cards */}
+        {/* Summary Cards — KPIs de dinero (visibles solo si el empleado tiene
+            el permiso `stats_view_money_kpis` o es admin). */}
+        {canSeeMoneyKpis && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="rounded-xl bg-gradient-to-br from-green-50 to-green-100 border-green-200">
             <CardContent className="p-4">
@@ -301,28 +325,52 @@ export default function AdminStats() {
             </CardContent>
           </Card>
         </div>
+        )}
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-6 rounded-xl h-11 bg-white border">
-            <TabsTrigger value="resumen" className="rounded-lg data-[state=active]:bg-slate-800 data-[state=active]:text-white text-xs sm:text-sm">
-              <DollarSign className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Resumen</span>
-            </TabsTrigger>
-            <TabsTrigger value="ganancias" className="rounded-lg data-[state=active]:bg-green-600 data-[state=active]:text-white text-xs sm:text-sm">
-              <Receipt className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Tiendas</span>
-            </TabsTrigger>
-            <TabsTrigger value="deudas" className="rounded-lg data-[state=active]:bg-red-600 data-[state=active]:text-white text-xs sm:text-sm">
-              <AlertTriangle className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Deudas</span>
-            </TabsTrigger>
-            <TabsTrigger value="inactivos" className="rounded-lg data-[state=active]:bg-orange-600 data-[state=active]:text-white text-xs sm:text-sm" data-testid="tab-inactivos">
-              <Clock className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Inactivos</span>
-            </TabsTrigger>
-            <TabsTrigger value="graficas" className="rounded-lg data-[state=active]:bg-slate-800 data-[state=active]:text-white text-xs sm:text-sm">
-              <BarChart3 className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Graficas</span>
-            </TabsTrigger>
-            <TabsTrigger value="detalle" className="rounded-lg data-[state=active]:bg-slate-800 data-[state=active]:text-white text-xs sm:text-sm">
-              <Store className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Detalle</span>
-            </TabsTrigger>
+        {/* Tabs — visibility per tab is enforced via `hasStatsPerm(...)`. */}
+        {(() => {
+          // Compute allowed tabs in display order so we can also redirect the
+          // active tab to a permitted one when the user lacks access.
+          const tabConfig = [
+            { value: "resumen",    perm: "stats_resumen",    label: "Resumen",    Icon: DollarSign,    activeCls: "data-[state=active]:bg-slate-800 data-[state=active]:text-white" },
+            { value: "ganancias",  perm: "stats_tiendas",    label: "Tiendas",    Icon: Receipt,       activeCls: "data-[state=active]:bg-green-600 data-[state=active]:text-white" },
+            { value: "deudas",     perm: "stats_deudas",     label: "Deudas",     Icon: AlertTriangle, activeCls: "data-[state=active]:bg-red-600 data-[state=active]:text-white" },
+            { value: "inactivos",  perm: "stats_inactivos",  label: "Inactivos",  Icon: Clock,         activeCls: "data-[state=active]:bg-orange-600 data-[state=active]:text-white" },
+            { value: "graficas",   perm: "stats_graficas",   label: "Graficas",   Icon: BarChart3,     activeCls: "data-[state=active]:bg-slate-800 data-[state=active]:text-white" },
+            { value: "detalle",    perm: "stats_detalle",    label: "Detalle",    Icon: Store,         activeCls: "data-[state=active]:bg-slate-800 data-[state=active]:text-white" },
+          ];
+          const allowedTabs = tabConfig.filter((t) => hasStatsPerm(t.perm));
+          if (allowedTabs.length === 0) {
+            return (
+              <Card className="rounded-xl border-amber-200 bg-amber-50">
+                <CardContent className="p-6 text-center text-amber-700 text-sm">
+                  No tienes permiso para ver ninguna pestaña de Estadísticas. Pide al administrador que active al menos una.
+                </CardContent>
+              </Card>
+            );
+          }
+          // If activeTab isn't in allowed list, default to the first allowed.
+          const safeActive = allowedTabs.find((t) => t.value === activeTab)?.value || allowedTabs[0].value;
+          if (safeActive !== activeTab) {
+            // Defer state update to avoid setState-in-render warning.
+            setTimeout(() => setActiveTab(safeActive), 0);
+          }
+          return (
+        <Tabs value={safeActive} onValueChange={setActiveTab}>
+          <TabsList
+            className="grid w-full rounded-xl h-11 bg-white border"
+            style={{ gridTemplateColumns: `repeat(${allowedTabs.length}, minmax(0, 1fr))` }}
+          >
+            {allowedTabs.map((t) => (
+              <TabsTrigger
+                key={t.value}
+                value={t.value}
+                className={`rounded-lg text-xs sm:text-sm ${t.activeCls}`}
+                data-testid={`tab-${t.value}`}
+              >
+                <t.Icon className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">{t.label}</span>
+              </TabsTrigger>
+            ))}
           </TabsList>
 
           {/* Resumen Tab */}
@@ -1060,6 +1108,8 @@ export default function AdminStats() {
             </div>
           </TabsContent>
         </Tabs>
+          );
+        })()}
 
       </div>
     </div>

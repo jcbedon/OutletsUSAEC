@@ -364,7 +364,21 @@ class EmployeePermissions(BaseModel):
     manage_invoices: bool = False      # Generar/Aprobar facturas
     view_reports: bool = False         # Ver reportes
     adjust_wallet: bool = False        # Ajustar saldos de wallet
-    view_statistics: bool = False      # Ver estadísticas
+    view_statistics: bool = False      # Toggle maestro de estadísticas (legacy)
+    # Módulos del dashboard que antes solo veía el admin
+    manage_employees: bool = False     # Acceso al módulo Empleados
+    manage_referrals: bool = False     # Configurar bonos de referidos
+    manage_bank_accounts: bool = False # Acceso al módulo Cuentas (banca)
+    view_audit: bool = False           # Ver registro de auditoría
+    # Permisos granulares por pestaña dentro de Estadísticas
+    stats_resumen: bool = False
+    stats_tiendas: bool = False
+    stats_deudas: bool = False
+    stats_inactivos: bool = False
+    stats_graficas: bool = False
+    stats_detalle: bool = False
+    # Visualización de las tarjetas monetarias del encabezado en Estadísticas
+    stats_view_money_kpis: bool = False
 
 class Employee(BaseModel):
     """Employee model with granular permissions"""

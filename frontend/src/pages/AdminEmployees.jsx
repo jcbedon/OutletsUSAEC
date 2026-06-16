@@ -15,17 +15,45 @@ import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Users, Plus, Edit, Trash2, Eye, EyeOff, Shield, UserCheck, UserX, ArrowLeft } from "lucide-react";
 
-const PERMISSIONS = [
-  { key: "manage_clients", label: "Gestionar Clientes", description: "Crear, editar y eliminar clientes" },
-  { key: "manage_purchases", label: "Gestionar Compras", description: "Crear, editar y eliminar compras" },
-  { key: "manage_lives", label: "Gestionar Lives", description: "Crear, iniciar y cerrar sesiones live" },
-  { key: "approve_recharges", label: "Aprobar Recargas", description: "Aprobar o rechazar solicitudes de recarga" },
-  { key: "manage_shipments", label: "Gestionar Envíos", description: "Crear y administrar envíos" },
-  { key: "manage_invoices", label: "Gestionar Facturas", description: "Generar y aprobar facturas" },
-  { key: "view_reports", label: "Ver Reportes", description: "Acceder a los reportes del sistema" },
-  { key: "adjust_wallet", label: "Ajustar Saldos", description: "Realizar ajustes de saldo en wallets" },
-  { key: "view_statistics", label: "Ver Estadísticas", description: "Acceder al panel de estadísticas" }
+const PERMISSION_GROUPS = [
+  {
+    title: "Módulos principales",
+    items: [
+      { key: "manage_clients", label: "Gestionar Clientes", description: "Crear, editar y eliminar clientes" },
+      { key: "manage_purchases", label: "Gestionar Compras", description: "Crear, editar y eliminar compras" },
+      { key: "manage_lives", label: "Gestionar Lives", description: "Crear, iniciar y cerrar sesiones live" },
+      { key: "approve_recharges", label: "Aprobar Recargas", description: "Aprobar o rechazar solicitudes de recarga" },
+      { key: "manage_shipments", label: "Gestionar Envíos", description: "Crear y administrar envíos" },
+      { key: "manage_invoices", label: "Gestionar Facturas", description: "Generar y aprobar facturas" },
+      { key: "adjust_wallet", label: "Ajustar Saldos", description: "Realizar ajustes de saldo en wallets" },
+      { key: "view_reports", label: "Ver Reportes", description: "Acceder a los reportes del sistema" },
+    ],
+  },
+  {
+    title: "Módulos administrativos",
+    items: [
+      { key: "manage_employees", label: "Empleados", description: "Acceso al módulo de empleados y permisos" },
+      { key: "manage_referrals", label: "Referidos", description: "Configurar bonos de referidos" },
+      { key: "manage_bank_accounts", label: "Cuentas Bancarias", description: "Acceso al ledger bancario" },
+      { key: "view_audit", label: "Auditoría", description: "Ver registro de auditoría e historial" },
+    ],
+  },
+  {
+    title: "Estadísticas",
+    items: [
+      { key: "view_statistics", label: "Acceso al módulo Estadísticas", description: "Permite entrar a /admin/stats (toggle maestro)" },
+      { key: "stats_view_money_kpis", label: "Ver KPIs de dinero (cabecera)", description: "Muestra las tarjetas de Ganancia, Ventas, Comisiones y Envíos en la parte superior" },
+      { key: "stats_resumen", label: "Pestaña: Resumen", description: "" },
+      { key: "stats_tiendas", label: "Pestaña: Tiendas", description: "" },
+      { key: "stats_deudas", label: "Pestaña: Deudas", description: "" },
+      { key: "stats_inactivos", label: "Pestaña: Inactivos", description: "" },
+      { key: "stats_graficas", label: "Pestaña: Gráficas", description: "" },
+      { key: "stats_detalle", label: "Pestaña: Detalle", description: "" },
+    ],
+  },
 ];
+// Flat list kept for backwards compatibility with any code still referencing it
+const PERMISSIONS = PERMISSION_GROUPS.flatMap((g) => g.items);
 
 export default function AdminEmployees() {
   const navigate = useNavigate();
@@ -388,41 +416,76 @@ export default function AdminEmployees() {
 
               <div className="space-y-4">
                 <Label className="text-base font-semibold text-slate-800">Permisos</Label>
-                <div className="grid gap-2">
-                  {PERMISSIONS.map((perm) => {
-                    const isChecked = formData.permissions[perm.key] || false;
+                <div className="space-y-5">
+                  {PERMISSION_GROUPS.map((group) => {
+                    const groupActive = group.items.filter((p) => formData.permissions[p.key]).length;
                     return (
-                      <div
-                        key={perm.key}
-                        onClick={() => handlePermissionChange(perm.key, !isChecked)}
-                        className={`flex items-start gap-3 p-4 rounded-xl cursor-pointer transition-all duration-200 border-2 ${
-                          isChecked 
-                            ? "bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-400 shadow-sm" 
-                            : "bg-slate-50 border-transparent hover:bg-slate-100 hover:border-slate-200"
-                        }`}
-                      >
-                        <div className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center transition-all ${
-                          isChecked 
-                            ? "bg-gradient-to-r from-indigo-500 to-purple-500 shadow-md" 
-                            : "bg-white border-2 border-slate-300"
-                        }`}>
-                          {isChecked && (
-                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                            </svg>
-                          )}
-                        </div>
-                        <div className="flex-1">
-                          <Label htmlFor={perm.key} className={`font-medium cursor-pointer ${isChecked ? "text-indigo-900" : "text-slate-700"}`}>
-                            {perm.label}
-                          </Label>
-                          <p className={`text-sm ${isChecked ? "text-indigo-600" : "text-slate-500"}`}>{perm.description}</p>
-                        </div>
-                        {isChecked && (
-                          <div className="text-indigo-500">
-                            <Shield className="h-5 w-5" />
+                      <div key={group.title} data-testid={`permission-group-${group.title}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm font-semibold text-slate-600 uppercase tracking-wide">
+                            {group.title}
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs">
+                              {groupActive}/{group.items.length}
+                            </Badge>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const allOn = groupActive === group.items.length;
+                                const next = { ...formData.permissions };
+                                group.items.forEach((p) => { next[p.key] = !allOn; });
+                                setFormData({ ...formData, permissions: next });
+                              }}
+                              className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline"
+                              data-testid={`toggle-group-${group.title}`}
+                            >
+                              {groupActive === group.items.length ? "Quitar todos" : "Marcar todos"}
+                            </button>
                           </div>
-                        )}
+                        </div>
+                        <div className="grid gap-2">
+                          {group.items.map((perm) => {
+                            const isChecked = formData.permissions[perm.key] || false;
+                            return (
+                              <div
+                                key={perm.key}
+                                onClick={() => handlePermissionChange(perm.key, !isChecked)}
+                                className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-all duration-200 border-2 ${
+                                  isChecked
+                                    ? "bg-gradient-to-r from-indigo-50 to-purple-50 border-indigo-400 shadow-sm"
+                                    : "bg-slate-50 border-transparent hover:bg-slate-100 hover:border-slate-200"
+                                }`}
+                                data-testid={`permission-${perm.key}`}
+                              >
+                                <div className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center transition-all ${
+                                  isChecked
+                                    ? "bg-gradient-to-r from-indigo-500 to-purple-500 shadow-md"
+                                    : "bg-white border-2 border-slate-300"
+                                }`}>
+                                  {isChecked && (
+                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div className="flex-1">
+                                  <Label htmlFor={perm.key} className={`font-medium cursor-pointer ${isChecked ? "text-indigo-900" : "text-slate-700"}`}>
+                                    {perm.label}
+                                  </Label>
+                                  {perm.description && (
+                                    <p className={`text-xs ${isChecked ? "text-indigo-600" : "text-slate-500"}`}>{perm.description}</p>
+                                  )}
+                                </div>
+                                {isChecked && (
+                                  <div className="text-indigo-500">
+                                    <Shield className="h-4 w-4" />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     );
                   })}
