@@ -151,6 +151,7 @@ export const getBusinessStats = (period = "all") => api.get(`/admin/reports/busi
 export const getClientsPurchasesReport = () => api.get("/admin/reports/clients-purchases");
 export const getAllPurchasesReport = () => api.get("/admin/reports/all-purchases");
 export const getClientsDebtsReport = () => api.get("/admin/reports/clients-debts");
+export const getInactiveClientsReport = () => api.get("/admin/reports/inactive-clients");
 export const getStoreProfitsReport = () => api.get("/admin/reports/store-profits");
 
 // Settings - Referrals

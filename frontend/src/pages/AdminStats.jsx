@@ -1,14 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getBusinessStats, getClientsDebtsReport } from "@/lib/api";
+import { getBusinessStats, getClientsDebtsReport, getInactiveClientsReport } from "@/lib/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, DollarSign, TrendingUp, TrendingDown, Wallet, Store, Radio, BarChart3, PieChart as PieChartIcon, Users, AlertTriangle, Search, Filter, ChevronDown, ChevronUp, Receipt, Image } from "lucide-react";
+import { ArrowLeft, DollarSign, TrendingUp, TrendingDown, Wallet, Store, Radio, BarChart3, PieChart as PieChartIcon, Users, AlertTriangle, Search, Filter, ChevronDown, ChevronUp, Receipt, Image, Clock, Phone } from "lucide-react";
 import { SalesTrendChart, StoreBarChart, ProfitPieChart, LiveBarChart, ClientsDebtsChart, ClientsDebtsPieChart, ClientsByDateChart } from "@/components/StatsCharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import StoreProfitsReport from "@/components/StoreProfitsReport";
@@ -46,6 +46,7 @@ export default function AdminStats() {
   const logoUrl = user?.tenant_logo || DEFAULT_LOGO;
   const [stats, setStats] = useState(null);
   const [debtsData, setDebtsData] = useState(null);
+  const [inactiveData, setInactiveData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("resumen");
   const [period, setPeriod] = useState("all");
@@ -58,15 +59,23 @@ export default function AdminStats() {
   const [sortBy, setSortBy] = useState("debt");
   const [sortAsc, setSortAsc] = useState(false);
 
+  // Filtros para inactivos
+  const [inactiveThreshold, setInactiveThreshold] = useState(30); // días
+  const [inactiveSearch, setInactiveSearch] = useState("");
+  const [inactiveLimit, setInactiveLimit] = useState(50);
+  const [includeNeverPurchased, setIncludeNeverPurchased] = useState(false);
+
   const loadStats = async (p) => {
     try {
       setLoading(true);
-      const [statsRes, debtsRes] = await Promise.all([
+      const [statsRes, debtsRes, inactiveRes] = await Promise.all([
         getBusinessStats(p || period),
-        getClientsDebtsReport()
+        getClientsDebtsReport(),
+        getInactiveClientsReport().catch(() => ({ data: { clients: [], summary: {} } })),
       ]);
       setStats(statsRes.data);
       setDebtsData(debtsRes.data);
+      setInactiveData(inactiveRes.data);
     } catch (e) {
       toast.error("Error al cargar estadisticas");
     } finally {
@@ -169,6 +178,27 @@ export default function AdminStats() {
       .filter(c => (c.pending_balance || 0) > 0.01)
       .sort((a, b) => (b.pending_balance || 0) - (a.pending_balance || 0));
   }, [debtsData?.clients]);
+
+  // Clientes inactivos según umbral seleccionado + filtro de búsqueda.
+  // Los "Nunca compró" se incluyen solo si el toggle está activado, para no
+  // saturar la vista cuando solo importa hacer seguimiento de clientes que
+  // antes compraban y dejaron de hacerlo.
+  const filteredInactive = useMemo(() => {
+    if (!inactiveData?.clients) return [];
+    const term = inactiveSearch.toLowerCase();
+    return inactiveData.clients.filter((c) => {
+      const passesThreshold = c.days_since_last_purchase !== null
+        ? c.days_since_last_purchase >= inactiveThreshold
+        : includeNeverPurchased;
+      if (!passesThreshold) return false;
+      if (!term) return true;
+      return (
+        (c.name || "").toLowerCase().includes(term) ||
+        (c.customer_id || "").toLowerCase().includes(term) ||
+        (c.whatsapp || "").includes(term)
+      );
+    });
+  }, [inactiveData?.clients, inactiveThreshold, inactiveSearch, includeNeverPurchased]);
 
   if (loading) {
     return (
@@ -274,7 +304,7 @@ export default function AdminStats() {
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5 rounded-xl h-11 bg-white border">
+          <TabsList className="grid w-full grid-cols-6 rounded-xl h-11 bg-white border">
             <TabsTrigger value="resumen" className="rounded-lg data-[state=active]:bg-slate-800 data-[state=active]:text-white text-xs sm:text-sm">
               <DollarSign className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Resumen</span>
             </TabsTrigger>
@@ -283,6 +313,9 @@ export default function AdminStats() {
             </TabsTrigger>
             <TabsTrigger value="deudas" className="rounded-lg data-[state=active]:bg-red-600 data-[state=active]:text-white text-xs sm:text-sm">
               <AlertTriangle className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Deudas</span>
+            </TabsTrigger>
+            <TabsTrigger value="inactivos" className="rounded-lg data-[state=active]:bg-orange-600 data-[state=active]:text-white text-xs sm:text-sm" data-testid="tab-inactivos">
+              <Clock className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Inactivos</span>
             </TabsTrigger>
             <TabsTrigger value="graficas" className="rounded-lg data-[state=active]:bg-slate-800 data-[state=active]:text-white text-xs sm:text-sm">
               <BarChart3 className="h-4 w-4 mr-1" /> <span className="hidden sm:inline">Graficas</span>
@@ -770,6 +803,211 @@ export default function AdminStats() {
                   </CardContent>
                 </Card>
               )}
+            </div>
+          </TabsContent>
+
+          {/* Inactivos Tab */}
+          <TabsContent value="inactivos" className="mt-6">
+            <div className="space-y-6">
+              {/* KPI Cards */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <Card className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200">
+                  <CardContent className="p-4">
+                    <Users className="h-5 w-5 text-slate-600 mb-2" />
+                    <p className="text-2xl font-extrabold text-slate-700">{inactiveData?.summary?.total_clients || 0}</p>
+                    <p className="text-xs text-slate-600">Clientes Activos</p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200">
+                  <CardContent className="p-4">
+                    <Clock className="h-5 w-5 text-yellow-600 mb-2" />
+                    <p className="text-2xl font-extrabold text-yellow-700">{inactiveData?.summary?.inactive_30d || 0}</p>
+                    <p className="text-xs text-yellow-600">+30 días sin compra</p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+                  <CardContent className="p-4">
+                    <Clock className="h-5 w-5 text-orange-600 mb-2" />
+                    <p className="text-2xl font-extrabold text-orange-700">{inactiveData?.summary?.inactive_60d || 0}</p>
+                    <p className="text-xs text-orange-600">+60 días sin compra</p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl bg-gradient-to-br from-red-50 to-red-100 border-red-200">
+                  <CardContent className="p-4">
+                    <Clock className="h-5 w-5 text-red-600 mb-2" />
+                    <p className="text-2xl font-extrabold text-red-700">{inactiveData?.summary?.inactive_90d || 0}</p>
+                    <p className="text-xs text-red-600">+90 días sin compra</p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+                  <CardContent className="p-4">
+                    <Users className="h-5 w-5 text-purple-600 mb-2" />
+                    <p className="text-2xl font-extrabold text-purple-700">{inactiveData?.summary?.never_purchased || 0}</p>
+                    <p className="text-xs text-purple-600">Nunca compró</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Filters */}
+              <Card className="rounded-xl">
+                <CardContent className="p-4">
+                  <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-end">
+                    <div className="flex-1">
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">Umbral de inactividad</label>
+                      <div className="flex flex-wrap gap-2">
+                        {[30, 60, 90, 180, 365].map((d) => (
+                          <Button
+                            key={d}
+                            variant={inactiveThreshold === d ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setInactiveThreshold(d)}
+                            className={inactiveThreshold === d ? "bg-orange-600 hover:bg-orange-700" : "text-orange-700 border-orange-300"}
+                            data-testid={`inactive-threshold-${d}`}
+                          >
+                            +{d}d
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex-1 relative">
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">Buscar</label>
+                      <Search className="absolute left-3 top-9 h-4 w-4 text-gray-400" />
+                      <Input
+                        placeholder="Nombre, ID o WhatsApp..."
+                        value={inactiveSearch}
+                        onChange={(e) => setInactiveSearch(e.target.value)}
+                        className="pl-10 h-9"
+                        data-testid="inactive-search-input"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="include-never"
+                        type="checkbox"
+                        checked={includeNeverPurchased}
+                        onChange={(e) => setIncludeNeverPurchased(e.target.checked)}
+                        className="h-4 w-4"
+                        data-testid="inactive-include-never-checkbox"
+                      />
+                      <label htmlFor="include-never" className="text-sm text-gray-700 select-none">
+                        Incluir "Nunca compró"
+                      </label>
+                    </div>
+                    <select
+                      value={inactiveLimit}
+                      onChange={(e) => setInactiveLimit(Number(e.target.value))}
+                      className="border rounded-md px-2 py-1 text-sm bg-white h-9"
+                      data-testid="inactive-limit-select"
+                    >
+                      <option value={20}>Top 20</option>
+                      <option value={50}>Top 50</option>
+                      <option value={100}>Top 100</option>
+                      <option value={500}>Top 500</option>
+                    </select>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Table */}
+              <Card className="rounded-xl border-orange-200">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <CardTitle className="text-lg flex items-center gap-2 text-orange-700">
+                      <Clock className="h-5 w-5 text-orange-600" />
+                      Clientes sin comprar hace +{inactiveThreshold} días
+                      <Badge className="ml-1 bg-orange-100 text-orange-700 border-orange-200">
+                        {filteredInactive.length} clientes
+                      </Badge>
+                    </CardTitle>
+                    <p className="text-xs text-gray-500">Ordenado: más inactivo primero. Listo para seguimiento.</p>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {filteredInactive.length === 0 ? (
+                    <div className="text-center py-8 text-gray-400 text-sm">
+                      Ningún cliente sin compras hace más de {inactiveThreshold} días con los filtros actuales.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-orange-50/50">
+                            <th className="text-left p-2 font-medium w-12">#</th>
+                            <th className="text-left p-2 font-medium">Cliente</th>
+                            <th className="text-left p-2 font-medium">ID</th>
+                            <th className="text-left p-2 font-medium">WhatsApp</th>
+                            <th className="text-right p-2 font-medium">Última compra</th>
+                            <th className="text-right p-2 font-medium">Días inactivo</th>
+                            <th className="text-right p-2 font-medium">Compras</th>
+                            <th className="text-right p-2 font-medium">Total gastado</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredInactive.slice(0, inactiveLimit).map((c, idx) => {
+                            const days = c.days_since_last_purchase;
+                            const isNever = days === null;
+                            const lastStr = isNever
+                              ? "—"
+                              : new Date(c.last_purchase_at).toLocaleDateString("es-EC", { day: "2-digit", month: "short", year: "numeric" });
+                            const sevClass = isNever
+                              ? "text-purple-700 bg-purple-50"
+                              : days >= 90
+                                ? "text-red-700 bg-red-50"
+                                : days >= 60
+                                  ? "text-orange-700 bg-orange-50"
+                                  : "text-yellow-700 bg-yellow-50";
+                            const whatsappLink = c.whatsapp
+                              ? `https://wa.me/${String(c.whatsapp).replace(/[^0-9]/g, "")}`
+                              : null;
+                            return (
+                              <tr key={c.id} className="border-b hover:bg-orange-50/40" data-testid={`inactive-row-${c.customer_id}`}>
+                                <td className="p-2 font-semibold text-gray-500">{idx + 1}</td>
+                                <td className="p-2">
+                                  <div className="font-medium text-slate-800">{c.name}</div>
+                                  <div className="text-xs text-gray-500">
+                                    Registrado: {c.registered_at ? new Date(c.registered_at).toLocaleDateString("es-EC", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                                  </div>
+                                </td>
+                                <td className="p-2">
+                                  <Badge variant="outline" className="text-xs">{c.customer_id}</Badge>
+                                </td>
+                                <td className="p-2">
+                                  {whatsappLink ? (
+                                    <a
+                                      href={whatsappLink}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-green-600 hover:underline inline-flex items-center gap-1"
+                                      data-testid={`inactive-whatsapp-${c.customer_id}`}
+                                    >
+                                      <Phone className="h-3 w-3" /> {c.whatsapp}
+                                    </a>
+                                  ) : (
+                                    <span className="text-gray-400 text-xs">Sin contacto</span>
+                                  )}
+                                </td>
+                                <td className="p-2 text-right text-xs">{lastStr}</td>
+                                <td className="p-2 text-right">
+                                  <span className={`px-2 py-1 rounded font-bold text-xs ${sevClass}`}>
+                                    {isNever ? "Nunca compró" : `${days}d`}
+                                  </span>
+                                </td>
+                                <td className="p-2 text-right">{c.purchase_count}</td>
+                                <td className="p-2 text-right font-semibold text-slate-700">{formatMoney(c.total_spent)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      {filteredInactive.length > inactiveLimit && (
+                        <p className="text-xs text-gray-500 text-center mt-3">
+                          Mostrando {inactiveLimit} de {filteredInactive.length}. Cambia "Top N" arriba para ver más.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 

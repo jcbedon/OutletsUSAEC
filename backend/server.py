@@ -7081,6 +7081,98 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         }
     }
 
+
+@api_router.get("/admin/reports/inactive-clients")
+async def get_inactive_clients_report(current_user: dict = Depends(get_current_user)):
+    """Lists clients ranked by how long they have been inactive (no purchases).
+
+    For each active client returns: last_purchase_date, days_since_last_purchase,
+    total_purchase_count, total_spent. Clients with zero purchases are included
+    with `days_since_last_purchase = null` (treated as "never purchased") so the
+    admin can also follow up on cold leads. The frontend applies the
+    "days threshold" filter (30/60/90/180/365).
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    clients = await db.users.find(
+        {"role": "client", "tenant_id": tid, "is_active": {"$ne": False}},
+        {"_id": 0, "id": 1, "customer_id": 1, "name": 1, "whatsapp": 1, "country": 1, "created_at": 1}
+    ).to_list(2000)
+
+    if not clients:
+        return {"clients": [], "summary": {"total_clients": 0, "inactive_30d": 0, "inactive_60d": 0, "inactive_90d": 0, "inactive_180d": 0, "never_purchased": 0}}
+
+    user_ids = [c["id"] for c in clients]
+
+    # Last purchase + counts per client (single aggregation = fast even with
+    # thousands of purchases).
+    purchases_agg = await db.purchases.aggregate([
+        {"$match": {"user_id": {"$in": user_ids}, "tenant_id": tid}},
+        {"$group": {
+            "_id": "$user_id",
+            "last_purchase_at": {"$max": "$created_at"},
+            "purchase_count": {"$sum": 1},
+            "total_spent": {"$sum": "$total"},
+        }}
+    ]).to_list(len(user_ids))
+    purchases_dict = {p["_id"]: p for p in purchases_agg}
+
+    now = datetime.now(timezone.utc)
+    result = []
+    bucket_30 = bucket_60 = bucket_90 = bucket_180 = never = 0
+
+    for c in clients:
+        p = purchases_dict.get(c["id"])
+        last_at = p.get("last_purchase_at") if p else None
+        days = None
+        if last_at:
+            try:
+                last_dt = datetime.fromisoformat(str(last_at).replace("Z", "+00:00"))
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                days = max(0, (now - last_dt).days)
+            except Exception:
+                days = None
+
+        if days is None:
+            never += 1
+        else:
+            if days >= 30: bucket_30 += 1
+            if days >= 60: bucket_60 += 1
+            if days >= 90: bucket_90 += 1
+            if days >= 180: bucket_180 += 1
+
+        result.append({
+            "id": c["id"],
+            "customer_id": c.get("customer_id"),
+            "name": c.get("name"),
+            "whatsapp": c.get("whatsapp", ""),
+            "country": c.get("country", ""),
+            "registered_at": c.get("created_at"),
+            "last_purchase_at": last_at,
+            "days_since_last_purchase": days,
+            "purchase_count": int((p or {}).get("purchase_count", 0)),
+            "total_spent": round(float((p or {}).get("total_spent", 0) or 0), 2),
+        })
+
+    # Sort: most-inactive first; clients without any purchase appear at the very
+    # bottom by default (so they don't dominate the top of the table).
+    result.sort(key=lambda x: (x["days_since_last_purchase"] is None, -(x["days_since_last_purchase"] or 0)))
+
+    return {
+        "clients": result,
+        "summary": {
+            "total_clients": len(clients),
+            "inactive_30d": bucket_30,
+            "inactive_60d": bucket_60,
+            "inactive_90d": bucket_90,
+            "inactive_180d": bucket_180,
+            "never_purchased": never,
+        }
+    }
+
 @api_router.get("/admin/reports/store-profits")
 async def get_store_profits_report(current_user: dict = Depends(get_current_user)):
     """Get profit report by store from completed lives"""
