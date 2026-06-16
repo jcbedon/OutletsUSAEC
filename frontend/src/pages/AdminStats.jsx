@@ -973,15 +973,31 @@ export default function AdminStats() {
                                 </td>
                                 <td className="p-2">
                                   {whatsappLink ? (
-                                    <a
-                                      href={whatsappLink}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-green-600 hover:underline inline-flex items-center gap-1"
-                                      data-testid={`inactive-whatsapp-${c.customer_id}`}
-                                    >
-                                      <Phone className="h-3 w-3" /> {c.whatsapp}
-                                    </a>
+                                    <div className="flex items-center gap-2">
+                                      <a
+                                        href={whatsappLink}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-green-600 hover:underline inline-flex items-center gap-1"
+                                        data-testid={`inactive-whatsapp-${c.customer_id}`}
+                                      >
+                                        <Phone className="h-3 w-3" /> {c.whatsapp}
+                                      </a>
+                                      <a
+                                        href={`https://wa.me/${String(c.whatsapp).replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
+                                          isNever
+                                            ? `Hola ${c.name}, te escribimos desde Outlets USA EC. Tenemos novedades que pueden interesarte. ¿Te gustaría conocer nuestras ofertas?`
+                                            : `Hola ${c.name}, hace ${days} días que no compras con nosotros. Tenemos nuevas ofertas que pueden interesarte. ¿Quieres que te muestre lo más reciente?`
+                                        )}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        title="Enviar mensaje de seguimiento con plantilla"
+                                        className="inline-flex items-center justify-center bg-green-600 hover:bg-green-700 text-white rounded-md w-6 h-6 text-[10px] font-bold transition-colors"
+                                        data-testid={`inactive-whatsapp-template-${c.customer_id}`}
+                                      >
+                                        ✉
+                                      </a>
+                                    </div>
                                   ) : (
                                     <span className="text-gray-400 text-xs">Sin contacto</span>
                                   )}
