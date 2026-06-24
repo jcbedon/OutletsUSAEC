@@ -138,6 +138,9 @@ export default function AdminStats() {
       result = result.filter(c => c.pending_balance < 0);
     } else if (statusFilter === "no_debt") {
       result = result.filter(c => c.pending_balance >= 0);
+    } else if (statusFilter === "with_pending") {
+      // Clientes con compras pendientes de facturar (acumulado mid-semana).
+      result = result.filter(c => (c.pending_to_invoice || 0) > 0.01);
     }
     
     // Ordenamiento
@@ -181,9 +184,11 @@ export default function AdminStats() {
     const clients = filteredClients;
     const withDebt = clients.filter(c => c.pending_balance < 0);
     const withCredit = clients.filter(c => c.pending_balance > 0);
+    const withPending = clients.filter(c => (c.pending_to_invoice || 0) > 0.01);
     const totalDebt = withDebt.reduce((sum, c) => sum + c.debt_amount, 0);
     const totalCredit = withCredit.reduce((sum, c) => sum + c.pending_balance, 0);
-    
+    const totalPending = withPending.reduce((sum, c) => sum + (c.pending_to_invoice || 0), 0);
+
     return {
       total_clients: clients.length,
       clients_with_debt: withDebt.length,
@@ -191,6 +196,8 @@ export default function AdminStats() {
       clients_positive_balance: clients.length - withDebt.length,
       total_debt: totalDebt,
       total_credit: totalCredit,
+      total_pending_to_invoice: totalPending,
+      clients_with_pending: withPending.length,
     };
   }, [filteredClients]);
 
@@ -523,6 +530,15 @@ export default function AdminStats() {
                       >
                         Sin Deuda ({debtsSummary.clients_positive_balance || 0})
                       </Button>
+                      <Button
+                        variant={statusFilter === "with_pending" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setStatusFilter("with_pending")}
+                        className={statusFilter === "with_pending" ? "bg-amber-600 hover:bg-amber-700" : "text-amber-700 border-amber-300"}
+                        data-testid="filter-with-pending"
+                      >
+                        Con Por Facturar ({debtsData?.summary?.clients_with_pending_to_invoice || 0})
+                      </Button>
                     </div>
                     
                     {/* Chart Limit */}
@@ -555,7 +571,7 @@ export default function AdminStats() {
                       )}
                       {statusFilter !== "all" && (
                         <Badge variant="secondary" className="text-xs">
-                          {statusFilter === "with_debt" ? "Con Deuda" : "Sin Deuda"}
+                          {statusFilter === "with_debt" ? "Con Deuda" : statusFilter === "no_debt" ? "Sin Deuda" : "Con Por Facturar"}
                           <button onClick={() => setStatusFilter("all")} className="ml-1 hover:text-red-500">×</button>
                         </Badge>
                       )}
@@ -567,7 +583,7 @@ export default function AdminStats() {
               </Card>
 
               {/* Summary Cards - Using filtered data */}
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <Card className="rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200">
                   <CardContent className="p-4">
                     <Users className="h-5 w-5 text-slate-600 mb-2" />
@@ -601,6 +617,13 @@ export default function AdminStats() {
                     <Wallet className="h-5 w-5 text-emerald-600 mb-2" />
                     <p className="text-2xl font-extrabold text-emerald-700">{formatMoney(filteredSummary.total_credit)}</p>
                     <p className="text-xs text-emerald-600">Saldo a Favor ({filteredSummary.clients_with_credit || 0})</p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200" data-testid="kpi-pending-to-invoice">
+                  <CardContent className="p-4">
+                    <Receipt className="h-5 w-5 text-amber-600 mb-2" />
+                    <p className="text-2xl font-extrabold text-amber-700">{formatMoney(filteredSummary.total_pending_to_invoice)}</p>
+                    <p className="text-xs text-amber-700">Por Facturar ({filteredSummary.clients_with_pending || 0})</p>
                   </CardContent>
                 </Card>
               </div>
@@ -706,6 +729,7 @@ export default function AdminStats() {
                           <th className="text-left p-2 font-medium">Cliente</th>
                           <th className="text-left p-2 font-medium">ID</th>
                           <th className="text-right p-2 font-medium">Última Factura</th>
+                          <th className="text-right p-2 font-medium" title="Compras de esta semana aún no facturadas">Por Facturar</th>
                           <th className="text-right p-2 font-medium">Fecha</th>
                           <th className="text-right p-2 font-medium">Estado</th>
                         </tr>
@@ -751,6 +775,20 @@ export default function AdminStats() {
                                 </span>
                                 {client.last_invoice_number && (
                                   <div className="text-[10px] text-gray-400">{client.last_invoice_number}</div>
+                                )}
+                              </td>
+                              <td className="p-2 text-right" data-testid={`debts-pending-${client.customer_id}`}>
+                                {(client.pending_to_invoice || 0) > 0.01 ? (
+                                  <>
+                                    <span className="font-bold text-amber-700">
+                                      {formatMoney(client.pending_to_invoice)}
+                                    </span>
+                                    <div className="text-[10px] text-amber-600">
+                                      {client.pending_purchases_count || 0} compras
+                                    </div>
+                                  </>
+                                ) : (
+                                  <span className="text-gray-300 text-xs">—</span>
                                 )}
                               </td>
                               <td className="p-2 text-right text-gray-600">
@@ -986,6 +1024,7 @@ export default function AdminStats() {
                             <th className="text-left p-2 font-medium">WhatsApp</th>
                             <th className="text-right p-2 font-medium">Última compra</th>
                             <th className="text-right p-2 font-medium">Días inactivo</th>
+                            <th className="text-right p-2 font-medium" title="Compras sin facturar">Por Facturar</th>
                             <th className="text-right p-2 font-medium">Compras</th>
                             <th className="text-right p-2 font-medium">Total gastado</th>
                           </tr>
@@ -1055,6 +1094,13 @@ export default function AdminStats() {
                                   <span className={`px-2 py-1 rounded font-bold text-xs ${sevClass}`}>
                                     {isNever ? "Nunca compró" : `${days}d`}
                                   </span>
+                                </td>
+                                <td className="p-2 text-right">
+                                  {(c.pending_to_invoice || 0) > 0.01 ? (
+                                    <span className="font-bold text-amber-700">{formatMoney(c.pending_to_invoice)}</span>
+                                  ) : (
+                                    <span className="text-gray-300 text-xs">—</span>
+                                  )}
                                 </td>
                                 <td className="p-2 text-right">{c.purchase_count}</td>
                                 <td className="p-2 text-right font-semibold text-slate-700">{formatMoney(c.total_spent)}</td>

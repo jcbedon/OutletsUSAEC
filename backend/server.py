@@ -2464,8 +2464,28 @@ async def get_client_info(customer_id: str, current_user: dict = Depends(get_cur
     if not user:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     wallet = await db.wallets.find_one({"user_id": user["id"], "tenant_id": tid}, {"_id": 0})
-    return {**user, "wallet_balance": wallet["available"] if wallet else 0,
-        "commission_fee": user.get("commission_fee", DEFAULT_COMMISSION_FEE)}
+
+    # Compras del cliente que aún no se han incluido en ninguna factura. Sirve
+    # para que la UI muestre en vivo cuánto va a deber el cliente la próxima
+    # liquidación (viernes).
+    pending_agg = await db.purchases.aggregate([
+        {"$match": {
+            "user_id": user["id"],
+            "tenant_id": tid,
+            "$or": [{"invoice_id": None}, {"invoice_id": {"$exists": False}}, {"invoice_id": ""}],
+        }},
+        {"$group": {"_id": None, "total": {"$sum": "$total"}, "count": {"$sum": 1}}}
+    ]).to_list(1)
+    pending_total = round(float(pending_agg[0]["total"]) if pending_agg else 0.0, 2)
+    pending_count = int(pending_agg[0]["count"]) if pending_agg else 0
+
+    return {
+        **user,
+        "wallet_balance": wallet["available"] if wallet else 0,
+        "commission_fee": user.get("commission_fee", DEFAULT_COMMISSION_FEE),
+        "pending_to_invoice": pending_total,
+        "pending_purchases_count": pending_count,
+    }
 
 # ==================== WALLET ENDPOINTS ====================
 
@@ -6978,6 +6998,24 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         }}
     ]).to_list(len(user_ids))
     purchases_dict = {p["_id"]: p for p in purchases_agg}
+
+    # `pending_to_invoice`: purchases that haven't been included in any invoice
+    # yet. This is the "real" debt accruing between invoice runs (e.g. mid-week
+    # before Friday billing). Surfaced in the UI so admins can see what each
+    # client owes BEFORE the next invoice is generated.
+    pending_inv_agg = await db.purchases.aggregate([
+        {"$match": {
+            "user_id": {"$in": user_ids},
+            "tenant_id": tid,
+            "$or": [{"invoice_id": None}, {"invoice_id": {"$exists": False}}, {"invoice_id": ""}],
+        }},
+        {"$group": {
+            "_id": "$user_id",
+            "pending_to_invoice": {"$sum": "$total"},
+            "pending_count": {"$sum": 1},
+        }}
+    ]).to_list(len(user_ids))
+    pending_inv_dict = {p["_id"]: p for p in pending_inv_agg}
     
     # Aggregate shipments per client
     shipments_agg = await db.shipments.aggregate([
@@ -7059,7 +7097,11 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         if debt_amount > 0:
             total_debt += debt_amount
             clients_with_debt += 1
-        
+
+        pi = pending_inv_dict.get(uid, {})
+        pending_to_invoice = round(float(pi.get("pending_to_invoice", 0) or 0), 2)
+        pending_count = int(pi.get("pending_count", 0) or 0)
+
         result.append({
             "id": client["id"],
             "customer_id": client["customer_id"],
@@ -7073,6 +7115,9 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
             "total_saldo_pendiente": round(saldo_ant, 2),
             "pending_balance": pending_balance,
             "debt_amount": debt_amount,
+            # Compras de esta semana aún no facturadas (cobrable antes de viernes).
+            "pending_to_invoice": pending_to_invoice,
+            "pending_purchases_count": pending_count,
             "purchase_count": purch["purchase_count"],
             "shipment_count": ship["shipment_count"],
             # Per-customer latest invoice info — used by the debts table
@@ -7084,14 +7129,19 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
     
     # Sort by debt amount (highest first), then by pending_balance (most negative first)
     result.sort(key=lambda x: (-x["debt_amount"], x["pending_balance"]))
-    
+
+    total_pending_to_invoice = round(sum(r["pending_to_invoice"] for r in result), 2)
+    clients_with_pending = sum(1 for r in result if r["pending_to_invoice"] > 0.01)
+
     return {
         "clients": result,
         "summary": {
             "total_clients": len(clients),
             "clients_with_debt": clients_with_debt,
             "total_debt": round(total_debt, 2),
-            "clients_positive_balance": len(clients) - clients_with_debt
+            "clients_positive_balance": len(clients) - clients_with_debt,
+            "total_pending_to_invoice": total_pending_to_invoice,
+            "clients_with_pending_to_invoice": clients_with_pending,
         }
     }
 
@@ -7133,6 +7183,19 @@ async def get_inactive_clients_report(current_user: dict = Depends(get_current_u
     ]).to_list(len(user_ids))
     purchases_dict = {p["_id"]: p for p in purchases_agg}
 
+    # Pending-to-invoice per client (uninvoiced purchases). Showing this in the
+    # Inactivos panel is critical: an inactive client who STILL has pending
+    # purchases is the most urgent to follow up.
+    pending_inv_agg = await db.purchases.aggregate([
+        {"$match": {
+            "user_id": {"$in": user_ids},
+            "tenant_id": tid,
+            "$or": [{"invoice_id": None}, {"invoice_id": {"$exists": False}}, {"invoice_id": ""}],
+        }},
+        {"$group": {"_id": "$user_id", "pending_to_invoice": {"$sum": "$total"}}}
+    ]).to_list(len(user_ids))
+    pending_inv_dict = {p["_id"]: p["pending_to_invoice"] for p in pending_inv_agg}
+
     now = datetime.now(timezone.utc)
     result = []
     bucket_30 = bucket_60 = bucket_90 = bucket_180 = never = 0
@@ -7169,6 +7232,7 @@ async def get_inactive_clients_report(current_user: dict = Depends(get_current_u
             "days_since_last_purchase": days,
             "purchase_count": int((p or {}).get("purchase_count", 0)),
             "total_spent": round(float((p or {}).get("total_spent", 0) or 0), 2),
+            "pending_to_invoice": round(float(pending_inv_dict.get(c["id"], 0) or 0), 2),
         })
 
     # Sort: most-inactive first; clients without any purchase appear at the very

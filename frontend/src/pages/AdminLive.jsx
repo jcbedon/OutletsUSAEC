@@ -57,7 +57,8 @@ import {
   Search,
   ChevronDown,
   ChevronRight,
-  Package
+  Package,
+  Receipt
 } from "lucide-react";
 
 // Default tax options
@@ -470,13 +471,22 @@ export default function AdminLive() {
     }
   };
 
-  const handleSelectClient = (client) => {
+  const handleSelectClient = async (client) => {
     setPurchaseForm({ ...purchaseForm, customer_id: client.customer_id });
     setClientSearchValue(client.customer_id);
+    // Set quickly with cached data so the UI is responsive…
     setSelectedCustomer(client);
     setCustomerWallet({ available: client.wallet_balance || 0 });
     setCustomerCommission(client.commission_fee || 3.0);
     setClientSearchOpen(false);
+    // …then refresh with the per-customer info endpoint so we get the
+    // accurate `pending_to_invoice` / `pending_purchases_count` for the badge.
+    try {
+      const res = await getClientInfo(client.customer_id);
+      setSelectedCustomer(res.data);
+    } catch (_e) {
+      // Silent — cached client data already populates the UI.
+    }
   };
 
   const handleSubmitPurchase = async (e) => {
@@ -1155,8 +1165,16 @@ export default function AdminLive() {
                       </div>
                       {selectedCustomer && (() => {
                         const dbt = debtStatusMap[String(selectedCustomer.customer_id || "").toUpperCase()];
+                        const pending = Number(selectedCustomer.pending_to_invoice || 0);
+                        const pendingCount = Number(selectedCustomer.pending_purchases_count || 0);
+                        // Color escalonado para que sea visualmente fácil identificar
+                        // a quién hay que cobrar antes del viernes.
+                        let pendingCls = "";
+                        if (pending >= 150) pendingCls = "bg-red-100 text-red-800 border-red-200";
+                        else if (pending >= 50) pendingCls = "bg-amber-100 text-amber-800 border-amber-200";
+                        else if (pending > 0) pendingCls = "bg-yellow-50 text-yellow-700 border-yellow-200";
                         return (
-                        <div className="mt-2 p-3 bg-green-50 rounded-xl flex items-center gap-2">
+                        <div className="mt-2 p-3 bg-green-50 rounded-xl flex items-center gap-2 flex-wrap">
                           <CheckCircle className="h-5 w-5 text-green-600" />
                           <span className="font-medium text-green-800">{selectedCustomer.name}</span>
                           {dbt && (
@@ -1165,6 +1183,17 @@ export default function AdminLive() {
                               className={`inline-block w-2.5 h-2.5 rounded-full ${debtDotClass(dbt.color)}`}
                               data-testid={`selected-client-debt-dot-${dbt.color}`}
                             />
+                          )}
+                          {pending > 0 && (
+                            <span
+                              className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold border rounded-md ${pendingCls}`}
+                              title={`${pendingCount} compras sin facturar — se cobrarán el próximo viernes`}
+                              data-testid="selected-client-pending-badge"
+                            >
+                              <Receipt className="h-3 w-3" />
+                              Por facturar: ${pending.toFixed(2)}
+                              <span className="opacity-70">({pendingCount})</span>
+                            </span>
                           )}
                         </div>
                         );
