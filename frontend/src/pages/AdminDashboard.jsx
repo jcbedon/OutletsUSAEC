@@ -112,14 +112,26 @@ export default function AdminDashboard() {
           endISO = range.endISO;
         }
       }
+      // Per-call `.catch` so one failing endpoint (e.g. /reports/summary) doesn't
+      // blank the whole admin dashboard. Each call returns either the real
+      // response or a safe fallback, and we surface a soft toast aggregating
+      // the failures.
+      const failures = [];
+      const safe = (label, p, fallback) =>
+        p.catch((err) => {
+          failures.push(label);
+          console.warn(`[AdminDashboard] ${label} failed`, err);
+          return fallback;
+        });
       const [summaryRes, activeLiveRes] = await Promise.all([
-        getReportsSummary(summaryPeriod, startISO, endISO),
-        getActiveLive()
+        safe("summary",     getReportsSummary(summaryPeriod, startISO, endISO), { data: null }),
+        safe("active-live", getActiveLive(),                                     { data: null }),
       ]);
       setSummary(summaryRes.data);
       setActiveLive(activeLiveRes.data);
-    } catch (error) {
-      toast.error("Error al cargar datos");
+      if (failures.length > 0) {
+        toast.error(`No se pudo cargar: ${failures.join(", ")}`);
+      }
     } finally {
       setLoading(false);
     }

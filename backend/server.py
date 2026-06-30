@@ -23,7 +23,16 @@ BACKEND_DIR = Path(__file__).parent  # /app/backend
 load_dotenv(BACKEND_DIR / '.env')
 
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
+# Fail fast when Mongo is unreachable: short server selection + connect/read
+# timeouts so HTTP requests don't hang the worker indefinitely on transient
+# Mongo issues. (Atlas best-practice: surface errors quickly so the FE can
+# retry instead of leaving the user staring at a spinner.)
+client = AsyncIOMotorClient(
+    mongo_url,
+    serverSelectionTimeoutMS=5000,
+    connectTimeoutMS=5000,
+    socketTimeoutMS=10000,
+)
 db = client[os.environ['DB_NAME']]
 
 JWT_SECRET = os.environ.get("JWT_SECRET")
@@ -42,9 +51,76 @@ async def startup_event():
         logging.info("Object storage initialized successfully")
     except Exception as e:
         logging.warning(f"Object storage init failed (will retry on first upload): {e}")
+    # Ensure all critical query patterns are backed by indexes. Safe to call on
+    # every boot — Mongo no-ops when an equivalent index already exists.
+    try:
+        await _ensure_indexes()
+    except Exception as e:
+        logging.warning(f"Index ensure failed (non-fatal): {e}")
     # Spawn background scheduler that auto-closes any active live every Monday at 12:00 local (Ecuador, UTC-5).
     import asyncio as _asyncio
     _asyncio.create_task(_auto_close_lives_scheduler())
+
+
+async def _ensure_indexes():
+    """Create compound indexes for the hot query paths.
+
+    All indexes here back patterns that already exist in `server.py` and
+    handle the dominant multi-tenant filtering `{"tenant_id": ...}` combined
+    with the per-entity lookup key. We use `background=True` so this never
+    blocks application startup on Atlas. Repeated calls are no-ops.
+    """
+    spec = [
+        # Users — login + per-tenant directory lookups
+        ("users", [("tenant_id", 1), ("email", 1)]),
+        ("users", [("tenant_id", 1), ("customer_id", 1)]),
+        ("users", [("tenant_id", 1), ("whatsapp", 1)]),
+        ("users", [("id", 1)]),
+        # Tenants
+        ("tenants", [("id", 1)]),
+        ("tenants", [("slug", 1)]),
+        # Employees
+        ("employees", [("tenant_id", 1), ("email", 1)]),
+        ("employees", [("id", 1)]),
+        # Purchases — Live + per-customer aggregations
+        ("purchases", [("user_id", 1), ("tenant_id", 1)]),
+        ("purchases", [("live_id", 1), ("tenant_id", 1)]),
+        ("purchases", [("tenant_id", 1), ("created_at", -1)]),
+        ("purchases", [("invoice_id", 1)]),
+        # Shipments
+        ("shipments", [("user_id", 1), ("tenant_id", 1)]),
+        ("shipments", [("tenant_id", 1), ("created_at", -1)]),
+        # Wallets
+        ("wallets", [("user_id", 1), ("tenant_id", 1)]),
+        ("wallets", [("customer_id", 1), ("tenant_id", 1)]),
+        # Wallet transactions — recharge feed + per-customer history
+        ("wallet_transactions", [("user_id", 1), ("tenant_id", 1)]),
+        ("wallet_transactions", [("tenant_id", 1), ("type", 1), ("status", 1)]),
+        ("wallet_transactions", [("tenant_id", 1), ("created_at", -1)]),
+        ("wallet_transactions", [("bank_account_id", 1)]),
+        # Invoices
+        ("invoices", [("user_id", 1), ("tenant_id", 1)]),
+        ("invoices", [("tenant_id", 1), ("customer_id", 1)]),
+        ("invoices", [("tenant_id", 1), ("created_at", -1)]),
+        # Notifications
+        ("notifications", [("user_id", 1), ("tenant_id", 1)]),
+        ("notifications", [("tenant_id", 1), ("created_at", -1)]),
+        # Audit logs
+        ("audit_logs", [("tenant_id", 1), ("created_at", -1)]),
+        ("audit_logs", [("user_id", 1), ("tenant_id", 1)]),
+        # Lives
+        ("lives", [("tenant_id", 1), ("status", 1)]),
+        ("lives", [("tenant_id", 1), ("created_at", -1)]),
+        # Bank transactions (ledger)
+        ("bank_transactions", [("tenant_id", 1), ("bank_account_id", 1)]),
+        ("bank_transactions", [("tenant_id", 1), ("created_at", -1)]),
+    ]
+    for coll, keys in spec:
+        try:
+            await db[coll].create_index(keys, background=True)
+        except Exception as _idx_err:
+            logging.warning(f"[indexes] {coll} {keys} skipped: {_idx_err}")
+    logging.info(f"[indexes] ensured {len(spec)} compound indexes")
 
 
 async def _auto_close_lives_scheduler():
@@ -2494,11 +2570,24 @@ async def get_pending_deposits(current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
-    transactions = await db.wallet_transactions.find({"type": "deposit", "status": "pending", "tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    transactions = await db.wallet_transactions.find(
+        {"type": "deposit", "status": "pending", "tenant_id": tid, "is_deleted": {"$ne": True}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    if not transactions:
+        return []
+    # Batched user lookup — one query instead of N. Builds an id->user dict so
+    # we don't blow up the request when there are hundreds of pending deposits.
+    user_ids = list({t["user_id"] for t in transactions})
+    users = await db.users.find(
+        {"id": {"$in": user_ids}},
+        {"_id": 0, "id": 1, "name": 1, "customer_id": 1}
+    ).to_list(len(user_ids))
+    user_map = {u["id"]: u for u in users}
     result = []
     for t in transactions:
-        user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
-        result.append({**t, "user_name": user["name"] if user else "Unknown"})
+        u = user_map.get(t["user_id"])
+        result.append({**t, "user_name": (u["name"] if u else "Unknown")})
     return result
 
 @api_router.get("/wallet/all-deposits")
@@ -2510,16 +2599,24 @@ async def get_all_deposits(include_deleted: bool = False, current_user: dict = D
     if not include_deleted:
         query["is_deleted"] = {"$ne": True}
     transactions = await db.wallet_transactions.find(query, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    if not transactions:
+        return []
+    user_ids = list({t["user_id"] for t in transactions})
+    users = await db.users.find(
+        {"id": {"$in": user_ids}},
+        {"_id": 0, "id": 1, "name": 1, "customer_id": 1}
+    ).to_list(len(user_ids))
+    user_map = {u["id"]: u for u in users}
     result = []
     for t in transactions:
-        user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
+        u = user_map.get(t["user_id"])
         result.append({
             **t,
-            "user_name": user["name"] if user else "Unknown",
+            "user_name": (u["name"] if u else "Unknown"),
             # `customer_id` lookup goes through the user; expose it directly so the frontend
             # can filter/search on it without an extra round-trip. RECARGAS view used this
             # field but it was missing — caused customer-code searches to return zero matches.
-            "customer_id": user["customer_id"] if user else None,
+            "customer_id": (u["customer_id"] if u else None),
         })
     return result
 

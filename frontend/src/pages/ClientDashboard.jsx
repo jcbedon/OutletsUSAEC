@@ -124,14 +124,26 @@ export default function ClientDashboard() {
   useRefreshOnTabFocus(() => { if (user) loadData(); });
 
   const loadData = async () => {
+    // Per-call `.catch` so a single failing endpoint doesn't blank the entire
+    // dashboard. Each `Promise.all` element returns either the real response
+    // or a safe empty fallback, and we surface a soft toast per failure
+    // (deduped) rather than the historical "Error al cargar datos" for the
+    // whole load.
+    const failures = [];
+    const safe = (label, p, fallback) =>
+      p.catch((err) => {
+        failures.push(label);
+        console.warn(`[ClientDashboard] ${label} failed`, err);
+        return fallback;
+      });
     try {
       const [walletRes, purchasesRes, shipmentsRes, notificationsRes, transactionsRes, invoicesRes] = await Promise.all([
-        getWallet(user.user_id),
-        getUserPurchases(user.user_id),
-        getUserShipments(user.user_id),
-        getUserNotifications(user.user_id),
-        getWalletTransactions(user.user_id),
-        getClientInvoices(user.customer_id).catch(() => ({ data: [] }))
+        safe("wallet",        getWallet(user.user_id),               { data: null }),
+        safe("purchases",     getUserPurchases(user.user_id),        { data: [] }),
+        safe("shipments",     getUserShipments(user.user_id),        { data: [] }),
+        safe("notifications", getUserNotifications(user.user_id),    { data: [] }),
+        safe("transactions",  getWalletTransactions(user.user_id),   { data: [] }),
+        safe("invoices",      getClientInvoices(user.customer_id),   { data: [] }),
       ]);
 
       setWallet(walletRes.data);
@@ -140,8 +152,9 @@ export default function ClientDashboard() {
       setNotifications(notificationsRes.data);
       setTransactions(transactionsRes.data);
       setClientInvoices(invoicesRes.data || []);
-    } catch (error) {
-      toast.error("Error al cargar datos");
+      if (failures.length > 0) {
+        toast.error(`No se pudo cargar: ${failures.join(", ")}`);
+      }
     } finally {
       setLoading(false);
     }
