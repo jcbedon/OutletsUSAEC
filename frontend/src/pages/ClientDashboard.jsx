@@ -511,6 +511,12 @@ export default function ClientDashboard() {
                                   onChange={handleProofFileChange}
                                   data-testid="deposit-proof-input"
                                 />
+                                {/* Nota: no forzamos `capture="environment"` para
+                                    permitir al usuario elegir entre cámara y
+                                    galería. iOS Safari puede descargar la
+                                    webview durante el picker; el flujo de
+                                    upload está protegido con re-hidratación
+                                    de sesión desde localStorage en pageshow. */}
                               </label>
                             )}
                           </div>

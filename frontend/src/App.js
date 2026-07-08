@@ -32,20 +32,35 @@ const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Shared re-hydration helper. Reused by initial mount, `pageshow` (BFCache
+  // restore) and `visibilitychange` — all of which can race with iOS Safari
+  // discarding the webview when the file picker opens.
+  const hydrateFromStorage = () => {
+    try {
+      const storedUser = localStorage.getItem("outletsusa_user");
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+        return true;
+      }
+    } catch (_e) {
+      // Corrupted storage — treat as logged out.
+    }
+    return false;
+  };
+
   useEffect(() => {
-    const storedUser = localStorage.getItem("outletsusa_user");
-    if (storedUser) {
-      const parsed = JSON.parse(storedUser);
-      setUser(parsed);
+    const had = hydrateFromStorage();
+    if (had) {
       // Refresh permissions and profile from server in the background.
       // Fixes stale localStorage when an admin updates an employee's permissions
       // while their session is still active.
       import("@/lib/api").then(({ authMe }) => {
         authMe()
           .then((res) => {
+            const parsed = JSON.parse(localStorage.getItem("outletsusa_user") || "null");
+            if (!parsed) return; // logged out mid-flight
             const fresh = { ...parsed, ...res.data };
-            // Preserve token (not returned by /auth/me)
-            if (parsed.token) fresh.token = parsed.token;
+            if (parsed.token) fresh.token = parsed.token; // preserve token
             setUser(fresh);
             localStorage.setItem("outletsusa_user", JSON.stringify(fresh));
           })
@@ -53,6 +68,31 @@ const AuthProvider = ({ children }) => {
       });
     }
     setLoading(false);
+
+    // iOS Safari discards the webview when the file picker opens under memory
+    // pressure. When it comes back the page fires `pageshow` with
+    // `event.persisted=true` (BFCache) — React state was lost, but
+    // localStorage is intact. Re-hydrate so the user isn't kicked to /login.
+    const onPageShow = (event) => {
+      if (event.persisted) {
+        hydrateFromStorage();
+      }
+    };
+    // Similarly when the tab comes back to foreground (Android + iOS PWA).
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        // Only re-hydrate if the current user state is null but storage has a
+        // record (avoids clobbering an in-progress logout).
+        if (!localStorage.getItem("outletsusa_user")) return;
+        setUser((prev) => prev || JSON.parse(localStorage.getItem("outletsusa_user")));
+      }
+    };
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   const login = (userData) => {
@@ -84,6 +124,19 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, loading } = useAuth();
 
   if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-red-600 border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  // Guard against transient null user during iOS Safari BFCache restore:
+  // localStorage still holds the session but React state hasn't re-hydrated
+  // yet (auth listener runs on the next tick). We render the spinner and let
+  // the `pageshow` listener in AuthProvider set the user; if storage really
+  // is empty this branch never fires.
+  if (!user && typeof window !== "undefined" && localStorage.getItem("outletsusa_user")) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="animate-spin rounded-full h-12 w-12 border-4 border-red-600 border-t-transparent"></div>
