@@ -1572,9 +1572,19 @@ async def list_bank_accounts_admin(current_user: dict = Depends(get_current_user
 
 
 async def _compute_account_balance(tenant_id: str, account_id: str) -> dict:
-    """Sum recharge + manual deposits (credits) − withdrawals (debits)."""
+    """Sum recharge + manual deposits (credits) − withdrawals (debits).
+
+    Soft-deleted rows (`is_deleted=True`) are excluded from every total so the
+    balance always reflects only the money that is actually in the account.
+    Deleted rows are still returned in the ledger listing (grayed out) for
+    audit-trail purposes.
+    """
     pipeline = [
-        {"$match": {"tenant_id": tenant_id, "bank_account_id": account_id}},
+        {"$match": {
+            "tenant_id": tenant_id,
+            "bank_account_id": account_id,
+            "is_deleted": {"$ne": True},
+        }},
         {"$group": {
             "_id": "$kind",
             "total": {"$sum": "$amount"},
@@ -3215,6 +3225,18 @@ async def delete_deposit(transaction_id: str, data: dict, current_user: dict = D
             "is_deleted": True,
             "deleted_at": datetime.now(timezone.utc).isoformat(),
             "deleted_by": current_user["user_id"]
+        }}
+    )
+
+    # Also soft-delete the linked `bank_transactions` ledger entry (if any)
+    # so it stops adding to the bank account balance. We keep the row so the
+    # ledger UI can render it grayed out with a strikethrough (audit trail).
+    await db.bank_transactions.update_many(
+        {"tenant_id": tid, "source_transaction_id": transaction_id, "kind": "recharge", "is_deleted": {"$ne": True}},
+        {"$set": {
+            "is_deleted": True,
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_by": current_user["user_id"],
         }}
     )
     

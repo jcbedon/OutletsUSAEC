@@ -251,12 +251,17 @@ export default function AdminBankAccounts() {
   };
 
   // Compute running balance for the ledger view (newest at top → oldest at bottom).
-  // We walk oldest→newest to accumulate, then reverse for display.
+  // We walk oldest→newest to accumulate, then reverse for display. Deleted
+  // rows keep their delta at zero so the running balance line skips them —
+  // they render in the UI grayed out but never contribute to the total.
   const ledgerWithBalance = (() => {
     const txs = [...(ledger.transactions || [])].reverse(); // oldest first
     let acc = 0;
     const out = txs.map((t) => {
-      const delta = t.kind === "withdrawal" ? -t.amount : t.amount;
+      const isDeleted = !!t.is_deleted;
+      const delta = isDeleted
+        ? 0
+        : (t.kind === "withdrawal" ? -t.amount : t.amount);
       acc = Math.round((acc + delta) * 100) / 100;
       return { ...t, running_balance: acc };
     });
@@ -475,22 +480,35 @@ export default function AdminBankAccounts() {
                         ) : (
                           ledgerWithBalance.map((tx) => {
                             const meta = kindMeta[tx.kind] || kindMeta.recharge;
+                            const isDeleted = !!tx.is_deleted;
                             return (
-                              <tr key={tx.id} className="border-b border-slate-100 hover:bg-slate-50" data-testid={`ledger-row-${tx.id}`}>
-                                <td className="px-3 py-2 text-slate-700 text-xs whitespace-nowrap">{fmtDate(tx.created_at)}</td>
+                              <tr
+                                key={tx.id}
+                                className={`border-b border-slate-100 ${isDeleted ? "bg-slate-50/60 opacity-60" : "hover:bg-slate-50"}`}
+                                data-testid={`ledger-row-${tx.id}`}
+                                title={isDeleted ? "Eliminada — no suma al balance de la cuenta" : undefined}
+                              >
+                                <td className={`px-3 py-2 text-slate-700 text-xs whitespace-nowrap ${isDeleted ? "line-through text-slate-400" : ""}`}>{fmtDate(tx.created_at)}</td>
                                 <td className="px-3 py-2">
                                   <div className="flex flex-col">
-                                    <Badge variant="outline" className={`text-[10px] w-fit ${meta.color}`}>{meta.label}</Badge>
-                                    <span className="text-xs text-slate-700 mt-1">{tx.description || "—"}</span>
+                                    <div className="flex items-center gap-1">
+                                      <Badge variant="outline" className={`text-[10px] w-fit ${meta.color} ${isDeleted ? "line-through" : ""}`}>{meta.label}</Badge>
+                                      {isDeleted && (
+                                        <Badge variant="outline" className="text-[10px] w-fit bg-slate-200 text-slate-600 border-slate-300" data-testid={`ledger-deleted-badge-${tx.id}`}>
+                                          Eliminada
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <span className={`text-xs mt-1 ${isDeleted ? "line-through text-slate-400" : "text-slate-700"}`}>{tx.description || "—"}</span>
                                     {tx.customer_name && (
-                                      <span className="text-[10px] text-slate-500">Cliente: {tx.customer_name}</span>
+                                      <span className={`text-[10px] ${isDeleted ? "line-through text-slate-400" : "text-slate-500"}`}>Cliente: {tx.customer_name}</span>
                                     )}
                                   </div>
                                 </td>
-                                <td className="px-3 py-2 text-xs text-slate-600 font-mono hidden md:table-cell">
+                                <td className={`px-3 py-2 text-xs font-mono hidden md:table-cell ${isDeleted ? "line-through text-slate-400" : "text-slate-600"}`}>
                                   {tx.reference_number || "—"}
                                 </td>
-                                <td className={`px-3 py-2 text-right font-bold whitespace-nowrap ${tx.kind === "withdrawal" ? "text-red-600" : "text-emerald-700"}`}>
+                                <td className={`px-3 py-2 text-right font-bold whitespace-nowrap ${isDeleted ? "line-through text-slate-400" : (tx.kind === "withdrawal" ? "text-red-600" : "text-emerald-700")}`}>
                                   {meta.sign}{fmtMoney(tx.amount)}
                                 </td>
                                 <td className="px-3 py-2 text-right text-xs text-slate-600 hidden md:table-cell whitespace-nowrap">
