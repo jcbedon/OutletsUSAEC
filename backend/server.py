@@ -7243,6 +7243,90 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
     }
 
 
+@api_router.get("/admin/reports/purchases-without-tax")
+async def get_purchases_without_tax(current_user: dict = Depends(get_current_user)):
+    """Lists purchases where tax was NOT applied (apply_tax=false or tax=0).
+
+    Used by the "Auditoría de Tax" panel so the admin can quickly find items
+    that slipped through without tax and fix them in place.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    # A purchase is considered "sin tax" ONLY when the resulting tax charged
+    # was zero. That covers both intentional (apply_tax=false) and accidental
+    # (tax_rate=0) cases. Purchases with a real positive `tax` are treated as
+    # correctly taxed even if their `tax_rate` field is missing (legacy data).
+    query = {
+        "tenant_id": tid,
+        "$or": [
+            {"apply_tax": False},
+            {"tax": 0},
+            {"tax": 0.0},
+            {"tax": {"$exists": False}},
+            {"tax": None},
+        ],
+    }
+    purchases = await db.purchases.find(query, {"_id": 0}).sort("created_at", -1).to_list(3000)
+    if not purchases:
+        return {"purchases": [], "summary": {"total_purchases": 0, "total_amount": 0.0, "total_tax_lost": 0.0}}
+
+    # Enrich with client name + live title using batched lookups (avoids N+1).
+    user_ids = list({p.get("user_id") for p in purchases if p.get("user_id")})
+    live_ids = list({p.get("live_id") for p in purchases if p.get("live_id")})
+    users = await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "name": 1, "customer_id": 1}).to_list(len(user_ids) or 1)
+    user_map = {u["id"]: u for u in users}
+    lives = await db.lives.find({"id": {"$in": live_ids}}, {"_id": 0, "id": 1, "title": 1, "store": 1}).to_list(len(live_ids) or 1)
+    live_map = {liv["id"]: liv for liv in lives}
+
+    # Default tax rate: use tenant-configured value when present, fallback to
+    # the historical Illinois 8.25% constant so the "tax lost" estimation is
+    # sensible.
+    tenant_doc = await db.tenants.find_one({"id": tid}, {"_id": 0, "default_tax_rate": 1})
+    default_rate = float((tenant_doc or {}).get("default_tax_rate") or ILLINOIS_TAX_RATE)
+
+    result = []
+    total_amount = 0.0
+    total_tax_lost = 0.0
+    for p in purchases:
+        u = user_map.get(p.get("user_id")) or {}
+        liv = live_map.get(p.get("live_id")) or {}
+        price = float(p.get("price") or 0)
+        would_be_tax = round(price * default_rate, 2)
+        total_amount += price
+        total_tax_lost += would_be_tax
+        result.append({
+            "id": p.get("id"),
+            "item_name": p.get("item_name"),
+            "store": p.get("store"),
+            "price": price,
+            "tax": float(p.get("tax") or 0),
+            "tax_rate": float(p.get("tax_rate") or 0),
+            "apply_tax": bool(p.get("apply_tax", False)),
+            "commission": float(p.get("commission") or 0),
+            "apply_commission": bool(p.get("apply_commission", True)),
+            "total": float(p.get("total") or 0),
+            "would_be_tax": would_be_tax,  # Estimación de lo que se dejó de cobrar.
+            "customer_id": p.get("customer_id") or u.get("customer_id"),
+            "customer_name": u.get("name") or "—",
+            "live_id": p.get("live_id"),
+            "live_title": liv.get("title") or "Sin live",
+            "invoice_id": p.get("invoice_id") or None,
+            "created_at": p.get("created_at"),
+        })
+
+    return {
+        "purchases": result,
+        "summary": {
+            "total_purchases": len(result),
+            "total_amount": round(total_amount, 2),
+            "total_tax_lost": round(total_tax_lost, 2),
+            "default_tax_rate": default_rate,
+        },
+    }
+
+
 @api_router.get("/admin/reports/inactive-clients")
 async def get_inactive_clients_report(current_user: dict = Depends(get_current_user)):
     """Lists clients ranked by how long they have been inactive (no purchases).
