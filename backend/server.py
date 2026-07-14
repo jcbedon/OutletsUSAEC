@@ -1846,6 +1846,14 @@ async def backfill_recharges(data: dict = None, current_user: dict = Depends(get
             {"$set": {"bank_account_id": target_id, "bank_account_assigned_via": "backfill"}}
         )
         if not existing:
+            # Honor deposit_date read from the OCR (or manually set) so the
+            # backfilled ledger row shows the real deposit date rather than
+            # the approval/creation moment.
+            _dep_date = tx.get("deposit_date") or (tx.get("ai_scan") or {}).get("detected_deposit_date")
+            if _dep_date:
+                _ledger_at = f"{_dep_date}T00:00:00+00:00"
+            else:
+                _ledger_at = tx.get("approved_at") or tx.get("created_at") or datetime.now(timezone.utc).isoformat()
             await db.bank_transactions.insert_one({
                 "id": str(uuid.uuid4()),
                 "tenant_id": tid,
@@ -1859,7 +1867,8 @@ async def backfill_recharges(data: dict = None, current_user: dict = Depends(get
                 "reference_number": tx.get("reference_number"),
                 "created_by": current_user["user_id"],
                 "created_by_name": actor_name,
-                "created_at": tx.get("approved_at") or tx.get("created_at") or datetime.now(timezone.utc).isoformat(),
+                "created_at": _ledger_at,
+                "deposit_date": _dep_date,
             })
         assigned += 1
     try:
@@ -1906,6 +1915,12 @@ async def assign_bank_account_to_recharge(tx_id: str, data: dict, current_user: 
     await db.bank_transactions.delete_many({"tenant_id": tid, "source_transaction_id": tx_id, "kind": "recharge"})
     if new_account_id and wtx.get("status") == "approved" and not wtx.get("is_deleted"):
         actor_name = await get_actor_name(current_user["user_id"])
+        # Same rule as approve_deposit: honor deposit_date when known.
+        _dep_date = wtx.get("deposit_date") or (wtx.get("ai_scan") or {}).get("detected_deposit_date")
+        if _dep_date:
+            _ledger_at = f"{_dep_date}T00:00:00+00:00"
+        else:
+            _ledger_at = wtx.get("approved_at") or wtx.get("created_at") or datetime.now(timezone.utc).isoformat()
         await db.bank_transactions.insert_one({
             "id": str(uuid.uuid4()),
             "tenant_id": tid,
@@ -1919,7 +1934,8 @@ async def assign_bank_account_to_recharge(tx_id: str, data: dict, current_user: 
             "reference_number": wtx.get("reference_number"),
             "created_by": current_user["user_id"],
             "created_by_name": actor_name,
-            "created_at": wtx.get("approved_at") or wtx.get("created_at") or datetime.now(timezone.utc).isoformat(),
+            "created_at": _ledger_at,
+            "deposit_date": _dep_date,
         })
     return {"message": "Cuenta reasignada", "old": old_account_id, "new": new_account_id}
 
@@ -2863,6 +2879,7 @@ async def request_deposit_with_proof(
             scan = await _scan_proof_image(proof_url, session_id=f"auto-{transaction.id}")
             if scan:
                 detected_amount = scan.get("detected_amount")
+                detected_deposit_date = scan.get("detected_deposit_date")
                 update_fields = {
                     "ai_scan": {
                         "detected_reference_number": scan.get("detected_reference_number"),
@@ -2871,10 +2888,17 @@ async def request_deposit_with_proof(
                         "confidence": scan.get("confidence"),
                         "detected_destination_account": scan.get("detected_destination_account"),
                         "detected_beneficiary_name": scan.get("detected_beneficiary_name"),
+                        "detected_deposit_date": detected_deposit_date,
                         "raw_text": scan.get("raw"),
                         "scanned_at": datetime.now(timezone.utc).isoformat()
                     }
                 }
+                # Persist the deposit date at the top level of the transaction too
+                # so that queries + ledger UI can order by "when the money was
+                # actually deposited" rather than "when the client uploaded the
+                # screenshot". The upload timestamp remains in `created_at`.
+                if detected_deposit_date:
+                    update_fields["deposit_date"] = detected_deposit_date
                 await db.wallet_transactions.update_one(
                     {"id": transaction.id, "tenant_id": tid},
                     {"$set": update_fields}
@@ -2920,18 +2944,21 @@ async def _scan_proof_image(proof_url: str, session_id: str = "ocr"):
             system_message=(
                 "You extract payment information from deposit receipt images. "
                 "Return STRICT JSON with exactly these fields: "
-                '{"reference_number": "<string or null>", "amount": <number or null>, "currency": "<string or null>", "confidence": "<low|medium|high>", "destination_account": "<string or null>", "beneficiary_name": "<string or null>"}. '
+                '{"reference_number": "<string or null>", "amount": <number or null>, "currency": "<string or null>", "confidence": "<low|medium|high>", "destination_account": "<string or null>", "beneficiary_name": "<string or null>", "deposit_date": "<YYYY-MM-DD or null>"}. '
                 "Rules: reference_number is the voucher/transaction/receipt number (usually long digits). "
                 "amount is the numeric amount deposited (no currency symbols). "
                 "destination_account is the bank account number that received the deposit (where the money was transferred TO). "
                 "beneficiary_name is the name of the person/company that received the money. "
+                "deposit_date is the date the deposit/transfer was actually made in ISO format YYYY-MM-DD. "
+                "Common date labels: 'Fecha', 'Fecha de transacción', 'Date', 'Transaction date', 'Fecha de depósito', 'Fecha y hora'. "
+                "If the receipt shows the date as DD/MM/YYYY convert it to YYYY-MM-DD. If only a partial date is readable use null. "
                 "If a value cannot be confidently read, use null. No extra text, only JSON."
             )
         ).with_model("gemini", "gemini-2.5-flash")
         image_file = FileContentWithMimeType(file_path=tmp_path, mime_type=content_type)
         prompt = (
             "Analiza este comprobante de depósito y extrae: número de comprobante, monto, "
-            "número de cuenta destino y nombre del beneficiario. Responde únicamente con JSON."
+            "número de cuenta destino, nombre del beneficiario y fecha del depósito. Responde únicamente con JSON."
         )
         raw = await chat.send_message(UserMessage(text=prompt, file_contents=[image_file]))
     except Exception:
@@ -2960,6 +2987,23 @@ async def _scan_proof_image(proof_url: str, session_id: str = "ocr"):
         detected_amount = float(detected_amount) if detected_amount is not None else None
     except (TypeError, ValueError):
         detected_amount = None
+    # Parse deposit_date. Gemini returns it in ISO YYYY-MM-DD but we defensively
+    # accept DD/MM/YYYY too. If unparseable we keep it as None.
+    detected_deposit_date = None
+    raw_date = parsed.get("deposit_date")
+    if isinstance(raw_date, str) and raw_date.strip():
+        raw_date = raw_date.strip()
+        import re as _re2
+        try:
+            if _re2.match(r"^\d{4}-\d{2}-\d{2}$", raw_date):
+                detected_deposit_date = raw_date
+            else:
+                m2 = _re2.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", raw_date)
+                if m2:
+                    dd, mm, yyyy = m2.group(1), m2.group(2), m2.group(3)
+                    detected_deposit_date = f"{yyyy}-{int(mm):02d}-{int(dd):02d}"
+        except Exception:
+            detected_deposit_date = None
     return {
         "detected_reference_number": detected_ref,
         "detected_amount": detected_amount,
@@ -2967,6 +3011,7 @@ async def _scan_proof_image(proof_url: str, session_id: str = "ocr"):
         "confidence": parsed.get("confidence"),
         "detected_destination_account": (parsed.get("destination_account") or "").strip() or None if isinstance(parsed.get("destination_account"), str) else None,
         "detected_beneficiary_name": (parsed.get("beneficiary_name") or "").strip() or None if isinstance(parsed.get("beneficiary_name"), str) else None,
+        "detected_deposit_date": detected_deposit_date,
         "raw": text[:1500]
     }
 
@@ -3115,6 +3160,23 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
             await db.bank_transactions.delete_many({
                 "tenant_id": tid, "source_transaction_id": transaction_id, "kind": "recharge"
             })
+            # Prefer the deposit_date read from the OCR (or manually set on the
+            # wallet_transaction) so the bank ledger reflects the date the
+            # client actually made the deposit, NOT when the admin approved it.
+            # If neither is available, fall back to now().
+            deposit_date_val = (
+                transaction.get("deposit_date")
+                or (transaction.get("ai_scan") or {}).get("detected_deposit_date")
+            )
+            if deposit_date_val:
+                # OCR gives us just a date (YYYY-MM-DD); render as start-of-day
+                # UTC so ordering + PDF exports stay sane.
+                try:
+                    ledger_created_at = f"{deposit_date_val}T00:00:00+00:00"
+                except Exception:
+                    ledger_created_at = datetime.now(timezone.utc).isoformat()
+            else:
+                ledger_created_at = datetime.now(timezone.utc).isoformat()
             await db.bank_transactions.insert_one({
                 "id": str(uuid.uuid4()),
                 "tenant_id": tid,
@@ -3128,7 +3190,10 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
                 "reference_number": transaction.get("reference_number"),
                 "created_by": current_user["user_id"],
                 "created_by_name": user_name,
-                "created_at": datetime.now(timezone.utc).isoformat(),
+                "created_at": ledger_created_at,
+                # Keep the approval timestamp separately for audit purposes.
+                "approved_at": datetime.now(timezone.utc).isoformat(),
+                "deposit_date": deposit_date_val,
             })
     except Exception as _bank_err:
         logger.warning(f"[bank_ledger] failed to attribute recharge {transaction_id}: {_bank_err}")
@@ -3184,6 +3249,57 @@ async def reject_deposit(transaction_id: str, current_user: dict = Depends(get_c
         logger.error(f"Error recalculating after reject_deposit: {_re_err}")
 
     return {"message": "Depósito rechazado"}
+
+@api_router.put("/wallet/{transaction_id}/deposit-date")
+async def set_deposit_date(transaction_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Manually override the deposit_date on a recharge (admin/employee).
+
+    Used when the OCR failed to read the date on the screenshot, or when the
+    admin wants to correct it. Updates the bank_transactions ledger row too
+    so the ledger UI reflects the correct chronological order right away.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    if current_user["role"] == "employee":
+        emp = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+        if not emp or not emp.get("permissions", {}).get("approve_recharges"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para editar recargas")
+
+    date_str = (data or {}).get("deposit_date")
+    if not date_str:
+        # Clear the deposit_date (reverts ledger back to created_at ordering)
+        await db.wallet_transactions.update_one(
+            {"id": transaction_id, "tenant_id": tid},
+            {"$unset": {"deposit_date": ""}}
+        )
+        await db.bank_transactions.update_many(
+            {"tenant_id": tid, "source_transaction_id": transaction_id, "kind": "recharge"},
+            {"$unset": {"deposit_date": ""}}
+        )
+        return {"message": "Fecha de depósito eliminada"}
+
+    # Validate YYYY-MM-DD
+    import re as _re
+    if not _re.match(r"^\d{4}-\d{2}-\d{2}$", str(date_str)):
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido. Usa YYYY-MM-DD.")
+
+    tx = await db.wallet_transactions.find_one({"id": transaction_id, "tenant_id": tid}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transacción no encontrada")
+
+    await db.wallet_transactions.update_one(
+        {"id": transaction_id, "tenant_id": tid},
+        {"$set": {"deposit_date": date_str}}
+    )
+    # Update the ledger row's chronological anchor so the UI reflects the change.
+    await db.bank_transactions.update_many(
+        {"tenant_id": tid, "source_transaction_id": transaction_id, "kind": "recharge"},
+        {"$set": {"deposit_date": date_str, "created_at": f"{date_str}T00:00:00+00:00"}}
+    )
+    return {"message": "Fecha de depósito actualizada", "deposit_date": date_str}
+
 
 @api_router.post("/wallet/delete-deposit/{transaction_id}")
 async def delete_deposit(transaction_id: str, data: dict, current_user: dict = Depends(get_current_user)):

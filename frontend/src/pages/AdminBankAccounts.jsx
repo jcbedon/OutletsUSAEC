@@ -488,7 +488,14 @@ export default function AdminBankAccounts() {
                                 data-testid={`ledger-row-${tx.id}`}
                                 title={isDeleted ? "Eliminada — no suma al balance de la cuenta" : undefined}
                               >
-                                <td className={`px-3 py-2 text-slate-700 text-xs whitespace-nowrap ${isDeleted ? "line-through text-slate-400" : ""}`}>{fmtDate(tx.created_at)}</td>
+                                <td className={`px-3 py-2 text-slate-700 text-xs whitespace-nowrap ${isDeleted ? "line-through text-slate-400" : ""}`}>
+                                  {fmtDate(tx.deposit_date ? `${tx.deposit_date}T00:00:00Z` : tx.created_at)}
+                                  {tx.deposit_date && (
+                                    <div className="text-[9px] text-emerald-600 mt-0.5" title="Fecha detectada desde el comprobante">
+                                      📅 desde recibo
+                                    </div>
+                                  )}
+                                </td>
                                 <td className="px-3 py-2">
                                   <div className="flex flex-col">
                                     <div className="flex items-center gap-1">
