@@ -134,13 +134,16 @@ export default function ClientDashboard() {
     // whole load.
     const failures = [];
     const errors = [];
-    const safe = (label, p, fallback) =>
-      p.catch((err) => {
+    let totalCalls = 0;
+    const safe = (label, p, fallback) => {
+      totalCalls += 1;
+      return p.catch((err) => {
         failures.push(label);
         errors.push(err);
         console.warn(`[ClientDashboard] ${label} failed`, err);
         return fallback;
       });
+    };
     try {
       const [walletRes, purchasesRes, shipmentsRes, notificationsRes, transactionsRes, invoicesRes] = await Promise.all([
         safe("wallet",        getWallet(user.user_id),               { data: null }),
@@ -162,7 +165,7 @@ export default function ClientDashboard() {
       // it's an out-of-date cached bundle pointing at a defunct backend URL,
       // a network/DNS problem, or CORS. Surface a clearer action banner
       // instead of the generic "no se pudo cargar" toast.
-      if (failures.length === 6) {
+      if (failures.length === totalCalls && totalCalls > 0) {
         const first = errors[0];
         const looksLikeNetwork = !first?.response; // no HTTP response = pure network failure
         setLoadFailed({
