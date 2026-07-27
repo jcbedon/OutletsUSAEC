@@ -91,6 +91,9 @@ export default function ClientDashboard() {
   const [notifications, setNotifications] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Meta-state para detectar "todas las llamadas fallaron" — típico de un
+  // bundle cacheado apuntando al backend viejo o de un problema de red.
+  const [loadFailed, setLoadFailed] = useState(null);
   const [depositAmount, setDepositAmount] = useState("");
   const [depositDialogOpen, setDepositDialogOpen] = useState(false);
   const [depositProof, setDepositProof] = useState(null);
@@ -130,9 +133,11 @@ export default function ClientDashboard() {
     // (deduped) rather than the historical "Error al cargar datos" for the
     // whole load.
     const failures = [];
+    const errors = [];
     const safe = (label, p, fallback) =>
       p.catch((err) => {
         failures.push(label);
+        errors.push(err);
         console.warn(`[ClientDashboard] ${label} failed`, err);
         return fallback;
       });
@@ -152,12 +157,46 @@ export default function ClientDashboard() {
       setNotifications(notificationsRes.data);
       setTransactions(transactionsRes.data);
       setClientInvoices(invoicesRes.data || []);
-      if (failures.length > 0) {
-        toast.error(`No se pudo cargar: ${failures.join(", ")}`);
+
+      // If ALL calls failed simultaneously the culprit is almost never data —
+      // it's an out-of-date cached bundle pointing at a defunct backend URL,
+      // a network/DNS problem, or CORS. Surface a clearer action banner
+      // instead of the generic "no se pudo cargar" toast.
+      if (failures.length === 6) {
+        const first = errors[0];
+        const looksLikeNetwork = !first?.response; // no HTTP response = pure network failure
+        setLoadFailed({
+          reason: looksLikeNetwork ? "network" : "server",
+          detail: first?.message || "Error desconocido",
+        });
+      } else {
+        setLoadFailed(null);
+        if (failures.length > 0) {
+          toast.error(`No se pudo cargar: ${failures.join(", ")}`);
+        }
       }
     } finally {
       setLoading(false);
     }
+  };
+
+  const hardRefresh = async () => {
+    // Best-effort cache clear before reloading. Bypasses stale service worker
+    // bundles that point at the previous production backend URL.
+    try {
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+    } catch (_e) {
+      // Ignore — worst case the reload still helps.
+    }
+    // Cache-busting reload
+    window.location.href = window.location.pathname + "?_ts=" + Date.now();
   };
 
   const handleDownloadInvoice = async (invoice, e) => {
@@ -604,6 +643,48 @@ export default function ClientDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Recovery banner — solo aparece si TODAS las llamadas al backend
+          fallaron simultáneamente. Un fallo global normalmente significa que
+          el bundle del navegador quedó apuntando a un backend viejo (dominio
+          de producción cambió) o hay un problema de red. Ofrece un botón
+          para forzar limpieza de caché + reload. */}
+      {loadFailed && (
+        <div className="max-w-6xl mx-auto px-4 mt-4" data-testid="load-failed-banner">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+            <div className="flex items-start gap-3">
+              <div className="text-red-600 text-2xl">⚠</div>
+              <div className="flex-1">
+                <p className="font-semibold text-red-800">
+                  No se pudo cargar la información
+                </p>
+                <p className="text-sm text-red-700 mt-1">
+                  {loadFailed.reason === "network"
+                    ? "Parece un problema de conexión o tu app está desactualizada. Toca \"Actualizar app\" para volver a intentar con la versión más reciente."
+                    : "El servidor respondió con un error. Toca \"Actualizar app\" o vuelve a iniciar sesión."}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={hardRefresh}
+                    className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-semibold"
+                    data-testid="hard-refresh-btn"
+                  >
+                    Actualizar app
+                  </button>
+                  <button
+                    onClick={loadData}
+                    className="px-4 py-2 rounded-lg bg-white border border-red-300 text-red-700 hover:bg-red-100 text-sm font-semibold"
+                    data-testid="retry-load-btn"
+                  >
+                    Reintentar
+                  </button>
+                </div>
+                <p className="text-[10px] text-red-500 mt-2 font-mono">{loadFailed.detail}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="max-w-lg mx-auto px-4 mt-6">

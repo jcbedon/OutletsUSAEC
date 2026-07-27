@@ -23,15 +23,16 @@ BACKEND_DIR = Path(__file__).parent  # /app/backend
 load_dotenv(BACKEND_DIR / '.env')
 
 mongo_url = os.environ['MONGO_URL']
-# Fail fast when Mongo is unreachable: short server selection + connect/read
+# Fail fast when Mongo is unreachable: short server selection + connect
 # timeouts so HTTP requests don't hang the worker indefinitely on transient
-# Mongo issues. (Atlas best-practice: surface errors quickly so the FE can
-# retry instead of leaving the user staring at a spinner.)
+# Mongo issues. Socket timeout is generous (30s) because some client
+# dashboards aggregate historical purchases/transactions and take a while
+# on large tenants — a 10s cap was killing legitimate queries in production.
 client = AsyncIOMotorClient(
     mongo_url,
     serverSelectionTimeoutMS=5000,
     connectTimeoutMS=5000,
-    socketTimeoutMS=10000,
+    socketTimeoutMS=30000,
 )
 db = client[os.environ['DB_NAME']]
 
