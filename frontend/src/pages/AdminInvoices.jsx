@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/App";
-import { searchInvoices, annulInvoice, getInvoiceDetail, getAllClients, getMyTenant, recalculateAllInvoices } from "@/lib/api";
+import { searchInvoices, annulInvoice, getInvoiceDetail, getAllClients, getMyTenant, recalculateAllInvoices, listAnnulledInvoices, restoreInvoice } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import InvoiceDialog from "@/components/InvoiceDialog";
 import { 
@@ -27,7 +27,9 @@ import {
   ChevronRight,
   ChevronDown,
   Upload,
-  RefreshCw
+  RefreshCw,
+  History,
+  RotateCcw
 } from "lucide-react";
 
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
@@ -45,6 +47,13 @@ export default function AdminInvoices() {
   const [showAnnulDialog, setShowAnnulDialog] = useState(false);
   const [invoiceToAnnul, setInvoiceToAnnul] = useState(null);
   const [annulling, setAnnulling] = useState(false);
+  // Restauración de facturas anuladas: modal separado con lista + password
+  const [showRestoreDialog, setShowRestoreDialog] = useState(false);
+  const [annulledList, setAnnulledList] = useState([]);
+  const [loadingAnnulled, setLoadingAnnulled] = useState(false);
+  const [invoiceToRestore, setInvoiceToRestore] = useState(null);
+  const [restorePassword, setRestorePassword] = useState("");
+  const [restoring, setRestoring] = useState(false);
   
   // For creating new invoice - client selection
   const [showClientSelector, setShowClientSelector] = useState(false);
@@ -214,6 +223,42 @@ export default function AdminInvoices() {
     }
   };
 
+  // Restaurar factura anulada — reversible con password del admin.
+  const openRestoreDialog = async () => {
+    setShowRestoreDialog(true);
+    setLoadingAnnulled(true);
+    try {
+      const res = await listAnnulledInvoices();
+      setAnnulledList(res.data || []);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Error cargando facturas anuladas");
+    } finally {
+      setLoadingAnnulled(false);
+    }
+  };
+
+  const doRestore = async () => {
+    if (!invoiceToRestore) return;
+    if (!restorePassword) {
+      toast.error("Ingresa tu contraseña para confirmar");
+      return;
+    }
+    setRestoring(true);
+    try {
+      await restoreInvoice(invoiceToRestore.id, restorePassword);
+      toast.success(`Factura ${invoiceToRestore.invoice_number || ""} restaurada`);
+      setInvoiceToRestore(null);
+      setRestorePassword("");
+      setShowRestoreDialog(false);
+      // Refrescar la lista principal para que aparezca de nuevo
+      await handleSearch();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "No se pudo restaurar la factura");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   const getStatusBadge = (invoice) => {
     if (invoice.is_annulled) {
       return (
@@ -293,6 +338,16 @@ export default function AdminInvoices() {
               >
                 <RefreshCw className="h-4 w-4 mr-2" />
                 Recalcular
+              </Button>
+              <Button
+                onClick={openRestoreDialog}
+                variant="outline"
+                className="bg-white/10 hover:bg-white/20 text-white border-white/30 font-medium px-4 py-3 rounded-xl"
+                data-testid="restore-invoice-btn"
+                title="Ver facturas anuladas y restaurarlas"
+              >
+                <History className="h-4 w-4 mr-2" />
+                Anuladas
               </Button>
               <Button
                 onClick={handleNewInvoiceClick}
@@ -891,6 +946,86 @@ export default function AdminInvoices() {
         existingInvoice={existingInvoiceToView}
         tenantInfo={tenantInfo || defaultTenantInfo}
       />
+
+      {/* Restore Annulled Invoices Dialog */}
+      <Dialog open={showRestoreDialog} onOpenChange={(o) => { setShowRestoreDialog(o); if (!o) { setInvoiceToRestore(null); setRestorePassword(""); } }}>
+        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" /> Facturas anuladas
+            </DialogTitle>
+            <DialogDescription>
+              Restaura una factura previamente anulada. Los productos volverán a esta factura y los abonos se recalcularán.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto">
+            {loadingAnnulled ? (
+              <div className="py-8 text-center text-gray-500 text-sm">Cargando…</div>
+            ) : annulledList.length === 0 ? (
+              <div className="py-8 text-center text-gray-500 text-sm">No hay facturas anuladas.</div>
+            ) : (
+              <div className="space-y-2">
+                {annulledList.map((inv) => (
+                  <div
+                    key={inv.id}
+                    className="border rounded-lg p-3 flex items-center justify-between hover:bg-slate-50"
+                    data-testid={`annulled-row-${inv.id}`}
+                  >
+                    <div className="flex-1">
+                      <div className="font-semibold text-slate-800">{inv.invoice_number || "—"}</div>
+                      <div className="text-xs text-slate-500">
+                        Cliente {inv.customer_id} · Total ${Number(inv.total || 0).toFixed(2)}
+                      </div>
+                      <div className="text-[11px] text-red-500 mt-1">
+                        Anulada {inv.annulled_at ? new Date(inv.annulled_at).toLocaleString("es-EC") : "—"}
+                        {inv.annulled_by_name ? ` por ${inv.annulled_by_name}` : ""}
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => setInvoiceToRestore(inv)}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                      data-testid={`restore-btn-${inv.id}`}
+                    >
+                      <RotateCcw className="h-3 w-3 mr-1" /> Restaurar
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {invoiceToRestore && (
+            <div className="border-t pt-3 space-y-2">
+              <div className="text-sm text-slate-700">
+                Restaurar <span className="font-semibold">{invoiceToRestore.invoice_number}</span> — confirma con tu contraseña de administrador:
+              </div>
+              <Input
+                type="password"
+                placeholder="Contraseña de admin"
+                value={restorePassword}
+                onChange={(e) => setRestorePassword(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && doRestore()}
+                data-testid="restore-password-input"
+                autoFocus
+              />
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => { setInvoiceToRestore(null); setRestorePassword(""); }}>
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={doRestore}
+                  disabled={restoring}
+                  className="bg-blue-600 hover:bg-blue-700"
+                  data-testid="confirm-restore-btn"
+                >
+                  {restoring ? "Restaurando…" : "Confirmar restauración"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
       </div>
     </div>
   );

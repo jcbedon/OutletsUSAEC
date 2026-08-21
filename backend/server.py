@@ -5692,6 +5692,28 @@ async def search_invoices(
     
     return filtered_invoices
 
+@api_router.get("/invoices/annulled")
+async def list_annulled_invoices(current_user: dict = Depends(get_current_user)):
+    """List soft-deleted (annulled) invoices so the admin can review and
+    optionally restore them. Ordered newest annulled first.
+
+    NOTE: must stay registered BEFORE `/invoices/{invoice_id}` otherwise the
+    literal path is shadowed by the path-param route and returns 404.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    if current_user["role"] == "employee":
+        emp = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+        if not emp or not emp.get("permissions", {}).get("manage_invoices"):
+            raise HTTPException(status_code=403, detail="No tienes permiso")
+    tid = current_user["tenant_id"]
+    invoices = await db.invoices.find(
+        {"tenant_id": tid, "is_annulled": True},
+        {"_id": 0}
+    ).sort("annulled_at", -1).to_list(500)
+    return invoices
+
+
 @api_router.get("/invoices/{invoice_id}")
 async def get_invoice_detail(invoice_id: str, current_user: dict = Depends(get_current_user)):
     """Get invoice with full details"""
@@ -6380,6 +6402,99 @@ async def annul_invoice_preview(invoice_id: str, current_user: dict = Depends(ge
             "has_shipment": bool(shipment),
         }
     }
+
+@api_router.put("/invoices/{invoice_id}/restore")
+async def restore_invoice(invoice_id: str, data: dict = None, current_user: dict = Depends(get_current_user)):
+    """Restore an annulled invoice back to its pre-annulment state.
+
+    Reverses the flags set by `annul_invoice`:
+      * `is_annulled` → False
+      * Re-marks the linked purchases as `invoiced` so they stop appearing as
+        "pending" in the client's cart and don't get double-billed on the next
+        invoice run.
+      * Re-runs `recalculate_client_invoices` to re-flow deposits and inherited
+        balances across the client's chain.
+    Requires admin role + password.
+    """
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo administradores pueden restaurar facturas")
+    tid = current_user["tenant_id"]
+    user_id = current_user["user_id"]
+
+    # Password is mandatory — same policy as annul_invoice so restoring can't
+    # be triggered by a stolen JWT alone. The testing agent caught that an
+    # empty body used to succeed silently.
+    if not data or not data.get("password"):
+        raise HTTPException(status_code=400, detail="Contraseña de administrador requerida")
+    admin = await db.users.find_one({"id": user_id, "tenant_id": tid})
+    if not admin or not verify_password(data["password"], admin["password_hash"]):
+        raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+
+    invoice = await db.invoices.find_one({"id": invoice_id, "tenant_id": tid}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    if not invoice.get("is_annulled"):
+        raise HTTPException(status_code=400, detail="La factura no está anulada")
+
+    # Prevent conflicts: if any purchase from this invoice was already re-billed
+    # into a NEW invoice after the annulment, block the restore and tell the
+    # admin which invoice to anular first. Restoring on top would double-bill.
+    conflicts = await db.purchases.find(
+        {"id": {"$in": invoice.get("purchase_ids", [])}, "tenant_id": tid,
+         "invoice_id": {"$exists": True, "$nin": [None, "", invoice_id]}},
+        {"_id": 0, "id": 1, "invoice_id": 1}
+    ).to_list(len(invoice.get("purchase_ids", [])) or 1)
+    if conflicts:
+        blocking_ids = list({c["invoice_id"] for c in conflicts})
+        blockers = await db.invoices.find(
+            {"id": {"$in": blocking_ids}, "tenant_id": tid, "is_annulled": {"$ne": True}},
+            {"_id": 0, "invoice_number": 1, "id": 1}
+        ).to_list(len(blocking_ids))
+        if blockers:
+            names = ", ".join([b.get("invoice_number") or b["id"] for b in blockers])
+            raise HTTPException(
+                status_code=409,
+                detail=f"No se puede restaurar: los productos ya fueron re-facturados en {names}. Anula primero esa(s) factura(s)."
+            )
+
+    now = datetime.now(timezone.utc).isoformat()
+    admin_user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0})
+    admin_name = admin_user.get("name", admin_user.get("email", "Admin")) if admin_user else "Admin"
+
+    # Restore invoice flags
+    await db.invoices.update_one(
+        {"id": invoice_id, "tenant_id": tid},
+        {"$set": {
+            "is_annulled": False,
+            "restored_at": now,
+            "restored_by": user_id,
+            "restored_by_name": admin_name,
+        }, "$unset": {"annulled_at": "", "annulled_by": "", "annulled_by_name": ""}}
+    )
+
+    # Re-attach purchases to this invoice.
+    was_approved = invoice.get("status") == "approved"
+    purchase_update = {"invoice_id": invoice_id, "invoiced_at": invoice.get("approved_at") or invoice.get("created_at") or now}
+    if was_approved:
+        purchase_update["status"] = "invoiced"
+        purchase_update["paid_at"] = invoice.get("approved_at") or now
+    await db.purchases.update_many(
+        {"id": {"$in": invoice.get("purchase_ids", [])}, "tenant_id": tid},
+        {"$set": purchase_update}
+    )
+
+    # Recompute chain so deposits/saldos rebalance.
+    await recalculate_client_invoices(tid, invoice["customer_id"])
+
+    await log_audit_action(
+        tenant_id=tid, user_id=user_id, user_name=admin_name,
+        user_role="admin", action="restore_invoice",
+        entity_type="invoice", entity_id=invoice_id,
+        entity_name=invoice.get("invoice_number") or invoice_id,
+        details={"customer_id": invoice.get("customer_id"), "total": invoice.get("total")}
+    )
+
+    return {"message": "Factura restaurada", "invoice_id": invoice_id}
 
 
 @api_router.put("/invoices/{invoice_id}/annul")
