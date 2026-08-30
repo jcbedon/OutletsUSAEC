@@ -12,11 +12,47 @@ from typing import List, Optional
 import object_store
 import uuid
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import random
 import string
 import hashlib
 import jwt
 import shutil
+
+# ==================== WEEKLY RECHARGE CUTOFF ====================
+# Feature: "Cerrar semana en recargas" (Weekly Recharge Cutoff).
+# Recharges are assigned to the invoice that belongs to the SAME billing week
+# (Monday 00:00 – Sunday 23:59:59.999999 America/Chicago).
+# Applied only to recharges with created_at >= WEEKLY_CUTOFF_EFFECTIVE_FROM.
+# Older recharges keep the legacy "latest invoice before deposit" logic so
+# historical assignments remain untouched.
+WEEKLY_CUTOFF_TZ = ZoneInfo("America/Chicago")
+WEEKLY_CUTOFF_EFFECTIVE_FROM = datetime(2026, 2, 16, 0, 0, 0, tzinfo=WEEKLY_CUTOFF_TZ)
+
+
+def _parse_iso_utc(iso_str):
+    """Parse an ISO datetime string; return timezone-aware UTC datetime or None."""
+    if not iso_str:
+        return None
+    try:
+        s = iso_str.replace("Z", "+00:00") if isinstance(iso_str, str) else iso_str
+        dt = datetime.fromisoformat(s) if isinstance(s, str) else s
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def _billing_week_bounds(dt_utc):
+    """Return (week_start_utc, week_end_utc) for the Mon 00:00 – Sun 23:59:59.999999
+    America/Chicago week containing dt_utc."""
+    dt_local = dt_utc.astimezone(WEEKLY_CUTOFF_TZ)
+    monday_local = (dt_local - timedelta(days=dt_local.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    sunday_end_local = monday_local + timedelta(days=7) - timedelta(microseconds=1)
+    return monday_local.astimezone(timezone.utc), sunday_end_local.astimezone(timezone.utc)
 
 ROOT_DIR = Path(__file__).parent.parent  # /app instead of /app/backend
 BACKEND_DIR = Path(__file__).parent  # /app/backend
@@ -806,23 +842,64 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     
     if not all_invoices:
         return
-    
+
+    # Pre-parse invoice datetimes once (used by the weekly-cutoff branch).
+    for inv in all_invoices:
+        inv["_created_dt"] = _parse_iso_utc(inv.get("created_at", ""))
+
     # Group deposits by which invoice was the latest at the time of the deposit
     deposits_by_invoice = {inv["id"]: [] for inv in all_invoices}
-    
+
     for dep in all_deposits:
-        dep_date = dep.get("created_at", "")
-        # Find the latest invoice created BEFORE or AT the deposit date
+        dep_date_str = dep.get("created_at", "")
+        dep_date_utc = _parse_iso_utc(dep_date_str)
         target_invoice = None
-        for inv in all_invoices:
-            if inv["created_at"] <= dep_date:
-                target_invoice = inv
+
+        # NEW LOGIC (>= WEEKLY_CUTOFF_EFFECTIVE_FROM): assign to the invoice
+        # inside the same Mon–Sun America/Chicago billing week as the deposit.
+        # If no invoice exists in that week, look for the next future invoice.
+        # If none exists at all, the deposit "floats" (still counts in wallet
+        # balance) until a future invoice absorbs it.
+        if dep_date_utc and dep_date_utc >= WEEKLY_CUTOFF_EFFECTIVE_FROM:
+            wk_start, wk_end = _billing_week_bounds(dep_date_utc)
+            week_invoices = [
+                inv for inv in all_invoices
+                if inv.get("_created_dt") and wk_start <= inv["_created_dt"] <= wk_end
+            ]
+            if week_invoices:
+                # Prefer the latest invoice within the week created BEFORE or AT
+                # the deposit. If deposit precedes all invoices of the week, use
+                # the first invoice of the week.
+                for inv in week_invoices:
+                    if inv["_created_dt"] <= dep_date_utc:
+                        target_invoice = inv
+                    else:
+                        break
+                if target_invoice is None:
+                    target_invoice = week_invoices[0]
             else:
-                break
-        # If no invoice existed before the deposit, assign to the first invoice
-        if target_invoice is None:
-            target_invoice = all_invoices[0]
-        
+                # No invoice in this billing week — assign to the earliest FUTURE
+                # invoice (floating deposit gets absorbed by the next invoice).
+                for inv in all_invoices:
+                    if inv.get("_created_dt") and inv["_created_dt"] > wk_end:
+                        target_invoice = inv
+                        break
+                if target_invoice is None:
+                    # Deposit floats: no invoice this week or later yet.
+                    # Wallet balance still reflects it via wallet_transactions.
+                    continue
+        else:
+            # LEGACY LOGIC (deposits before the cutoff date): keep historical
+            # assignments untouched — latest invoice created BEFORE or AT the
+            # deposit, or the first invoice if the deposit precedes all invoices.
+            for inv in all_invoices:
+                if inv["created_at"] <= dep_date_str:
+                    target_invoice = inv
+                else:
+                    break
+            if target_invoice is None:
+                target_invoice = all_invoices[0]
+
         deposits_by_invoice[target_invoice["id"]].append({
             "deposit_id": dep.get("id", ""),
             "amount_applied": dep["amount"],

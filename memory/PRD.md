@@ -1,166 +1,42 @@
-# PRD — Outlets USA EC (Personal Shoppers SaaS)
+# Outlets USA – SaaS Personal Shopper Platform
 
-## Problem Statement
-Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturación dinámica, shipments y portal de clientes.
+## Original problem statement
+Multi-tenant SaaS for personal shoppers: invoice/wallet sync with cascading debt, live shopping, shipments, internal banking ledgers, OCR receipt reading, client portal.
 
-## Personas
-- Superadmin · Admin tenant · Empleado · Cliente
+## User language
+Spanish. Respond in Spanish only.
 
-## Stack
+## Architecture
+- Backend: FastAPI monolith `server.py` (~9,000 lines, refactor pending)
 - Frontend: React + Tailwind + Shadcn UI
-- Backend: FastAPI + Motor (MongoDB)
-- AI OCR: emergentintegrations (Gemini Vision)
-- PDFs: jsPDF · Object Store: Emergent internal
+- DB: MongoDB (Motor async)
+- OCR: Gemini Vision via Emergent LLM key
 
-## Changelog (Feb 2026)
-- **[05-may]** **Cascada `saldo_pendiente` dinámica** (`recalculate_client_invoices`): ahora la deuda heredada se propaga entre facturas vivas en cada recálculo. Antes el campo `saldo_pendiente` quedaba congelado al crear la factura, y al anular una factura intermedia, las posteriores conservaban deuda inflada. Ahora F(n+1).saldo_pendiente = F(n).total_a_pagar de la factura viva anterior. La primera factura conserva su `saldo_pendiente` original (puede ser deuda legacy de onboarding). Tests en `/app/backend/tests/test_recalc_chain.py` cubren: cadena completa, anulación intermedia, depósitos en cadena, saldo a favor sobrante.
-- Inline editing purchase items + sync LIVE.
-- Auto-recalculo de `saldo_a_favor` en cadenas de facturas.
-- Shipments mapeados 1-a-1 a invoices.
-- Toggle tenant Paquetes/Libras (Superadmin).
-- Wallet recharges con Gemini Vision OCR.
-- Mobile tabs con labels + QR uploads.
-- PDFs unificados con breakdown de Saldo a Favor.
-- Fallback message en Client Dashboard cuando IA detecta $0.
-- Shipping categories con **precios independientes por modo** (packages/pounds).
-- **[hoy]** PDFs:
-  - Fix: contenido ya no se corta abajo cuando hay muchos items/líneas financieras (paginación con `ensureSpace`, redibujo del container en cada página, footer garantizado al final).
-  - Fix: PDF siempre re-consulta la factura al backend antes de generar → si el admin quitó un ítem o editó un precio, el PDF refleja los valores correctos.
-- **[hoy]** Backend `remove_item_from_invoice` y `update_purchase` ahora disparan `recalculate_client_invoices` → `total_a_pagar`, `saldo_a_favor`, `saldo_pendiente` y `applied_deposits` se actualizan automáticamente en toda la cadena.
-- **[27-feb]** Envíos Pendientes: filtro semanal en formato corto (lunes 12:00 → lunes 12:00) con KPIs dinámicos.
-- **[27-feb]** Clientes: botón **Mostrar/Ocultar contraseña actual** en el modal Editar Cliente.
-  - Backend: nuevo campo `password_plain` en `User` + endpoint `GET /admin/clients/{user_id}/password`.
-  - Se llena al crear cliente (admin o self-register) y al cambiar la contraseña.
-  - Para clientes legacy (antes de esta fecha) se muestra mensaje "No disponible — restablece la contraseña".
-- **[27-feb]** Backend: `NoCacheMiddleware` agregado antes de `CORSMiddleware` → todas las respuestas `/api/*` traen `Cache-Control: no-store`, `Pragma: no-cache`, `Expires: 0`.
-- **[27-feb]** **Permisos de empleado en vivo VERIFICADO**: `/auth/me` devuelve permisos frescos para empleado y admin; al refrescar la página, la UI hidrata las nuevas tarjetas (Facturas/Envíos) sin re-login. Confirmado E2E con screenshots.
-- **[28-feb]** **Auto-refresh on tab focus**: nuevo hook `useRefreshOnTabFocus` cableado a las 12 páginas principales (AdminDashboard, AdminStats, AdminLive, AdminShipments, AdminWallet, AdminInvoices, AdminClients, AdminEmployees, AdminAuditLog, AdminReferrals, ClientDashboard, SuperadminDashboard). Cuando el usuario regresa a la pestaña, la página recarga su data automáticamente. Verificado E2E disparando `visibilitychange` (pasó de 4 → 6 fetches a `/api/admin/clients`).
-- **[28-feb]** **Audit + Historial**:
-  - `delete_purchase` ahora registra audit log con snapshot completo (cliente, tienda, live, ítem, monto, quién eliminó). Se guarda **antes** del delete para preservar el contexto.
-  - Eventos `login` ocultos del feed de auditoría (siguen en BD para forensics).
-  - Nueva pestaña **Historial** en `/admin/audit`: 3 secciones (Productos Eliminados, Facturas Anuladas, Recargas Aprobadas) con rango 7/14/30/60/90 días, KPIs y filtro de texto unificado. Para deletes anteriores al fix se muestra un fallback desde `wallet_transactions` tipo refund (etiquetado `legacy`, sin tienda/live).
-  - Endpoint `GET /admin/audit-logs/history?days=N`.
-- **[28-feb]** **Restaurar producto eliminado**: endpoint `POST /admin/audit-logs/restore-purchase/{audit_log_id}` que recrea el `purchase` desde el snapshot, revierte el reembolso (`wallet_transactions` is_deleted + `wallets.available -= amount`), restaura totales del live y dispara `recalculate_client_invoices`. Marca el audit log original como `restored=true` para evitar doble-restore. Verificado E2E: balance vuelve a su estado original ($17.24 → $99.74 → $17.24).
-- **[28-feb]** **`delete_purchase` ahora actualiza la factura asociada**: si el producto pertenece a una factura, se quita del `purchase_ids`, se recalculan `subtotal/total_tax/total_commission/total` (mismo patrón que `remove_item_from_invoice`) y se llama a `recalculate_client_invoices` para mantener saldos consistentes en toda la cadena. Verificado E2E: factura 2-items → eliminar 1 → factura queda con 1-item, totales correctos, saldo a favor del cliente actualizado.
-- **[28-feb]** **Preview de eliminación de producto**: nuevo endpoint `GET /api/purchases/{id}/delete-preview` y `AlertDialog` en `AdminLive.jsx` que muestra antes de confirmar: producto + tienda + cliente, monto del reembolso, factura asociada (si la hay) con conteo de ítems y total antes/después, y aviso especial si es el último ítem (caja roja). Verificado E2E.
-- **[28-feb]** **Recalcular factura desde el diálogo de Auditoría**: el endpoint `POST /invoices/{id}/recalc` ahora recompone también `subtotal/total_tax/total_commission/total` desde las purchases vivas, limpia ids huérfanos y luego dispara el chain. Botón "Recalcular factura" siempre visible al inicio del modal de Auditoría (caja azul). Verificado E2E corrompiendo la factura en BD: subtotal $999.99→$75, total $9999.99→$80, 1 id fantasma limpiado.
-- **[28-feb]** **Cliente Revisado**: nuevo flag `reviewed` en `User`, endpoint `PUT /admin/clients/{user_id}/toggle-reviewed`, checkbox al lado de "Activo" en la lista de clientes; cuando está marcado, el nombre se resalta con fondo verde claro. Persistente entre reloads.
-- **[28-feb]** **Editar envío con categorías y modo dinámico**: `ShipmentEditDialog` ahora recibe `tenantSettings` y muestra selector de categoría (G/A/B/OTHER), input dinámico de Paquetes/Libras según `shipping_mode`, y costo total auto-recalculado (editable manualmente). Backend `ShipmentUpdate` extendido con `shipping_category`, `shipping_unit_cost`, `package_count`, `tracking_numbers` (array). Verificado E2E.
-- **[28-feb]** **Origen de Live en compras pendientes**: el endpoint `GET /invoices/client/{customer_id}/pending-purchases` ahora devuelve `live_title` y `live_status` enriqueciendo cada compra con el nombre del Live de origen. En el modal Nueva Factura cada compra muestra un badge violeta con icono 📡 + nombre del Live (o badge gris "Sin live" si fue registro manual). Permite distinguir productos de distintos Lives en la misma tienda. Verificado E2E.
-- **[28-feb]** **Cantidad de artículos en Factura de Tienda**: nuevo campo `store_invoice_items_count: int` en el modelo Live. Endpoint `PUT /lives/{id}/store-invoice` lo acepta opcional y preserva el valor cuando solo se actualiza el monto. Frontend `StoreInvoiceSection` añade input con icono 📦 + helper "Registrados a clientes: N" comparando con `purchase_count`. Útil cuando compras 30 ítems en la tienda pero distribuyes solo 15 a clientes. Verificado E2E.
-- **[28-feb]** **Diagnóstico de origen en compras pendientes**: el badge ahora distingue 3 casos (`with_live`, `deleted_live`, `no_live`) en lugar de 2. Compras de Live eliminado muestran badge ámbar "Live eliminado" con el `live_id` truncado en el tooltip. Nuevo endpoint `GET /admin/diagnose-pending/{customer_id}` que lista cada compra con su origen, fecha, monto y datos del live (cuando existe). Útil para auditar diferencias entre conteos del Live y la Factura.
-- **[28-feb]** **Bug de productos LIVE duplicados — fix de race condition**: agregado guard sincrónico (`useRef`) en `handleSubmitPurchase` y `actuallySubmitPurchase` que bloquea instantáneamente segundas invocaciones cuando el usuario hace doble-click o spamea Enter. Antes el `disabled={submitting}` no protegía porque `setSubmitting(true)` ocurría asíncronamente dentro de `actuallySubmitPurchase`, dejando una ventana de race en la que el segundo evento iniciaba un `createPurchase` paralelo que duplicaba el producto. Liberación del lock en el `finally`.
-- **[28-feb]** **Live ID parcial en badge violeta**: el badge de origen del Live ahora muestra `#xxxxxx` (los primeros 6 caracteres del UUID) además del título, para distinguir cuando dos Lives tienen el mismo nombre. Endpoint `POST /purchases/{id}/reassign-live` listo en backend para mover compras huérfanas a un Live activo (UI pendiente de cablear).
-- **[28-feb]** **🐛 BUG MAYOR FIXEADO — Live cortaba a 500 compras**: el endpoint `GET /purchases/live/{live_id}` tenía `.to_list(500)`. Para Lives de alto volumen (ej: COSTCO con 500+) las compras más antiguas no se mostraban en la vista del Live, mientras que el modal de Factura sí las traía completas (otro endpoint distinto). Esto explicaba por qué el cliente AH8 aparecía con 6 compras en el Live COSTCO pero la factura traía 11 del mismo Live. Aumentado a `.to_list(5000)`.
-- **[28-feb]** **Tarjeta Paquetes con conteo de envíos**: el endpoint `/admin/reports/summary` ahora también devuelve `shipments_count`. La tarjeta del dashboard muestra "{N} Paquetes · {M} envíos" para distinguir cajas vs documentos de envío. Soluciona la confusión cuando un envío con `package_count=22` parece "muchos envíos".
-- **[29-abr]** **Creador del envío en tarjeta + filtro semanal por defecto**:
-  - Backend: nuevos campos `created_by` y `created_by_name` en el modelo `Shipment`. Se setean al crear desde `current_user` (lookup en `users`/`employees`). El endpoint `GET /api/shipments` rellena `created_by_name` para envíos antiguos vía batch lookup.
-  - Frontend: badge azul con ícono de usuario en cada tarjeta de envío al lado de la fecha (oculto si el envío legacy no tiene creador registrado).
-  - `weekFilter` ahora arranca por defecto en la **semana actual** (lunes 12:00 → lunes 12:00) en lugar de "Todas". La semana actual siempre aparece en el dropdown aunque no haya envíos en ella.
-- **[29-abr]** **Verificar Paquetes vs Guías Creadas** (`/admin/packages-report`):
-  - Botón "Verificar Paquetes vs Guías" en el header de la página de detalle de paquetes (gradient naranja, icono `ClipboardCheck`).
-  - Diálogo modal con: filtro de semana (lunes 12:00 → lunes 12:00, **default = semana actual**, siempre incluida en el dropdown aunque no haya envíos), 4 KPIs (paquetes totales, guías creadas, % cobertura, envíos pendientes sin guía), **fila de chips con totales de facturas (aprobadas/pendientes/anuladas/sin factura)**, y lista de envíos **agrupados por cliente** mostrando para cada uno: ✓ verde si tiene guía / ⚠ rojo si no, fecha+hora, nombre del creador (badge azul para reales / ámbar `(est.)` para legacy), categoría, cantidad de paquetes/libras, conteo de guías y **chip de estado de factura** (verde "✓ Aprobada", ámbar "Pendiente", gris "Anulada" o "Sin factura"). Cada grupo muestra un badge "Completo" verde si todos sus envíos tienen guía o "N pendiente(s)" ámbar si faltan.
-  - Heurística de "tiene guía": `tracking_numbers.length > 0` con fallback a `tracking_number` legacy.
-  - Backend: `GET /api/shipments` ahora enriquece la respuesta con `invoice_status` (`approved`/`pending`/`annulled`) e `invoice_number` vía batch lookup en `db.invoices`.
-  - Default `weekFilter` de la página principal también cambiado a la semana actual.
-- **[29-abr]** **Diálogo de anulación con preview del envío vinculado**:
-  - Bug: al anular una factura, el envío vinculado solo quedaba **desvinculado** (sin factura asociada) pero seguía existiendo. El admin tenía que recordarlo y eliminarlo manualmente.
-  - Fix backend: nuevo endpoint `GET /api/invoices/{id}/annul-preview` (admin-only) devuelve invoice + shipment + purchases + conteos. `PUT /api/invoices/{id}/annul` ahora acepta `{"delete_shipment": true|false}` — si `true` elimina el shipment y registra audit log `delete_shipment` con `triggered_by: "invoice_annulment"`; si `false` solo desvincula (comportamiento anterior para compatibilidad).
-  - Fix frontend: el diálogo de anulación ahora precarga el preview y muestra en caja ámbar todos los datos del envío (categoría, paquetes/libras, costo, estado, fecha creación, creador, guías) con un **checkbox** "Eliminar también el envío (recomendado)" activado por defecto. También preview de compras que vuelven a pending. Botón cambia entre "Eliminar factura + envío" y "Eliminar factura" según el toggle.
-  - Verificado E2E con curl: endpoint `/annul-preview` devuelve `counts: {purchases: 1, deposits_freed: 0, has_shipment: true}` con shipment completo ($128, 4 paquetes) para factura J2934-015.
-- **[29-abr]** **Diagnóstico de Factura — Timeline completo** (`InvoiceDialog` → botón ámbar `Stethoscope`):
-  - Backend: nuevo endpoint admin `GET /api/admin/diagnose-invoice/{invoice_id}` que retorna estado actual de la factura, linked purchases (incluidos soft-deleted), shipment vinculado, **toda la cadena de facturas del cliente** (para ver la cascada de saldos), todas las transacciones de wallet del cliente, todos los audit logs relacionados (de la factura, sus compras, su shipment) + los audit logs de **otras facturas en la cadena** (anulaciones/aprobaciones que disparen recálculo).
-  - Frontend: nuevo componente `InvoiceDiagnosticDialog.jsx` con:
-    - Estado actual de la factura (todos los campos financieros).
-    - **Cadena de facturas del cliente**: lista cronológica con totales, envíos, saldos anteriores, depósitos aplicados y total a pagar — la factura actual destacada en ámbar.
-    - **Compras vinculadas**: incluye soft-deleted con badge ELIMINADA y line-through.
-    - **Depósitos del cliente**: lista de wallet_transactions con badges según estado.
-    - **Timeline unificado**: eventos de toda la factura + cadena en orden cronológico inverso, cada uno con badge coloreado por tipo de acción (`create_purchase`, `delete_purchase`, `update_purchase`, `invoice_annulled`, `wallet_deposit_*`, etc.), usuario que lo hizo y `<details>` colapsable con detalles JSON.
-    - Caja indigo con guía de interpretación.
-  - **Verificación E2E**: factura J2934-015 → 21 facturas en cadena, 18 audit logs en cadena (5 anulaciones → cascada), 13 wallet txs, 31 eventos totales en el timeline.
-- **[29-abr] (v2)** **Fix definitivo: PDF usaba valor persistido stale del backend**:
-  - Aunque `recalculate_client_invoices` ya sincroniza `shipping_cost` desde el shipment, el valor `inv.total_a_pagar` persistido en BD podía estar obsoleto si el recalc corrió antes del fix o si alguna operación posterior desactualizó el campo. El UI calculaba `total_a_pagar` **localmente** con la fórmula correcta, mientras que el PDF confiaba en `inv.total_a_pagar` del backend → divergían.
-  - **Fix**: PDF (`invoicePDF.js`), listado de facturas (`AdminInvoices.jsx`) y diálogo de factura (`InvoiceDialog.jsx`) ahora **todos** usan la misma fórmula local:
-    ```
-    total_a_pagar = max(0, subtotal + commission + tax + shipping + saldo_pendiente − deposits − saldo_a_favor_anterior)
-    saldo_a_favor = max(0, credits − grandTotal)
-    ```
-  - El campo `inv.total_a_pagar` del backend queda como "referencia informativa" pero nunca se usa para render. Consistencia garantizada independiente de cuándo/cómo corrió el recalc.
-  - **Verificación**: mismo caso de Paola — `grandTotal = 460.13 + 62 + 43.67 + 84 + 292.01 = $941.81`. `credits = 751.32 + 0 = $751.32`. `total_a_pagar = $190.49` en UI, listado y PDF.
-- **[29-abr]** **Fix: PDF y listado de facturas mostraban valores diferentes después del recalc**:
-  - **Causa raíz #1**: `recalculate_client_invoices` calculaba `total_a_pagar` usando `invoice.shipping_cost`, pero el costo real estaba en `shipment.shipping_cost`. Si el shipment se creaba/editaba después de la factura, el invoice.shipping_cost quedaba en 0 → `total_a_pagar` quedaba mal calculado.
-  - **Causa raíz #2**: El listado de facturas (`/admin/invoices`) mostraba `invoice.total` (solo items) mientras el PDF mostraba `total_a_pagar` (items + envío + saldo_pendiente − depósitos − saldo_a_favor_anterior). Cuando había créditos acumulados, divergían visualmente.
-  - **Causa raíz #3**: `update_invoice_saldo_pendiente` actualizaba `saldo_pendiente` pero NO disparaba la cadena de recálculo → `total_a_pagar` quedaba stale.
-  - **Causa raíz #4**: Frontend `handleRecalcInvoice` actualizaba `currentInvoice` pero no reseteaba el estado local `editSaldoPendiente`, causando que el UI usara el valor viejo del input mientras el PDF usaba el nuevo del backend.
-  - **Fixes**:
-    1. `recalculate_client_invoices` ahora hace batch lookup de shipments por `invoice_id` y usa el `shipping_cost` del shipment como fuente de verdad. También persiste de vuelta al `invoice.shipping_cost` para que listado/PDF siempre coincidan.
-    2. Listado de facturas ahora muestra `total_a_pagar` como número grande, con subtítulo `items: $X · saldo: -$Y` cuando difieren del total bruto. Tooltip explica la composición.
-    3. `update_invoice_saldo_pendiente` ahora dispara `recalculate_client_invoices` después de modificar el campo.
-    4. `handleRecalcInvoice` resetea `editSaldoPendiente` con el valor fresco del backend.
-  - **Verificación E2E**: factura J2934-015 con `total=$44`, `shipping=$128`, `saldo_a_favor_anterior=$249` → `total_a_pagar=$0` (correcto: créditos cubren todo, queda $77 de crédito para la próxima). PDF, listado y diálogo ahora muestran el mismo valor.
-- **[29-abr]** **Diagnóstico profundo de envíos** (`/admin/shipments` → botón ámbar "Diagnóstico"):
-  - Backend: nuevo endpoint `GET /api/admin/diagnose-shipments?start_date=&end_date=` (admin-only) que devuelve para un rango ISO:
-    - `shipments_created_in_range`: envíos cuyo `created_at` cae en el rango, con metadata cruda de Mongo (`raw_created_at`, `raw_updated_at`, `created_by`, `created_by_name`, audit logs correlacionados con `entity_type=shipment`).
-    - `shipments_updated_only_in_range`: envíos con `created_at < start_date` pero `updated_at` en rango (los "editados pero no creados aquí").
-    - `summary`: KPIs de cuántos tienen `created_by` registrado y cuántos tienen audit log de `create_shipment`.
-  - Frontend: botón "🩺 Diagnóstico" al lado del filtro de semana en `/admin/shipments`. Diálogo modal muestra 4 KPIs, sección "Cómo leer este diagnóstico" con interpretación, lista detallada de envíos con `created_at` raw, `updated_at` raw, `created_by` (verde/rojo), audit log (verde/rojo) y `<details>` colapsable con historial completo de auditoría por envío.
-  - Permite al admin verificar con datos crudos de la BD si un envío realmente fue creado en una semana o solo modificado, y si producción tiene el código nuevo (audit log de `create_shipment`) o el viejo (sin audit log → "creator NULL legacy").
-- **[29-abr]** **Verificación manual de guías físicas (papel en mano)**:
-  - Backend: nuevos campos en `Shipment`: `guide_verified: bool`, `guide_verified_at`, `guide_verified_by`, `guide_verified_by_name`. Endpoint nuevo `PUT /api/shipments/{id}/verify-guide` que acepta `{"verified": true|false}` (o toggle si no se envía body). Snapshot del actor que verificó. Verificado E2E con curl: ON marca con timestamp + nombre, OFF limpia los campos.
-  - Frontend: la caja de check del verificador es **clicable**. Click → toggle optimista, llama al endpoint, muestra toast. Tooltip indica quién verificó y cuándo. Es **independiente** del campo `tracking_numbers`: este check refleja la confirmación física del operador ("tengo el papel en la mano"), no la presencia de tracking en la BD.
-  - KPIs y % cobertura ahora se calculan sobre `guide_verified === true` (no sobre tracking presence).
-  - Texto del lado derecho de cada fila cambia entre "✓ Guía verificada" (verde) y "Sin verificar" (rojo).
-- **[29-abr]** **Verificar Paquetes vs Guías — chips clicables y panel "Facturas sin paquete"**:
-  - **Chips de estado de factura ahora son botones filtro**: click sobre "✓ Aprobadas / ⌛ Pendientes / ✕ Anuladas / — Sin factura" filtra la lista agrupada por cliente debajo. Click de nuevo desactiva el filtro. Indicador "mostrando N de M" cuando hay filtro activo. Botón "Todas (N)" siempre presente para reset rápido.
-  - **Check de "Guía creada" más visible**: cada fila ahora muestra una caja cuadrada de 28x28 con borde verde y `CheckCircle2` cuando hay guía, o caja blanca con borde rosa y `AlertCircle` cuando falta. Mucho más fácil de escanear visualmente.
-  - **Panel "Paquetes vs Facturas"** dentro del diálogo: 2 mini-KPIs (envíos con factura asignada vs facturas sin paquete) más un `<details>` colapsable con el listado completo de facturas sin paquete agrupado por cliente. Cada factura muestra: número, fecha, estado (aprobada/pendiente) y total. Datos vienen del endpoint existente `GET /admin/reports/invoices-without-shipment`. Verificado E2E: 5 facturas sin paquete en 4 clientes.
-- **[29-abr]** **Fix: filtros del Dashboard usan SOLO `created_at` (no fecha de modificación)**:
-  - Bug: el selector de semanas pasadas (w1, w2, …) en el dashboard llamaba a `/admin/reports/summary?period=week` sin importar la semana elegida → siempre devolvía datos de la **semana actual**. El usuario veía "el mismo total" en todas las semanas y conclusión incorrecta de que se contaban fechas de modificación.
-  - Backend: `/admin/reports/summary` ahora acepta `start_date`/`end_date` ISO opcionales que **sobrescriben** el cálculo automático de semana. Filtra estrictamente por `created_at` (la fecha de creación nunca se modifica al editar shipments/purchases/invoices).
-  - Backend: `total_shipping` ahora se calcula directamente desde `shipments.shipping_cost` filtrado por `shipment.created_at` (antes lo agregaba desde `invoices.shipping_cost`, lo que atribuía el costo a la semana de creación de la factura aunque el envío se creara semanas después).
-  - Frontend: `getReportsSummary(period, startDate, endDate)` y `AdminDashboard.loadData` resuelven el rango Monday→Monday cuando se pica `wN` y lo envían al backend.
-  - Verificado E2E con curl: rangos diferentes devuelven counts distintos (semana actual: 0 / hace 2 semanas: 0 / all-time: 6 envíos · 10.5 paquetes · $252.50).
-- **[29-abr]** **Auditoría completa — todas las acciones del combobox**: el dropdown listaba 23 acciones pero solo ~8 registraban eventos realmente. Agregadas llamadas a `log_audit_action` en los endpoints faltantes:
-  - **Clientes**: `create_client`, `update_client`, `delete_client`
-  - **Compras**: `create_purchase`, `update_purchase`
-  - **Envíos**: `create_shipment` (en sesión anterior), `update_shipment`, `delete_shipment`
-  - **Facturas**: `create_invoice`, `approve_invoice`, `reopen_invoice`, `invoice_annulled` (refactorizado para usar el helper `log_audit_action` y guardar `user_role` + `details` como dict en vez de string)
-  - **Lives**: `create_live`, `start_live`, `end_live`
-  - Helper nuevo `get_actor_name(user_id)` que resuelve el nombre del actor en `users` con fallback a `employees` y "Sistema". Verificado E2E con curl creando/iniciando/finalizando un live de prueba: cada acción aparece en `/api/admin/audit-logs?action=<X>` con `user_name`, `user_role`, `entity_name` y `details` correctos.
-- **[29-abr]** **Fallback legacy en envíos antiguos**: para envíos creados antes del nuevo modelo, el endpoint `GET /api/shipments` atribuye el creador al **admin primario del tenant** (más antiguo del rol `admin`) y devuelve `created_by_legacy: true`. La UI los renderiza con badge **ámbar** y sufijo "(est.)" para distinguirlos de los datos reales.
+## Implemented (recent — session Feb 2026)
+- Live cantidad selector, Deudas panel fix, Manual recharge + bank ledger sync
+- Top clientes saldo a favor, Inactivos tab, Granular employee perms
+- pending_to_invoice global warnings, iOS PWA BFCache session fix
+- Sin Tax audit report, Soft-delete recharges, Gemini OCR deposit_date extraction
+- MongoDB compound indexes (31), Motor timeouts, N+1 fix
+- Restore Annulled Invoices (backend + top-bar UI + password)
+- **[2026-02-16] Weekly Recharge Cutoff (Cerrar semana en recargas)**:
+  - Recharges assigned to invoice of same Mon–Sun America/Chicago billing week
+  - Legacy recharges (created_at < 2026-02-16 Chicago) keep old logic
+  - Floating recharges (no invoice in current week) absorbed by next future invoice
+  - Unit tests at `/app/backend/tests/test_weekly_cutoff.py` (13 tests passing)
 
-## Roadmap
-### P0 técnico
-- Refactor `server.py` (5400+ líneas) → routers modulares.
-- Refactor `InvoiceDialog.jsx` (~1500 líneas).
+## Backlog / Roadmap
+- **P0**: Split `server.py` into modular routers (route shadowing risk).
+- **P1**: Row-level "Restaurar" button on annulled invoice rows in `AdminInvoices.jsx`.
+- **P2**: Reasignar orphan purchase to active live (`InvoiceDialog.jsx`).
+- **P2**: WhatsApp Integration (Twilio vs Meta Cloud API — awaiting user choice).
+- **P3**: Clarify "Daños Materiales" feature from older messages.
 
-### P1
-- Email notifications facturas/shipments.
-- Validar vista de facturas Anuladas (E2E test pending).
-
-### P2
-- WhatsApp Cloud API · PWA instalable.
-
-### P3
-- AI OCR confidence indicator en Admin Wallet.
-
-## Changelog (May 2026)
-- **[23-may]** **Flujo OCR Banking "Sin asignar" VERIFICADO E2E**:
-  - Backend: `_find_matching_bank_account` requiere match doble (último-4 cuenta + token de owner), `GET /admin/bank-accounts/unassigned-recharges` lista recargas aprobadas sin `bank_account_id` con sugerencia de cuenta, `PUT /admin/wallet-transactions/{tx_id}/assign-bank-account` reasigna y sincroniza el `bank_transactions` ledger (delete old + insert new). `GET /admin/bank-accounts/summary` expone `unassigned_recharges_count`.
-  - Frontend: `/admin/bank-accounts` muestra banner "N recarga(s) sin cuenta asignada" + modal "Recargas sin cuenta identificada" con dropdown por fila y botón "Asignar".
-  - Probado: 17 → 16 sin asignar al asignar 1; reasignar de Pichincha → Guayaquil mueve el saldo correctamente; validaciones 404 para tx/cuenta inválidas.
-
-## Known Env Issues
-- Object Store falla al init en preview; OK en producción.
-
-## Key Files
+## Key files
 - `/app/backend/server.py`
-- `/app/frontend/src/lib/invoicePDF.js`
-- `/app/frontend/src/lib/bankStatementPDF.js`
-- `/app/frontend/src/lib/courierManifestPDF.js`
-- `/app/frontend/src/components/InvoiceDialog.jsx`
+- `/app/frontend/src/pages/AdminInvoices.jsx`
 - `/app/frontend/src/pages/ClientDashboard.jsx`
-- `/app/frontend/src/pages/AdminShipments.jsx`
-- `/app/frontend/src/pages/AdminWallet.jsx`
-- `/app/frontend/src/pages/AdminBankAccounts.jsx`
-- `/app/frontend/src/pages/SuperadminDashboard.jsx`
+- `/app/frontend/src/pages/AdminStats.jsx`
+
+## Test credentials
+See `/app/memory/test_credentials.md`.
