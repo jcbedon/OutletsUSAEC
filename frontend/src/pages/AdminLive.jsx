@@ -1167,12 +1167,15 @@ export default function AdminLive() {
                         const dbt = debtStatusMap[String(selectedCustomer.customer_id || "").toUpperCase()];
                         const pending = Number(selectedCustomer.pending_to_invoice || 0);
                         const pendingCount = Number(selectedCustomer.pending_purchases_count || 0);
+                        const invoicedDebt = Number(selectedCustomer.invoiced_debt || 0);
+                        const invoicedCredit = Number(selectedCustomer.invoiced_credit || 0);
+                        const totalDebt = invoicedDebt + pending; // Deuda real = facturado sin pagar + por facturar
                         // Color escalonado para que sea visualmente fácil identificar
                         // a quién hay que cobrar antes del viernes.
-                        let pendingCls = "";
-                        if (pending >= 150) pendingCls = "bg-red-100 text-red-800 border-red-200";
-                        else if (pending >= 50) pendingCls = "bg-amber-100 text-amber-800 border-amber-200";
-                        else if (pending > 0) pendingCls = "bg-yellow-50 text-yellow-700 border-yellow-200";
+                        let debtCls = "";
+                        if (totalDebt >= 150) debtCls = "bg-red-100 text-red-800 border-red-300";
+                        else if (totalDebt >= 50) debtCls = "bg-amber-100 text-amber-800 border-amber-300";
+                        else if (totalDebt > 0) debtCls = "bg-yellow-50 text-yellow-800 border-yellow-200";
                         return (
                         <div className="mt-2 p-3 bg-green-50 rounded-xl flex items-center gap-2 flex-wrap">
                           <CheckCircle className="h-5 w-5 text-green-600" />
@@ -1184,15 +1187,26 @@ export default function AdminLive() {
                               data-testid={`selected-client-debt-dot-${dbt.color}`}
                             />
                           )}
-                          {pending > 0 && (
+                          {invoicedCredit > 0 && (
                             <span
-                              className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold border rounded-md ${pendingCls}`}
-                              title={`${pendingCount} compras sin facturar — se cobrarán el próximo viernes`}
-                              data-testid="selected-client-pending-badge"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold border rounded-md bg-emerald-50 text-emerald-800 border-emerald-200"
+                              title="Saldo a favor de la última factura"
+                              data-testid="selected-client-credit-badge"
+                            >
+                              + Saldo a favor: ${invoicedCredit.toFixed(2)}
+                            </span>
+                          )}
+                          {totalDebt > 0.01 && (
+                            <span
+                              className={`ml-auto inline-flex items-center gap-1 px-2 py-1 text-xs font-bold border rounded-md ${debtCls}`}
+                              title={`Facturado sin pagar: $${invoicedDebt.toFixed(2)} + Por facturar: $${pending.toFixed(2)} (${pendingCount} compra${pendingCount !== 1 ? "s" : ""})`}
+                              data-testid="selected-client-total-debt-badge"
                             >
                               <Receipt className="h-3 w-3" />
-                              Por facturar: ${pending.toFixed(2)}
-                              <span className="opacity-70">({pendingCount})</span>
+                              Deuda Total: ${totalDebt.toFixed(2)}
+                              {pendingCount > 0 && (
+                                <span className="opacity-70">({pendingCount} p/fact)</span>
+                              )}
                             </span>
                           )}
                         </div>

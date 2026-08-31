@@ -1,0 +1,53 @@
+{
+  "summary": "Backend-only verification of the L5L history-truncation fix (to_list limits raised to 5000). Created 3 pytest files and seeded a synthetic client directly in Mongo (130 invoices + 5 annulled spread over 2025-01..2026-06, 130 shipments, 70 wallet txs + 3 deleted, 520 paid + 10 unpaid purchases) plus a second client with 1200 invoices. ALL 6 fixed endpoints now return the full history: GET /api/invoices/client/{cid} -> 130 (oldest 2025-01 present, 2025-04/2025-05 months present, DESC order, no _id, include_annulled=true -> 135, case-insensitive cid, client-role sees own 130 and gets 403 on another client), /for-shipment -> 100 (30 shipped excluded), /wallet/transactions/{uid} -> 70 (oldest present, is_deleted excluded), /history -> 520 paid only, /shipments/user/{uid} -> 130. Recalc cascade verified deterministically: POST /api/admin/recalculate-invoices/{cid} propagated carry over ALL 130 invoices (saldo_pendiente == idx*10, total_a_pagar == (idx+1)*10, last = 1300) and over ALL 1200 invoices of the big client (last total_a_pagar = 12000, index 1000 saldo_pendiente = 10000 -> old 1000 cap would have broken this). Perf: 130 invoices and 1200 invoices both < 0.5s (budget 3s). Regression: /api/admin/clients, /api/shipments, /api/lives, /api/admin/reports/{business-stats,all-purchases,clients-debts} all 200. 22/22 truncation tests pass. Separately, 3 gap tests exposed 3 real pre-existing defects (2 IDOR + 1 remaining tenant-wide truncation) documented below. All seed data removed (verified 0 leftovers).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/wallet/transactions/{user_id}", "issue": "IDOR: no ownership/role check. A client token reads ANY other user's wallet transactions in the tenant (reproduced: client TSTG token -> A2824's user_id returned 200 with 20 rows). The fix makes this worse: it now leaks the victim's ENTIRE history instead of the last 50. Add: if role=='client' and user_id != current_user['user_id'] -> 403.", "priority": "CRITICAL"},
+      {"endpoint": "GET /api/shipments/user/{user_id}", "issue": "IDOR: same missing ownership check (client token read another user's shipments, 200). Now returns the full history (was capped at 100). Add the same client-ownership guard.", "priority": "CRITICAL"},
+      {"endpoint": "GET /api/invoices/client/{customer_id}/for-shipment", "issue": "Remaining truncation NOT fixed (server.py ~line 5811): the shipped-invoice map is built TENANT-WIDE with db.shipments.find({tenant_id, invoice_id!=None}).to_list(1000) and no sort. Reproduced with 3000 tenant shipments: an invoice that ALREADY has a shipment is returned as available for shipment -> risk of creating a duplicate shipment / double shipping charge. Fix: query only this client's shipments (add customer_id/user_id filter) or use distinct('invoice_id') instead of a capped list.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "recalculate_client_invoices (server.py lines 767 and 782)", "issue": "The request claimed both to_list(1000) were raised to 5000, but these two remain at 1000: the shipment-link backfill (invoices with shipment_id) and the orphan shipping_cost self-heal. For a client with >1000 invoices those repairs are partial, so the recalculated saldo can still be wrong for the untouched invoices. Only lines 807/812 were raised."},
+      {"endpoint": "GET /api/invoices/client/{customer_id}/for-shipment", "issue": "Per-invoice purchases lookup uses to_list(100) (line ~5822): an invoice with >100 purchases shows a wrong purchase_count and incomplete item list."},
+      {"endpoint": "POST /api/invoices (creation path, lines ~5670/5677)", "issue": "Deposit assignment at invoice creation still reads deposits and sibling invoices with to_list(1000); for a client with >1000 invoices/deposits the initial deposit assignment is computed on partial data (recalculate afterwards mitigates it only partially, see the two 1000 caps above)."},
+      {"endpoint": "GET /api/invoices/client/{customer_id}/pending-purchases (line 5463); GET /api/wallet/available-deposits (line 5513); client dashboard purchases/shipments (lines 4418/4419, to_list(500))", "issue": "Same silent-truncation pattern remains on other per-client endpoints; a heavy client will keep losing old rows there."},
+      {"endpoint": "all fixed endpoints", "issue": "5000 is still a silent hard cap with no pagination and no total count; the class of bug returns for any client crossing it. Recommend cursor/skip-limit pagination or at least logging when len(result) == cap."},
+      {"endpoint": "GET /api/invoices/client/{cid}", "issue": "Missing Authorization header returns 422 (FastAPI validation) instead of 401."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_history_no_truncation.py",
+    "/app/backend/tests/test_history_large_scale.py",
+    "/app/backend/tests/test_history_truncation_gaps.py",
+    "/app/test_reports/pytest/truncation_results.xml",
+    "/app/test_reports/pytest/truncation_large_results.xml",
+    "/app/test_reports/pytest/truncation_gaps_results.xml"
+  ],
+  "action_items": [
+    "Add client-ownership guard (403) to GET /api/wallet/transactions/{user_id} and GET /api/shipments/user/{user_id} — IDOR now leaks full history.",
+    "Fix the tenant-wide to_list(1000) shipment map in /invoices/client/{cid}/for-shipment (filter by client or use distinct) — already-shipped invoices reappear.",
+    "Raise/remove the two remaining to_list(1000) inside recalculate_client_invoices (lines 767, 782) — the claimed change was not applied there.",
+    "Raise the per-invoice purchases to_list(100) in for-shipment (line ~5822).",
+    "Consider pagination instead of a 5000 hard cap on all per-client history endpoints.",
+    "For production L5L: after deploy, run POST /api/admin/recalculate-invoices/L5L (verified working over 1200 invoices) — but do it AFTER the 767/782 caps are also raised, otherwise the shipping self-heal stays partial."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~9,270 lines — split into routers/services.",
+    "The truncation bug class is systemic: ~60 find().to_list(N) calls with magic N and no sort/pagination contract. Introduce a paginate() helper (default sort + skip/limit + total) and forbid bare to_list(N) in review.",
+    "recalculate_client_invoices issues one update_one per invoice (1200 sequential round-trips); use bulk_write for large clients.",
+    "Wallet/shipment per-user endpoints have no authorization at all beyond a valid token — audit every /{user_id} path for the same pattern."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_history_no_truncation.py",
+    "/app/backend/tests/test_history_large_scale.py",
+    "/app/backend/tests/test_history_truncation_gaps.py"
+  ],
+  "success_rate": {"backend": "88% (22/25: 22 truncation-fix tests pass; 3 gap tests fail exposing 2 IDOR + 1 remaining truncation)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Inserted directly in Mongo then deleted in teardown: client TSTL (130+5 invoices, 130 shipments, 73 wallet txs, 530 purchases), client TSTB (1200 invoices), client TSTG (1 invoice + 3000 noise shipments). password_hash copied from seed client A2824 so login with password '123' works. Verified 0 leftover docs after the run.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin@outletsusaec.com/123456; seed clients A2824/123",
+  "context_for_next_testing_agent": "Run: cd /app/backend && python -m pytest tests/test_history_no_truncation.py tests/test_history_large_scale.py tests/test_history_truncation_gaps.py -v -p no:randomly. The three files are self-seeding (pymongo, module-scoped fixtures with teardown) and idempotent. test_history_truncation_gaps.py is EXPECTED to fail until the IDOR guards and the for-shipment tenant-wide to_list(1000) are fixed; it uses 3000 noise shipments (needed because the truncation only bites past the 1000 natural-order window — 1300 was not enough). Weekly cutoff / real_pending_balance / OCR anti-fraud were not retested (iterations 14/15). EMERGENT_LLM_KEY is still unset in preview (object storage/OCR broken, see iteration_15).",
+  "rca_of_the_issue": "Confirmed the reported RCA: sort(created_at, DESC) + to_list(100|50|500) silently dropped the OLDEST rows, so a heavy client (L5L) lost April/May 2025 invoices/recharges/purchases, and recalculate_client_invoices' to_list(1000) computed the carry cascade on partial data producing a wrong saldo_a_favor/saldo_pendiente. The raised limits are correct and verified end-to-end (130 and 1200 invoice clients, deterministic carry chain over every invoice). Residual: two to_list(1000) inside recalculate_client_invoices (shipment-link backfill and orphan shipping_cost self-heal) were NOT raised, and /for-shipment still truncates its tenant-wide shipment map at 1000, which is reproducible and can cause duplicate shipments."
+}

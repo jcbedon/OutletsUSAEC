@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount, scanDepositProof, listBankAccounts } from "@/lib/api";
+import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount, scanDepositProof, listBankAccounts, detectDuplicateDeposits } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart, QrCode, Smartphone, Loader2, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart, QrCode, Smartphone, Loader2, Trash2, AlertTriangle, ShieldAlert } from "lucide-react";
 import RechargeReport from "@/components/RechargeReport";
 import QRCode from "qrcode";
 
@@ -119,6 +119,11 @@ export default function AdminWallet() {
   const [uploadToken, setUploadToken] = useState("");
   const [polling, setPolling] = useState(false);
   const pollingRef = useRef(null);
+
+  // Duplicate detection state
+  const [duplicateScanOpen, setDuplicateScanOpen] = useState(false);
+  const [duplicateScanning, setDuplicateScanning] = useState(false);
+  const [duplicateResult, setDuplicateResult] = useState(null);
   
   const APP_URL = process.env.REACT_APP_BACKEND_URL?.replace('/api', '') || window.location.origin;
 
@@ -178,6 +183,23 @@ export default function AdminWallet() {
       toast.error(error.response?.data?.detail || "Error al leer el comprobante");
     } finally {
       setScanningDeposit(null);
+    }
+  };
+
+  const runDuplicateDetection = async (scanMissing) => {
+    setDuplicateScanning(true);
+    try {
+      const res = await detectDuplicateDeposits(scanMissing);
+      setDuplicateResult(res.data);
+      if (res.data.duplicate_groups_count === 0) {
+        toast.success(scanMissing ? `Escaneadas ${res.data.scanned} recargas. Sin duplicados por imagen detectados.` : "Sin duplicados por imagen detectados.");
+      } else {
+        toast.warning(`Se encontraron ${res.data.duplicate_groups_count} grupo(s) de recargas con el mismo comprobante.`);
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al detectar duplicados");
+    } finally {
+      setDuplicateScanning(false);
     }
   };
 
@@ -597,7 +619,16 @@ export default function AdminWallet() {
         </Tabs>
 
         {/* Action Buttons */}
-        <div className="flex gap-3 mb-6">
+        <div className="flex gap-3 mb-6 flex-wrap">
+          <Button
+            variant="outline"
+            className="rounded-xl border-orange-300 text-orange-700 hover:bg-orange-50"
+            onClick={() => { setDuplicateScanOpen(true); setDuplicateResult(null); }}
+            data-testid="detect-duplicates-btn"
+          >
+            <ShieldAlert className="h-4 w-4 mr-2" />
+            Detectar Duplicados
+          </Button>
           <Dialog open={adjustDialogOpen} onOpenChange={setAdjustDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="rounded-xl border-red-200 text-red-600 hover:bg-red-50" data-testid="adjust-balance-btn">
@@ -1432,6 +1463,101 @@ export default function AdminWallet() {
             <RechargeReport />
           </div>
         )}
+
+        {/* Duplicate Detection Dialog */}
+        <Dialog open={duplicateScanOpen} onOpenChange={setDuplicateScanOpen}>
+          <DialogContent className="rounded-2xl max-w-3xl max-h-[85vh] overflow-y-auto" data-testid="duplicate-scan-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ShieldAlert className="h-5 w-5 text-orange-600" />
+                Detectar Recargas Duplicadas por Imagen
+              </DialogTitle>
+              <DialogDescription>
+                Corre OCR sobre las recargas y agrupa las que comparten el mismo comprobante detectado en la imagen, aunque el cliente haya escrito un número distinto.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  onClick={() => runDuplicateDetection(false)}
+                  disabled={duplicateScanning}
+                  className="rounded-xl bg-orange-600 hover:bg-orange-700 text-white"
+                  data-testid="duplicate-scan-existing-btn"
+                >
+                  {duplicateScanning && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Buscar con OCR existente (rápido)
+                </Button>
+                <Button
+                  onClick={() => runDuplicateDetection(true)}
+                  disabled={duplicateScanning}
+                  variant="outline"
+                  className="rounded-xl border-orange-300 text-orange-700 hover:bg-orange-50"
+                  data-testid="duplicate-scan-full-btn"
+                >
+                  {duplicateScanning && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Escanear todo (incluye recargas viejas)
+                </Button>
+              </div>
+              {duplicateResult && (
+                <div className="space-y-3">
+                  <div className="text-sm text-gray-600 flex gap-4 flex-wrap">
+                    {duplicateResult.scanned > 0 && (
+                      <span>Escaneadas ahora: <b>{duplicateResult.scanned}</b></span>
+                    )}
+                    {duplicateResult.scan_errors > 0 && (
+                      <span className="text-red-600">Errores OCR: <b>{duplicateResult.scan_errors}</b></span>
+                    )}
+                    <span>Grupos duplicados: <b className={duplicateResult.duplicate_groups_count > 0 ? 'text-orange-700' : 'text-green-700'}>{duplicateResult.duplicate_groups_count}</b></span>
+                  </div>
+                  {(duplicateResult.duplicate_groups || []).map((g) => (
+                    <div key={g._id} className="border border-orange-200 bg-orange-50 rounded-xl p-3" data-testid={`duplicate-group-${g._id}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="h-4 w-4 text-orange-600" />
+                          <span className="text-sm font-semibold text-orange-900">Comprobante detectado: {g._id}</span>
+                        </div>
+                        <Badge variant="outline" className="border-orange-300 text-orange-700 bg-white text-xs">
+                          {g.count} recargas
+                        </Badge>
+                      </div>
+                      <div className="space-y-1">
+                        {(g.transactions || []).map((t) => (
+                          <div key={t.id} className="text-xs bg-white rounded-lg px-2 py-1.5 flex flex-wrap items-center gap-2 justify-between">
+                            <div className="flex flex-col">
+                              <span className="font-medium text-slate-800">{t.client_name || 'Sin nombre'} <span className="text-gray-500">#{t.customer_id}</span></span>
+                              <span className="text-gray-500">Ref. escrita: <b>{t.reference_number || '—'}</b> · OCR: <b>{t.ai_detected_reference_number || '—'}</b></span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-slate-700">${Number(t.amount || 0).toFixed(2)}</span>
+                              <Badge variant="outline" className={`text-[10px] ${t.status === 'approved' ? 'text-green-700 border-green-300' : 'text-amber-700 border-amber-300'}`}>{t.status}</Badge>
+                              {t.proof_url && (
+                                <a
+                                  href={t.proof_url.startsWith('http') ? t.proof_url : `${process.env.REACT_APP_BACKEND_URL}${t.proof_url}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-blue-600 hover:underline"
+                                  data-testid={`view-proof-${t.id}`}
+                                >
+                                  Ver comprobante
+                                </a>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {duplicateResult.duplicate_groups_count === 0 && (
+                    <div className="text-center py-6 text-green-700 bg-green-50 rounded-xl border border-green-200">
+                      <CheckCircle className="h-8 w-8 mx-auto mb-1" />
+                      <p className="text-sm font-medium">Sin duplicados por imagen detectados</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings, getClientPassword, toggleClientReviewed, recalculateClientInvoices } from "@/lib/api";
+import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings, getClientPassword, toggleClientReviewed, recalculateClientInvoices, getClientDiagnostics } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText, UserX, Trash2, AlertTriangle, UserCheck, Hash, Eye, EyeOff, Copy, Check, RefreshCw } from "lucide-react";
+import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText, UserX, Trash2, AlertTriangle, UserCheck, Hash, Eye, EyeOff, Copy, Check, RefreshCw, Stethoscope } from "lucide-react";
 import InvoiceDialog from "@/components/InvoiceDialog";
 
 export default function AdminClients() {
@@ -167,6 +167,29 @@ export default function AdminClients() {
       toast.error(e?.response?.data?.detail || "No se pudo recalcular");
     } finally {
       setRecalcingClientId(null);
+    }
+  };
+
+  // Diagnostics: opens a modal showing raw counts + monthly buckets of the
+  // client's history so we can debug support issues like L5L missing months.
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [diagLoading, setDiagLoading] = useState(false);
+  const [diagData, setDiagData] = useState(null);
+  const [diagClient, setDiagClient] = useState(null);
+  const handleOpenDiagnostics = async (client) => {
+    if (!client?.customer_id) return;
+    setDiagClient(client);
+    setDiagOpen(true);
+    setDiagLoading(true);
+    setDiagData(null);
+    try {
+      const res = await getClientDiagnostics(client.customer_id);
+      setDiagData(res.data);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "No se pudo obtener el diagnóstico");
+      setDiagOpen(false);
+    } finally {
+      setDiagLoading(false);
     }
   };
 
@@ -653,17 +676,53 @@ https://outletsusaec.shop/`;
                             </div>
                           </div>
                           <div className="text-right">
-                            <div className={`px-3 py-2 rounded-xl ${client.pending_balance > 0 ? 'bg-green-50' : client.pending_balance < 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
-                              <p className="text-xs text-gray-500">{client.pending_balance > 0 ? 'Saldo a Favor' : 'Total a Pagar'}</p>
-                              <p className={`text-xl font-bold ${client.pending_balance > 0 ? 'text-green-600' : client.pending_balance < 0 ? 'text-red-600' : 'text-gray-600'}`}
-                                data-testid={`pending-balance-${client.customer_id}`}>
-                                {client.pending_balance > 0 ? '+' : ''}${Math.abs(client.pending_balance || 0).toFixed(2)}
-                              </p>
-                            </div>
-                            {(client.pending_to_invoice || 0) > 0.01 && (
+                            {(() => {
+                              const invoicedDebt = client.pending_balance < 0 ? Math.abs(client.pending_balance) : 0;
+                              const invoicedCredit = client.pending_balance > 0 ? client.pending_balance : 0;
+                              const pending = Number(client.pending_to_invoice || 0);
+                              const totalDebt = invoicedDebt + pending;
+                              if (totalDebt > 0.01) {
+                                return (
+                                  <div className="px-3 py-2 rounded-xl bg-red-50 border border-red-200"
+                                    title={`Facturado sin pagar: $${invoicedDebt.toFixed(2)} + Por facturar: $${pending.toFixed(2)}`}>
+                                    <p className="text-xs text-red-600 font-semibold">Deuda Total</p>
+                                    <p className="text-xl font-bold text-red-600"
+                                      data-testid={`total-debt-${client.customer_id}`}>
+                                      ${totalDebt.toFixed(2)}
+                                    </p>
+                                    {pending > 0.01 && invoicedDebt > 0.01 && (
+                                      <p className="text-[10px] text-red-500 font-medium leading-tight">
+                                        ${invoicedDebt.toFixed(2)} fact. + ${pending.toFixed(2)} p/fact
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              }
+                              if (invoicedCredit > 0.01) {
+                                return (
+                                  <div className="px-3 py-2 rounded-xl bg-green-50">
+                                    <p className="text-xs text-gray-500">Saldo a Favor</p>
+                                    <p className="text-xl font-bold text-green-600"
+                                      data-testid={`pending-balance-${client.customer_id}`}>
+                                      +${invoicedCredit.toFixed(2)}
+                                    </p>
+                                  </div>
+                                );
+                              }
+                              return (
+                                <div className="px-3 py-2 rounded-xl bg-gray-50">
+                                  <p className="text-xs text-gray-500">Al día</p>
+                                  <p className="text-xl font-bold text-gray-600"
+                                    data-testid={`pending-balance-${client.customer_id}`}>
+                                    $0.00
+                                  </p>
+                                </div>
+                              );
+                            })()}
+                            {(client.pending_to_invoice || 0) > 0.01 && (client.pending_balance || 0) >= 0 && (
                               <div
                                 className="mt-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200"
-                                title={`${client.pending_purchases_count || 0} compras de esta semana aún no facturadas`}
+                                title={`${client.pending_to_invoice_count || 0} compras sin facturar`}
                                 data-testid={`pending-to-invoice-${client.customer_id}`}
                               >
                                 Por facturar: ${Number(client.pending_to_invoice).toFixed(2)}
@@ -702,6 +761,16 @@ https://outletsusaec.shop/`;
                             >
                               <RefreshCw className={`h-4 w-4 mr-1 ${recalcingClientId === client.customer_id ? "animate-spin" : ""}`} />
                               Recalcular
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="rounded-lg border-teal-200 text-teal-700 hover:bg-teal-50"
+                              onClick={() => handleOpenDiagnostics(client)}
+                              data-testid={`diagnostics-client-${client.customer_id}`}
+                              title={`Ver diagnóstico de historial de ${client.name}`}
+                            >
+                              <Stethoscope className="h-4 w-4 mr-1" /> Diagnóstico
                             </Button>
                             <Button variant="outline" size="sm" className="rounded-lg"
                               onClick={() => handleOpenEditDialog(client)}
@@ -1035,6 +1104,94 @@ https://outletsusaec.shop/`;
           client={selectedClientForInvoice}
           tenantInfo={tenantInfo || defaultTenantInfo}
         />
+
+        {/* Client Diagnostics Dialog */}
+        <Dialog open={diagOpen} onOpenChange={setDiagOpen}>
+          <DialogContent className="rounded-2xl max-w-3xl max-h-[85vh] overflow-y-auto" data-testid="client-diagnostics-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Stethoscope className="h-5 w-5 text-teal-600" />
+                Diagnóstico de historial — {diagClient?.name || ""} ({diagClient?.customer_id || ""})
+              </DialogTitle>
+              <DialogDescription>
+                Conteos crudos y distribución mensual para verificar por qué faltan datos en el historial.
+              </DialogDescription>
+            </DialogHeader>
+            {diagLoading && (
+              <div className="py-8 text-center text-sm text-gray-500">Cargando diagnóstico...</div>
+            )}
+            {!diagLoading && diagData && (
+              <div className="space-y-4 py-2">
+                {/* User */}
+                <div className="rounded-xl border border-teal-200 bg-teal-50 p-3">
+                  <p className="text-xs font-semibold text-teal-800 mb-1">Usuario</p>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div><span className="text-gray-500">Creado el:</span> <b data-testid="diag-user-created-at">{diagData.user?.created_at || "—"}</b></div>
+                    <div><span className="text-gray-500">Customer ID:</span> <b>{diagData.user?.customer_id}</b></div>
+                    <div className="col-span-2">
+                      <span className="text-gray-500">Casing coincide con búsqueda:</span>{" "}
+                      <b className={diagData.user?.customer_id_case_matches_input ? "text-green-700" : "text-red-700"}
+                         data-testid="diag-case-match">
+                        {diagData.user?.customer_id_case_matches_input ? "Sí" : "NO — el customer_id está guardado con otro casing (posible bug de datos)"}
+                      </b>
+                    </div>
+                  </div>
+                </div>
+                {[
+                  { key: "invoices", label: "Facturas", showCase: true },
+                  { key: "purchases", label: "Compras", showCase: true },
+                  { key: "wallet_transactions", label: "Recargas / Wallet", showDeleted: true },
+                  { key: "shipments", label: "Envíos" },
+                ].map(({ key, label, showCase, showDeleted }) => {
+                  const b = diagData[key] || {};
+                  const total = b.total_strict_customer_id ?? b.total ?? 0;
+                  const totalAny = b.total_case_insensitive;
+                  return (
+                    <div key={key} className="rounded-xl border p-3 bg-white" data-testid={`diag-block-${key}`}>
+                      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                        <p className="font-semibold text-slate-800">{label}</p>
+                        <div className="flex gap-3 text-xs">
+                          <span>Total: <b className="text-slate-900">{total}</b></span>
+                          {showCase && totalAny !== undefined && totalAny !== total && (
+                            <span className="text-red-600" data-testid={`diag-case-mismatch-${key}`}>
+                              Case-insensitive: <b>{totalAny}</b> (¡difiere del strict!)
+                            </span>
+                          )}
+                          {showDeleted && (
+                            <>
+                              <span>Depósitos: <b>{b.deposits ?? 0}</b></span>
+                              <span className={b.soft_deleted > 0 ? "text-orange-700" : ""} data-testid={`diag-deleted-${key}`}>
+                                Eliminadas: <b>{b.soft_deleted ?? 0}</b>
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-600 flex gap-4 flex-wrap mb-2">
+                        <span>Más vieja: <b>{b.oldest_created_at || "—"}</b></span>
+                        <span>Más nueva: <b>{b.newest_created_at || "—"}</b></span>
+                      </div>
+                      {b.by_month?.length ? (
+                        <div className="max-h-40 overflow-y-auto border-t pt-2 mt-1" data-testid={`diag-months-${key}`}>
+                          <div className="grid grid-cols-3 gap-1 text-xs">
+                            {b.by_month.map((m) => (
+                              <div key={m.month} className="flex justify-between px-2 py-0.5 rounded bg-slate-50">
+                                <span className="text-gray-600">{m.month}</span>
+                                <b className="text-slate-800">{m.count}</b>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-400 italic">Sin registros por mes</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

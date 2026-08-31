@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="15" time="2.020" timestamp="2026-08-30T13:52:24.660233+00:00" hostname="agent-env-7eaa468d-8889-4143-9ac4-47a0f4a63026"><testcase classname="tests.test_deposit_ocr_antifraud.TestIndexes" name="test_antifraud_compound_indexes_exist" time="0.088" /><testcase classname="tests.test_deposit_ocr_antifraud.TestDepositWithProofHttp" name="test_client_missing_reference_rejected" time="0.359" /><testcase classname="tests.test_deposit_ocr_antifraud.TestDepositWithProofHttp" name="test_client_missing_file_rejected" time="0.244" /><testcase classname="tests.test_deposit_ocr_antifraud.TestDepositWithProofHttp" name="test_duplicate_typed_reference_blocked_409" time="0.178" /><testcase classname="tests.test_deposit_ocr_antifraud.TestDepositWithProofHttp" name="test_happy_path_creates_pending_tx" time="0.108"><failure message="AssertionError: deposit upload failed: 500 {&quot;detail&quot;:&quot;No se pudo guardar el comprobante en el almacenamiento. Reintenta en unos segundos.&quot;}&#10;assert 500 == 200&#10; +  where 500 = &lt;Response [500]&gt;.status_code">self = &lt;test_deposit_ocr_antifraud.TestDepositWithProofHttp object at 0xf8726ed9f150&gt;
+client_user = {'headers': {'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoiYjYyNjZkZWYtOGFiNC00OTk3LTg...customer_id': 'A2824', 'id': 'b6266def-8ab4-4997-827b-0484bd1c90f6', 'name': 'Albano Llopis Hierro', 'role': 'client'}}
+mongo = Database(MongoClient(host=['localhost:27017'], document_class=dict, tz_aware=False, connect=True), 'test_database')
+tenant_id = '44f368aa-96cc-46b0-b5ca-319a125c992e'
+created_tx_ids = ['bb966c5c-6b7b-404e-9d50-87e8101c73c7']
+
+    def test_happy_path_creates_pending_tx(self, client_user, mongo, tenant_id, created_tx_ids):
+        """Real upload through the public URL. With no EMERGENT_LLM_KEY, OCR must not block."""
+        ref = f"TEST-OK-{uuid.uuid4().hex[:8]}"
+        r = requests.post(
+            f"{API}/wallet/deposit-request-with-proof",
+            headers=client_user["headers"],
+            data={"user_id": client_user["user"]["id"], "amount": 30,
+                  "reference_number": ref, "description": "TEST_happy"},
+            files={"file": ("proof.png", _png(), "image/png")},
+            timeout=180,
+        )
+&gt;       assert r.status_code == 200, f"deposit upload failed: {r.status_code} {r.text[:400]}"
+E       AssertionError: deposit upload failed: 500 {"detail":"No se pudo guardar el comprobante en el almacenamiento. Reintenta en unos segundos."}
+E       assert 500 == 200
+E        +  where 500 = &lt;Response [500]&gt;.status_code
+
+tests/test_deposit_ocr_antifraud.py:159: AssertionError</failure></testcase><testcase classname="tests.test_deposit_ocr_antifraud.TestOcrPreInsert" name="test_mismatch_blocks_400_and_no_db_record" time="0.356" /><testcase classname="tests.test_deposit_ocr_antifraud.TestOcrPreInsert" name="test_match_creates_tx_with_ai_scan_fields" time="0.007" /><testcase classname="tests.test_deposit_ocr_antifraud.TestOcrPreInsert" name="test_same_image_different_typed_number_blocked_409" time="0.016" /><testcase classname="tests.test_deposit_ocr_antifraud.TestOcrPreInsert" name="test_ocr_failure_does_not_block" time="0.006" /><testcase classname="tests.test_deposit_ocr_antifraud.TestOcrPreInsert" name="test_ocr_none_result_does_not_block" time="0.005" /><testcase classname="tests.test_deposit_ocr_antifraud.TestDetectDuplicates" name="test_requires_auth" time="0.096" /><testcase classname="tests.test_deposit_ocr_antifraud.TestDetectDuplicates" name="test_client_role_forbidden" time="0.092" /><testcase classname="tests.test_deposit_ocr_antifraud.TestDetectDuplicates" name="test_employee_without_permission_forbidden" time="0.169" /><testcase classname="tests.test_deposit_ocr_antifraud.TestDetectDuplicates" name="test_admin_groups_image_duplicates" time="0.093" /><testcase classname="tests.test_deposit_ocr_antifraud.TestDetectDuplicates" name="test_scan_missing_true_returns_scan_counters" time="0.094" /></testsuite></testsuites>

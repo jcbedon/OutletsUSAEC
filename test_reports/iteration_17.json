@@ -1,0 +1,40 @@
+{
+  "summary": "Tested the new GET /api/admin/clients/{customer_id}/diagnostics endpoint (14 pytest cases: structure, DB-count parity, by_month format/sort/sum, lowercase input, case-insensitive fallback, 404, RBAC admin/employee/client/no-token) plus a quick regression of the iteration_16 IDOR guards and /invoices/client/{cid}/for-shipment. Backend: 14/14 pass. Frontend: AdminClients page CRASHED with 'DialogDescription is not defined' (missing import) - I fixed the import (in-scope import error) and the Diagnóstico button + client-diagnostics-dialog then worked end-to-end with all expected data-testids populated for C5557 (created_at 2026-05-24, invoices 4, wallet 24, purchases 20, shipments 1, case-match 'Sí'). While linting AdminShipments.jsx (getWeekKey hoisting change) I found and REPRODUCED a runtime crash: 'weekList is not defined' when exporting the courier manifest PDF with a specific week selected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/clients/{customer_id}/diagnostics", "issue": "Request without Authorization header returns 422 (validation) instead of 401 Unauthorized. App-wide get_current_user behaviour, not diagnostics-specific."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminClients", "issue": "FIXED BY TESTER: page threw 'ReferenceError: DialogDescription is not defined' (used at line ~1116 in the diagnostics modal but not imported) -> whole /admin/clients route white-screened, diagnostics button unreachable. Added DialogDescription to the dialog import on line 12.", "selector": "[data-testid=\"diagnostics-client-C5557\"]", "priority": "CRITICAL (fixed)"},
+      {"component": "AdminShipments - handleExportCourierManifest (line 569-581)", "issue": "Uncaught ReferenceError: 'weekList is not defined'. weekList is declared inside the JSX render block (line ~1252) but referenced in the handler at line 581 (periodLabel). Reproduced live: select any non-'Todas' week that has at least one marked_sent shipment -> click 'PDF Paquetería' -> React error overlay, no PDF generated. Likely surfaced/left behind by the getWeekKey hoisting refactor. oxlint/eslint also reports it as no-undef.", "selector": "button:has-text(\"PDF Paquetería\")", "priority": "HIGH"},
+      {"component": "Admin header logo", "issue": "Broken image (alt text 'Logo' rendered, console 404 for the logo resource) on admin pages.", "selector": "header img", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "client-diagnostics-dialog", "issues": ["Timestamps are shown as raw ISO strings (2026-05-24T14:23:56.669149+00:00); acceptable for a diagnostics tool but a formatted date + raw-on-hover would be friendlier"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_client_diagnostics.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "Fix AdminShipments handleExportCourierManifest: compute the week label from a hoisted/memoized weekList (or from getWeekKey + a shared week-label helper) instead of the render-scoped weekList - currently the courier manifest PDF crashes the page.",
+    "Optionally return 401 instead of 422 when the Authorization header is missing (app-wide auth dependency).",
+    "Fix the broken admin header logo 404."
+  ],
+  "critical_code_review_comments": [
+    "AdminShipments.jsx: week bucketing/labels are built inline inside JSX (line ~1241-1254) while handlers at line ~570 need the same data - extract into a useMemo at component scope to prevent recurring scope bugs like the weekList ReferenceError.",
+    "Diagnostics endpoint aggregation uses $substr on created_at assuming an ISO string; if any legacy row stored created_at as a BSON Date, $substr fails/returns empty and that month silently disappears. Consider a $cond on $type.",
+    "Diagnostics by_month uses to_list(500) which is fine for months, but purchases/invoices strict vs case-insensitive counts are duplicated code blocks - extract a small helper.",
+    "server.py is 9426 lines - split into routers (admin, wallet, shipments, invoices)."
+  ],
+  "updated_files": ["/app/backend/tests/test_client_diagnostics.py", "/app/frontend/src/pages/AdminClients.jsx"],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "80% (diagnostics UI OK after import fix; manifest PDF export broken)"},
+  "seed_data_creation": "Temporary user TEST_CaseDrift (customer_id 'TsTd1') inserted and deleted within the case-insensitive fallback test. Shipment bf96cfa6 was briefly marked_sent via UI to reproduce the manifest bug and was reverted to marked_sent=false.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin@outletsusaec.com/123456, maria@outletsusaec.com/empleado123, client C5557/123",
+  "context_for_next_testing_agent": "Backend diagnostics endpoint is solid (see /app/backend/tests/test_client_diagnostics.py, 14 tests, run with `python -m pytest tests/test_client_diagnostics.py`). The diagnostics dialog UI works (testids diag-user-created-at, diag-case-match, diag-block-{invoices|purchases|wallet_transactions|shipments}, diag-months-*). Remaining open defect: weekList ReferenceError in AdminShipments courier-manifest export - repro requires selecting a specific week AND having >=1 marked_sent shipment in it (otherwise the handler early-returns with a toast before the crash).",
+  "rca_of_the_issue": "1) AdminClients crash: the new diagnostics modal used <DialogDescription> without adding it to the '@/components/ui/dialog' import -> ReferenceError at render, blanking the route. Fixed by tester. 2) AdminShipments crash: getWeekKey was hoisted to module scope, but weekList (Object.entries(weeks) built inside the JSX return at line ~1252) remained render-scoped while handleExportCourierManifest (line 581) references it, so any invocation that passes the early-return guard throws ReferenceError."
+}

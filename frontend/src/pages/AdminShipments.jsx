@@ -64,6 +64,21 @@ import axios from "axios";
 
 const LOGO_URL_DEFAULT = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
+// Week = Monday 12:00 local → next Monday 11:59:59 local (cutoff Monday at noon).
+// Returned key is the YYYY-MM-DD of the Monday that starts the week.
+const getWeekKey = (dateStr) => {
+  const d = new Date(dateStr);
+  const day = d.getDay(); // 0 Sun .. 6 Sat (Monday = 1)
+  const daysSinceMonday = (day - 1 + 7) % 7;
+  const candidate = new Date(d);
+  candidate.setDate(d.getDate() - daysSinceMonday);
+  candidate.setHours(12, 0, 0, 0);
+  if (candidate > d) {
+    candidate.setDate(candidate.getDate() - 7);
+  }
+  return candidate.toISOString().slice(0, 10);
+};
+
 export default function AdminShipments() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -563,8 +578,17 @@ export default function AdminShipments() {
     }
     const periodLabel = (() => {
       if (weekFilter === "all") return "Todas las semanas";
-      const w = weekList.find(([k]) => k === weekFilter);
-      return w ? `Semana ${w[1].label}` : weekFilter;
+      // Derive label directly from the filter key (weekList is only in render scope).
+      try {
+        const monday = new Date(`${weekFilter}T12:00:00`);
+        if (isNaN(monday.getTime())) return weekFilter;
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        const fmt = (d) => d.toLocaleDateString("es-EC", { day: "numeric", month: "short" });
+        return `Semana ${fmt(monday)} – ${fmt(sunday)}`;
+      } catch {
+        return weekFilter;
+      }
     })();
     try {
       await generateCourierManifestPDF({
@@ -707,22 +731,6 @@ export default function AdminShipments() {
   };
 
   const filterByStatus = (status) => {
-    // Week = Monday 12:00 local → next Monday 11:59:59 local (cutoff Monday at noon).
-    const getWeekKey = (dateStr) => {
-      const d = new Date(dateStr);
-      const day = d.getDay(); // 0 Sun .. 6 Sat (Monday = 1)
-      // Days back to the most recent Monday (could be today)
-      const daysSinceMonday = (day - 1 + 7) % 7;
-      const candidate = new Date(d);
-      candidate.setDate(d.getDate() - daysSinceMonday);
-      candidate.setHours(12, 0, 0, 0);
-      // If the candidate is in the future relative to d (i.e., today is Monday before noon),
-      // step back 7 days so the date belongs to the previous week.
-      if (candidate > d) {
-        candidate.setDate(candidate.getDate() - 7);
-      }
-      return candidate.toISOString().slice(0, 10);
-    };
     let filtered = shipments;
     if (weekFilter !== "all") {
       filtered = filtered.filter(s => getWeekKey(s.created_at) === weekFilter);
@@ -1216,19 +1224,6 @@ export default function AdminShipments() {
       <div className="max-w-4xl mx-auto px-4 py-6">
         {/* Week Filter */}
         {(() => {
-          // Week = Monday 12:00 local → next Monday 11:59:59 local (cutoff Monday at noon).
-          const getWeekKey = (dateStr) => {
-            const d = new Date(dateStr);
-            const day = d.getDay();
-            const daysSinceMonday = (day - 1 + 7) % 7;
-            const candidate = new Date(d);
-            candidate.setDate(d.getDate() - daysSinceMonday);
-            candidate.setHours(12, 0, 0, 0);
-            if (candidate > d) {
-              candidate.setDate(candidate.getDate() - 7);
-            }
-            return candidate.toISOString().slice(0, 10);
-          };
           const getWeekLabel = (dateStr) => {
             const d = new Date(dateStr);
             const day = d.getDay();

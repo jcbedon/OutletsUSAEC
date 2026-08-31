@@ -135,6 +135,9 @@ async def _ensure_indexes():
         ("wallet_transactions", [("tenant_id", 1), ("type", 1), ("status", 1)]),
         ("wallet_transactions", [("tenant_id", 1), ("created_at", -1)]),
         ("wallet_transactions", [("bank_account_id", 1)]),
+        # Anti-fraud lookups: client-typed reference + OCR-detected reference.
+        ("wallet_transactions", [("tenant_id", 1), ("reference_number_lower", 1)]),
+        ("wallet_transactions", [("tenant_id", 1), ("ai_detected_reference_lower", 1)]),
         # Invoices
         ("invoices", [("user_id", 1), ("tenant_id", 1)]),
         ("invoices", [("tenant_id", 1), ("customer_id", 1)]),
@@ -761,7 +764,7 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
         {"customer_id": customer_id, "tenant_id": tenant_id,
          "shipment_id": {"$exists": True, "$nin": [None, ""]}},
         {"_id": 0, "id": 1, "shipment_id": 1}
-    ).to_list(1000)
+    ).to_list(5000)
     for inv in invs_with_shipment:
         await db.shipments.update_one(
             {"id": inv["shipment_id"], "tenant_id": tenant_id,
@@ -776,7 +779,7 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
          "shipping_cost": {"$gt": 0},
          "is_annulled": {"$ne": True}},
         {"_id": 0, "id": 1, "shipment_id": 1}
-    ).to_list(1000)
+    ).to_list(5000)
     for inv in invs_with_shipping:
         has_real_shipment = False
         if inv.get("shipment_id"):
@@ -801,12 +804,12 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     all_deposits = await db.wallet_transactions.find(
         {"user_id": client["id"], "tenant_id": tenant_id, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
         {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
-    ).sort("created_at", 1).to_list(1000)
+    ).sort("created_at", 1).to_list(5000)
     
     all_invoices = await db.invoices.find(
         {"customer_id": customer_id, "tenant_id": tenant_id, "is_annulled": {"$ne": True}},
         {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1, "shipping_cost": 1, "created_at": 1}
-    ).sort("created_at", 1).to_list(1000)
+    ).sort("created_at", 1).to_list(5000)
 
     # Backfill effective shipping_cost from the LINKED SHIPMENT for each invoice.
     # The invoice document's `shipping_cost` field can be stale or zero (e.g. if the
@@ -2258,19 +2261,25 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
     ]).to_list(len(user_ids))
     shipments_dict = {s["_id"]: s["total_shipping"] for s in shipments_agg}
     
-    # Aggregate PENDING purchases (no invoice_id) per user - for "compras pendientes de facturar"
+    # Aggregate PENDING purchases (no invoice_id) per user - both $$ amount and count.
+    # This is critical for the "Deuda Total" indicator: real debt = last invoice
+    # unpaid + $ of purchases not yet invoiced.
     pending_purchases_agg = await db.purchases.aggregate([
         {"$match": {
             "user_id": {"$in": user_ids}, 
             "tenant_id": tid,
             "$or": [
                 {"invoice_id": None},
-                {"invoice_id": {"$exists": False}}
+                {"invoice_id": {"$exists": False}},
+                {"invoice_id": ""}
             ]
         }},
-        {"$group": {"_id": "$user_id", "count": {"$sum": 1}}}
+        {"$group": {"_id": "$user_id", "amount": {"$sum": "$total"}, "count": {"$sum": 1}}}
     ]).to_list(len(user_ids))
-    pending_purchases_dict = {p["_id"]: p["count"] for p in pending_purchases_agg}
+    pending_purchases_dict = {
+        p["_id"]: {"amount": p.get("amount", 0) or 0, "count": p.get("count", 0) or 0}
+        for p in pending_purchases_agg
+    }
     
     # Aggregate saldo_pendiente from non-annulled invoices per customer
     customer_ids_list = [u.get("customer_id") for u in users if u.get("customer_id")]
@@ -2314,7 +2323,23 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             pending_balance = round(-last_total_a_pagar, 2)
         else:
             pending_balance = 0
-        pending_to_invoice = pending_purchases_dict.get(uid, 0)
+        pending_to_invoice_data = pending_purchases_dict.get(uid, {"amount": 0, "count": 0})
+        pending_to_invoice_amount = round(float(pending_to_invoice_data["amount"]), 2)
+        pending_to_invoice_count = int(pending_to_invoice_data["count"])
+
+        # real_pending_balance combines last invoice unpaid + unbilled purchase $$.
+        # Convention: negative = owes money, positive = credit (saldo a favor).
+        # Per product spec: DO NOT net credit against pending purchases; keep them
+        # visible as separate fields. Only the DEBT side (pending_balance < 0)
+        # accumulates pending purchases into a single "Deuda Total" number.
+        if pending_balance < 0:
+            real_pending_balance = round(pending_balance - pending_to_invoice_amount, 2)
+        elif pending_balance > 0:
+            # Client has credit: keep credit intact, expose pending purchases apart.
+            real_pending_balance = pending_balance
+        else:
+            real_pending_balance = round(-pending_to_invoice_amount, 2) if pending_to_invoice_amount > 0 else 0
+
         result.append({
             **user, 
             "wallet_balance": round(total_recharges, 2),
@@ -2324,7 +2349,11 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "pending_balance": pending_balance,
             "purchase_count": purch["count"],
             "is_active": user.get("is_active", True),
-            "pending_to_invoice": pending_to_invoice
+            # pending_to_invoice = $$ sum of purchases without invoice_id (product+tax, NO shipping)
+            "pending_to_invoice": pending_to_invoice_amount,
+            "pending_to_invoice_count": pending_to_invoice_count,
+            # real_pending_balance = pending_balance combined with pending purchases (see above)
+            "real_pending_balance": real_pending_balance,
         })
     return result
 
@@ -2635,6 +2664,134 @@ async def get_client_password(user_id: str, current_user: dict = Depends(get_cur
         "available": bool(user.get("password_plain")),
     }
 
+@api_router.get("/admin/clients/{customer_id}/diagnostics")
+async def client_history_diagnostics(customer_id: str, current_user: dict = Depends(get_current_user)):
+    """Diagnostic dump used to investigate missing-history complaints (e.g. L5L
+    saying April/May 2025 doesn't show up). Returns raw counts, oldest/newest
+    timestamps and monthly buckets for invoices, purchases, wallet transactions,
+    and shipments — so we can tell truncation apart from missing data or a
+    case-sensitivity mismatch on customer_id.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    cid_upper = (customer_id or "").upper().strip()
+
+    # 1. Locate user document (try customer_id.upper first, then any case variant)
+    user = await db.users.find_one(
+        {"tenant_id": tid, "customer_id": cid_upper},
+        {"_id": 0}
+    )
+    if not user:
+        # Fallback: case-insensitive match — this is exactly the failure mode
+        # a support agent needs to see to know if legacy rows used a different
+        # casing on customer_id.
+        user = await db.users.find_one(
+            {"tenant_id": tid, "customer_id": {"$regex": f"^{cid_upper}$", "$options": "i"}},
+            {"_id": 0}
+        )
+        if not user:
+            raise HTTPException(status_code=404, detail=f"Cliente {customer_id} no encontrado")
+
+    user_id = user["id"]
+    stored_customer_id = user.get("customer_id")
+
+    async def _month_buckets(collection, date_field, extra_match):
+        pipeline = [
+            {"$match": extra_match},
+            {"$group": {
+                "_id": {"$substr": [f"${date_field}", 0, 7]},  # YYYY-MM prefix
+                "count": {"$sum": 1}
+            }},
+            {"$sort": {"_id": 1}}
+        ]
+        rows = await collection.aggregate(pipeline).to_list(500)
+        return [{"month": r["_id"], "count": r["count"]} for r in rows if r["_id"]]
+
+    async def _bounds(collection, date_field, match):
+        oldest = await collection.find(match, {"_id": 0, date_field: 1}).sort(date_field, 1).limit(1).to_list(1)
+        newest = await collection.find(match, {"_id": 0, date_field: 1}).sort(date_field, -1).limit(1).to_list(1)
+        return {
+            "oldest": (oldest[0].get(date_field) if oldest else None),
+            "newest": (newest[0].get(date_field) if newest else None),
+        }
+
+    # Invoices — match BOTH exact and case-insensitive to detect a casing drift
+    inv_match_strict = {"tenant_id": tid, "customer_id": stored_customer_id}
+    inv_match_any = {"tenant_id": tid, "customer_id": {"$regex": f"^{cid_upper}$", "$options": "i"}}
+    inv_total = await db.invoices.count_documents(inv_match_strict)
+    inv_total_any_case = await db.invoices.count_documents(inv_match_any)
+    inv_annulled = await db.invoices.count_documents({**inv_match_strict, "is_annulled": True})
+    inv_bounds = await _bounds(db.invoices, "created_at", inv_match_strict)
+    inv_by_month = await _month_buckets(db.invoices, "created_at", inv_match_strict)
+
+    # Purchases
+    pur_match_strict = {"tenant_id": tid, "customer_id": stored_customer_id}
+    pur_match_any = {"tenant_id": tid, "customer_id": {"$regex": f"^{cid_upper}$", "$options": "i"}}
+    pur_total = await db.purchases.count_documents(pur_match_strict)
+    pur_total_any_case = await db.purchases.count_documents(pur_match_any)
+    pur_bounds = await _bounds(db.purchases, "created_at", pur_match_strict)
+    pur_by_month = await _month_buckets(db.purchases, "created_at", pur_match_strict)
+
+    # Wallet transactions (all types, incl. deleted so we can spot soft-deletes)
+    wt_match = {"tenant_id": tid, "user_id": user_id}
+    wt_total = await db.wallet_transactions.count_documents(wt_match)
+    wt_deleted = await db.wallet_transactions.count_documents({**wt_match, "is_deleted": True})
+    wt_deposits = await db.wallet_transactions.count_documents({**wt_match, "type": "deposit"})
+    wt_bounds = await _bounds(db.wallet_transactions, "created_at", wt_match)
+    wt_by_month = await _month_buckets(db.wallet_transactions, "created_at", wt_match)
+
+    # Shipments
+    sh_match = {"tenant_id": tid, "user_id": user_id}
+    sh_total = await db.shipments.count_documents(sh_match)
+    sh_bounds = await _bounds(db.shipments, "created_at", sh_match)
+    sh_by_month = await _month_buckets(db.shipments, "created_at", sh_match)
+
+    return {
+        "user": {
+            "id": user_id,
+            "customer_id": stored_customer_id,
+            "customer_id_case_matches_input": stored_customer_id == cid_upper,
+            "name": user.get("name"),
+            "email": user.get("email"),
+            "whatsapp": user.get("whatsapp"),
+            "created_at": user.get("created_at"),
+            "is_active": user.get("is_active", True),
+            "role": user.get("role"),
+        },
+        "invoices": {
+            "total_strict_customer_id": inv_total,
+            "total_case_insensitive": inv_total_any_case,
+            "annulled": inv_annulled,
+            "oldest_created_at": inv_bounds["oldest"],
+            "newest_created_at": inv_bounds["newest"],
+            "by_month": inv_by_month,
+        },
+        "purchases": {
+            "total_strict_customer_id": pur_total,
+            "total_case_insensitive": pur_total_any_case,
+            "oldest_created_at": pur_bounds["oldest"],
+            "newest_created_at": pur_bounds["newest"],
+            "by_month": pur_by_month,
+        },
+        "wallet_transactions": {
+            "total": wt_total,
+            "soft_deleted": wt_deleted,
+            "deposits": wt_deposits,
+            "oldest_created_at": wt_bounds["oldest"],
+            "newest_created_at": wt_bounds["newest"],
+            "by_month": wt_by_month,
+        },
+        "shipments": {
+            "total": sh_total,
+            "oldest_created_at": sh_bounds["oldest"],
+            "newest_created_at": sh_bounds["newest"],
+            "by_month": sh_by_month,
+        },
+    }
+
+
+
 @api_router.get("/admin/clients/{customer_id}/info")
 async def get_client_info(customer_id: str, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
@@ -2659,12 +2816,43 @@ async def get_client_info(customer_id: str, current_user: dict = Depends(get_cur
     pending_total = round(float(pending_agg[0]["total"]) if pending_agg else 0.0, 2)
     pending_count = int(pending_agg[0]["count"]) if pending_agg else 0
 
+    # Deuda facturada actual: total_a_pagar / saldo_a_favor de la última factura
+    # no anulada del cliente. Se combina con pending_total para exponer una
+    # "Deuda Total" real en tiempo real (incluye compras aún no facturadas).
+    last_inv_doc = None
+    cust_id = user.get("customer_id")
+    if cust_id:
+        last_inv_doc = await db.invoices.find_one(
+            {"tenant_id": tid, "customer_id": cust_id, "is_annulled": {"$ne": True}},
+            {"_id": 0, "total_a_pagar": 1, "saldo_a_favor": 1},
+            sort=[("created_at", -1)]
+        )
+    last_total_a_pagar = round(float((last_inv_doc or {}).get("total_a_pagar", 0) or 0), 2)
+    last_saldo_a_favor = round(float((last_inv_doc or {}).get("saldo_a_favor", 0) or 0), 2)
+    if last_saldo_a_favor > 0:
+        pending_balance = last_saldo_a_favor
+    elif last_total_a_pagar > 0:
+        pending_balance = -last_total_a_pagar
+    else:
+        pending_balance = 0.0
+
+    if pending_balance < 0:
+        real_pending_balance = round(pending_balance - pending_total, 2)
+    elif pending_balance > 0:
+        real_pending_balance = pending_balance
+    else:
+        real_pending_balance = round(-pending_total, 2) if pending_total > 0 else 0.0
+
     return {
         **user,
         "wallet_balance": wallet["available"] if wallet else 0,
         "commission_fee": user.get("commission_fee", DEFAULT_COMMISSION_FEE),
         "pending_to_invoice": pending_total,
         "pending_purchases_count": pending_count,
+        "pending_balance": pending_balance,
+        "real_pending_balance": real_pending_balance,
+        "invoiced_debt": last_total_a_pagar,
+        "invoiced_credit": last_saldo_a_favor,
     }
 
 # ==================== WALLET ENDPOINTS ====================
@@ -2807,7 +2995,17 @@ async def get_recharge_report(current_user: dict = Depends(get_current_user)):
 @api_router.get("/wallet/transactions/{user_id}")
 async def get_wallet_transactions(user_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
-    transactions = await db.wallet_transactions.find({"user_id": user_id, "tenant_id": tid, "is_deleted": {"$ne": True}}, {"_id": 0}).sort("created_at", -1).limit(50).to_list(50)
+    # Ownership guard: un cliente solo puede ver SUS propias transacciones.
+    # Admins y empleados pueden ver las de cualquier usuario del tenant.
+    if current_user["role"] == "client" and user_id != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    # No truncar el historial de wallet: clientes con muchas recargas (varios años)
+    # necesitan ver TODO. El límite viejo de 50 ocultaba recargas de meses viejos
+    # (bug producción: L5L no veía abril/mayo 2025).
+    transactions = await db.wallet_transactions.find(
+        {"user_id": user_id, "tenant_id": tid, "is_deleted": {"$ne": True}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(5000)
     return transactions
 
 @api_router.get("/wallet/{user_id}")
@@ -2904,7 +3102,11 @@ async def request_deposit_with_proof(
         if not file or not file.filename:
             raise HTTPException(status_code=400, detail="Debes adjuntar la foto del comprobante")
 
-    # Reject duplicate reference numbers (case-insensitive, within tenant, excluding rejected)
+    def _norm_ref(v):
+        return str(v or "").lower().replace(" ", "").replace("-", "").strip()
+
+    # Reject duplicate reference numbers (case-insensitive, within tenant, excluding rejected/deleted).
+    # This blocks a client typing the SAME number twice.
     if ref:
         duplicate = await db.wallet_transactions.find_one(
             {
@@ -2938,6 +3140,47 @@ async def request_deposit_with_proof(
             logger.error(f"Object store upload_file failed: {e}")
             raise HTTPException(status_code=500, detail="No se pudo guardar el comprobante en el almacenamiento. Reintenta en unos segundos.")
 
+    # OCR ANTES del insert: bloquea (a) que el cliente ingrese un número que
+    # no coincide con el del comprobante y (b) que reutilice el mismo screenshot
+    # con un número distinto (duplicate por imagen).
+    scan = None
+    detected_ref_raw = None
+    detected_ref_norm = None
+    if proof_url:
+        try:
+            scan = await _scan_proof_image(proof_url, session_id=f"auto-preinsert-{user_id}")
+        except Exception as e:
+            logger.warning(f"OCR pre-insert scan failed for user {user_id}: {e}")
+            scan = None
+
+    if scan:
+        detected_ref_raw = scan.get("detected_reference_number")
+        detected_ref_norm = _norm_ref(detected_ref_raw) if detected_ref_raw else None
+
+    if detected_ref_norm and ref:
+        client_ref_norm = _norm_ref(ref)
+        if client_ref_norm != detected_ref_norm:
+            raise HTTPException(
+                status_code=400,
+                detail="El número de comprobante ingresado no coincide con el del recibo. Verifica los datos e intenta de nuevo."
+            )
+
+    if detected_ref_norm:
+        image_duplicate = await db.wallet_transactions.find_one(
+            {
+                "tenant_id": tid,
+                "ai_detected_reference_lower": detected_ref_norm,
+                "status": {"$in": ["pending", "approved"]},
+                "is_deleted": {"$ne": True}
+            },
+            {"_id": 0, "id": 1, "status": 1, "user_id": 1}
+        )
+        if image_duplicate:
+            raise HTTPException(
+                status_code=409,
+                detail="Este comprobante ya fue registrado anteriormente."
+            )
+
     transaction = WalletTransaction(
         tenant_id=tid, user_id=user_id, customer_id=wallet["customer_id"],
         type="deposit", amount=float(amount or 0), balance_after=wallet["available"],
@@ -2948,41 +3191,29 @@ async def request_deposit_with_proof(
     if ref:
         tx_dict["reference_number"] = ref
         tx_dict["reference_number_lower"] = ref.lower()
-    await db.wallet_transactions.insert_one(tx_dict)
 
-    # Auto-scan proof with Gemini Vision (best-effort; doesn't block success)
     detected_amount = None
-    if proof_url:
-        try:
-            scan = await _scan_proof_image(proof_url, session_id=f"auto-{transaction.id}")
-            if scan:
-                detected_amount = scan.get("detected_amount")
-                detected_deposit_date = scan.get("detected_deposit_date")
-                update_fields = {
-                    "ai_scan": {
-                        "detected_reference_number": scan.get("detected_reference_number"),
-                        "detected_amount": detected_amount,
-                        "currency": scan.get("currency"),
-                        "confidence": scan.get("confidence"),
-                        "detected_destination_account": scan.get("detected_destination_account"),
-                        "detected_beneficiary_name": scan.get("detected_beneficiary_name"),
-                        "detected_deposit_date": detected_deposit_date,
-                        "raw_text": scan.get("raw"),
-                        "scanned_at": datetime.now(timezone.utc).isoformat()
-                    }
-                }
-                # Persist the deposit date at the top level of the transaction too
-                # so that queries + ledger UI can order by "when the money was
-                # actually deposited" rather than "when the client uploaded the
-                # screenshot". The upload timestamp remains in `created_at`.
-                if detected_deposit_date:
-                    update_fields["deposit_date"] = detected_deposit_date
-                await db.wallet_transactions.update_one(
-                    {"id": transaction.id, "tenant_id": tid},
-                    {"$set": update_fields}
-                )
-        except Exception:
-            pass
+    if scan:
+        detected_amount = scan.get("detected_amount")
+        detected_deposit_date = scan.get("detected_deposit_date")
+        tx_dict["ai_scan"] = {
+            "detected_reference_number": detected_ref_raw,
+            "detected_amount": detected_amount,
+            "currency": scan.get("currency"),
+            "confidence": scan.get("confidence"),
+            "detected_destination_account": scan.get("detected_destination_account"),
+            "detected_beneficiary_name": scan.get("detected_beneficiary_name"),
+            "detected_deposit_date": detected_deposit_date,
+            "raw_text": scan.get("raw"),
+            "scanned_at": datetime.now(timezone.utc).isoformat()
+        }
+        if detected_ref_norm:
+            # Normalized copy at top level for fast duplicate lookup by index.
+            tx_dict["ai_detected_reference_lower"] = detected_ref_norm
+        if detected_deposit_date:
+            tx_dict["deposit_date"] = detected_deposit_date
+
+    await db.wallet_transactions.insert_one(tx_dict)
 
     return {
         "message": "Solicitud enviada. Será revisada por nuestro equipo.",
@@ -3121,6 +3352,140 @@ async def scan_deposit_proof(transaction_id: str, current_user: dict = Depends(g
         **result,
         "client_reference_number": client_ref or None,
         "matches_reference": matches_reference
+    }
+
+
+@api_router.post("/admin/deposits/detect-duplicates")
+async def detect_duplicate_deposits(
+    scan_missing: bool = False,
+    current_user: dict = Depends(get_current_user)
+):
+    """Retro-active detection of deposits that share the same OCR-detected
+    reference number (same screenshot uploaded twice with different numbers
+    typed by the client).
+
+    Steps:
+    1. If `scan_missing=true`, run OCR on approved/pending deposits that don't
+       have an `ai_scan` yet, and persist the result (safe idempotent).
+    2. Group all approved/pending non-deleted deposits by `ai_detected_reference_lower`
+       and return the groups with more than one transaction — those are the
+       suspicious duplicates.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    if current_user["role"] == "employee":
+        employee = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+        if not employee or not employee.get("permissions", {}).get("approve_recharges"):
+            raise HTTPException(status_code=403, detail="No tienes permiso")
+    tid = current_user["tenant_id"]
+
+    def _norm_ref(v):
+        return str(v or "").lower().replace(" ", "").replace("-", "").strip()
+
+    scanned_count = 0
+    scan_errors = 0
+
+    if scan_missing:
+        # Only scan deposits that have a proof_url but no ai_scan yet.
+        cursor = db.wallet_transactions.find(
+            {
+                "tenant_id": tid,
+                "type": "deposit",
+                "status": {"$in": ["pending", "approved"]},
+                "is_deleted": {"$ne": True},
+                "proof_url": {"$exists": True, "$nin": [None, ""]},
+                "$or": [
+                    {"ai_scan": {"$exists": False}},
+                    {"ai_scan": None},
+                    {"ai_detected_reference_lower": {"$exists": False}},
+                ]
+            },
+            {"_id": 0, "id": 1, "proof_url": 1, "reference_number": 1}
+        )
+        async for tx in cursor:
+            try:
+                scan = await _scan_proof_image(tx["proof_url"], session_id=f"retro-{tx['id']}")
+            except Exception:
+                scan_errors += 1
+                continue
+            if not scan:
+                scan_errors += 1
+                continue
+            detected_ref = scan.get("detected_reference_number")
+            detected_norm = _norm_ref(detected_ref) if detected_ref else None
+            update_fields = {
+                "ai_scan": {
+                    "detected_reference_number": detected_ref,
+                    "detected_amount": scan.get("detected_amount"),
+                    "currency": scan.get("currency"),
+                    "confidence": scan.get("confidence"),
+                    "detected_destination_account": scan.get("detected_destination_account"),
+                    "detected_beneficiary_name": scan.get("detected_beneficiary_name"),
+                    "detected_deposit_date": scan.get("detected_deposit_date"),
+                    "raw_text": scan.get("raw"),
+                    "scanned_at": datetime.now(timezone.utc).isoformat()
+                }
+            }
+            if detected_norm:
+                update_fields["ai_detected_reference_lower"] = detected_norm
+            await db.wallet_transactions.update_one(
+                {"id": tx["id"], "tenant_id": tid},
+                {"$set": update_fields}
+            )
+            scanned_count += 1
+
+    # Group by ai_detected_reference_lower (image-based duplicates)
+    groups_agg = await db.wallet_transactions.aggregate([
+        {"$match": {
+            "tenant_id": tid,
+            "type": "deposit",
+            "status": {"$in": ["pending", "approved"]},
+            "is_deleted": {"$ne": True},
+            "ai_detected_reference_lower": {"$exists": True, "$nin": [None, ""]}
+        }},
+        {"$group": {
+            "_id": "$ai_detected_reference_lower",
+            "count": {"$sum": 1},
+            "transactions": {"$push": {
+                "id": "$id",
+                "user_id": "$user_id",
+                "customer_id": "$customer_id",
+                "amount": "$amount",
+                "status": "$status",
+                "reference_number": "$reference_number",
+                "created_at": "$created_at",
+                "proof_url": "$proof_url",
+                "ai_detected_reference_number": "$ai_scan.detected_reference_number",
+            }}
+        }},
+        {"$match": {"count": {"$gt": 1}}},
+        {"$sort": {"count": -1}}
+    ]).to_list(500)
+
+    # Enrich each group with client name for admin UI
+    all_user_ids = set()
+    for g in groups_agg:
+        for t in g.get("transactions", []):
+            if t.get("user_id"):
+                all_user_ids.add(t["user_id"])
+    users_map = {}
+    if all_user_ids:
+        users = await db.users.find(
+            {"id": {"$in": list(all_user_ids)}, "tenant_id": tid},
+            {"_id": 0, "id": 1, "name": 1, "customer_id": 1, "whatsapp": 1}
+        ).to_list(len(all_user_ids))
+        users_map = {u["id"]: u for u in users}
+    for g in groups_agg:
+        for t in g.get("transactions", []):
+            u = users_map.get(t.get("user_id")) or {}
+            t["client_name"] = u.get("name")
+            t["client_whatsapp"] = u.get("whatsapp")
+
+    return {
+        "scanned": scanned_count,
+        "scan_errors": scan_errors,
+        "duplicate_groups_count": len(groups_agg),
+        "duplicate_groups": groups_agg,
     }
 
 
@@ -4971,7 +5336,11 @@ async def clear_upload_session_files(token: str, current_user: dict = Depends(ge
 @api_router.get("/shipments/user/{user_id}")
 async def get_user_shipments(user_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
-    shipments = await db.shipments.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    # Ownership guard — un cliente solo ve SUS propios envíos.
+    if current_user["role"] == "client" and user_id != current_user["user_id"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    # Historial completo — antes se truncaba a 100 y se perdían envíos viejos.
+    shipments = await db.shipments.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(5000)
     return shipments
 
 @api_router.get("/shipments")
@@ -5548,7 +5917,10 @@ async def get_client_invoices(customer_id: str, include_annulled: bool = False, 
     if not include_annulled:
         query["is_annulled"] = {"$ne": True}
     
-    invoices = await db.invoices.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    # No truncar el historial: clientes con muchas facturas (varios años)
+    # necesitan ver TODO. Antes se cortaba a 100 lo que ocultaba meses viejos
+    # (bug en producción con clientes como L5L: abril/mayo 2025 no aparecían).
+    invoices = await db.invoices.find(query, {"_id": 0}).sort("created_at", -1).to_list(5000)
     
     return invoices
 
@@ -5559,29 +5931,36 @@ async def get_client_invoices_for_shipment(customer_id: str, current_user: dict 
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
-    # Get all non-annulled invoices for this client
+    # Get all non-annulled invoices for this client (no truncar por el mismo motivo
+    # que el endpoint de historial: clientes con muchas facturas perdían las viejas).
     invoices = await db.invoices.find({
         "customer_id": customer_id.upper(),
         "tenant_id": tid,
         "is_annulled": {"$ne": True}
-    }, {"_id": 0}).sort("created_at", -1).to_list(100)
+    }, {"_id": 0}).sort("created_at", -1).to_list(5000)
     
-    # Get all shipment invoice_ids to filter out invoices that already have shipments
-    shipments = await db.shipments.find(
-        {"tenant_id": tid, "invoice_id": {"$ne": None}},
-        {"invoice_id": 1, "_id": 0}
-    ).to_list(1000)
-    shipped_invoice_ids = {s["invoice_id"] for s in shipments if s.get("invoice_id")}
+    # Get shipment invoice_ids ONLY for this client's invoices (evita truncar
+    # el map tenant-wide con to_list(1000) que exponía invoices ya enviados como
+    # disponibles → doble envío / doble cobro).
+    client_invoice_ids = [i["id"] for i in invoices]
+    shipped_invoice_ids = set()
+    if client_invoice_ids:
+        shipped = await db.shipments.find(
+            {"tenant_id": tid, "invoice_id": {"$in": client_invoice_ids}},
+            {"invoice_id": 1, "_id": 0}
+        ).to_list(len(client_invoice_ids))
+        shipped_invoice_ids = {s["invoice_id"] for s in shipped if s.get("invoice_id")}
     
     # Filter out invoices that already have shipments
     result = []
     for inv in invoices:
         if inv["id"] not in shipped_invoice_ids:
-            # Get purchase details for this invoice
+            # Get purchase details for this invoice — sin truncar (invoices con
+            # muchos items pueden exceder 100, ej Black Friday).
             purchases = await db.purchases.find(
                 {"id": {"$in": inv.get("purchase_ids", [])}},
                 {"_id": 0}
-            ).to_list(100)
+            ).to_list(5000)
             inv["purchases"] = purchases
             inv["purchase_count"] = len(purchases)
             result.append(inv)
@@ -6434,7 +6813,7 @@ async def get_client_purchase_history(customer_id: str, current_user: dict = Dep
         "customer_id": customer_id.upper(),
         "tenant_id": tid,
         "status": "paid"
-    }, {"_id": 0}).sort("paid_at", -1).to_list(500)
+    }, {"_id": 0}).sort("paid_at", -1).to_list(5000)
     
     return purchases
 

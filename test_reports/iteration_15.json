@@ -1,0 +1,47 @@
+{
+  "summary": "P0 anti-fraud fix tested (OCR pre-insert on POST /api/wallet/deposit-request-with-proof + new POST /api/admin/deposits/detect-duplicates + AdminWallet UI). Created /app/backend/tests/test_deposit_ocr_antifraud.py: 15 tests, 14 passed, 1 failed. The failing one is environment-caused: EMERGENT_LLM_KEY is NOT set in /app/backend/.env, so object_store.init_storage() raises and every real client proof upload returns 500 ('No se pudo guardar el comprobante...'), and _scan_proof_image always returns {} (no OCR at all). To still validate the new blocking logic I ran in-process ASGI tests with _scan_proof_image and object_store.upload_file monkeypatched: mismatch->400 with the exact required message and NO DB row inserted; normalized match (case/spaces/dashes) -> 200 with ai_scan{detected_reference_number, detected_amount, confidence, ...} + ai_detected_reference_lower persisted; same screenshot with a made-up number -> 400, same screenshot with the correct-but-already-used number -> 409 'Este comprobante ya fue registrado anteriormente.' and no insert; OCR exception and empty scan -> non-blocking 200 without ai_scan. Legacy typed-ref duplicate still returns 409 'Ya existe una recarga con el comprobante X'. Admin detect-duplicates groups by ai_detected_reference_lower with count>1, enriches client_name/client_whatsapp, returns scanned/scan_errors/duplicate_groups_count/duplicate_groups; 403 for client role and for employee without approve_recharges (maria has no permission); scan_missing=true returned {scanned:0, scan_errors:6} because OCR key is missing. Both antifraud compound indexes exist on wallet_transactions. Frontend: admin login -> /admin/wallet -> 'Detectar Duplicados' button, modal, both scan buttons, request POST detect-duplicates?scan_missing=false -> 200, seeded duplicate group rendered with client name, typed ref vs OCR ref, amount, status, proof link.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/wallet/deposit-request-with-proof", "issue": "EMERGENT_LLM_KEY missing in /app/backend/.env -> object_store.init_storage() raises, so EVERY real client proof upload fails with HTTP 500 ('No se pudo guardar el comprobante en el almacenamiento'). Startup log: 'Object storage init failed ... EMERGENT_LLM_KEY no está configurada'. Client recharge flow is fully broken in this preview env.", "priority": "CRITICAL"},
+      {"endpoint": "POST /api/wallet/deposit-request-with-proof", "issue": "Anti-fraud is silently inert whenever OCR is unavailable: _scan_proof_image returns {} without a key/on Gemini error, so the deposit is accepted with no ai_scan and no ai_detected_reference_lower — exactly the loophole the user reported. Recommend: (a) fail fast/queue for manual review or flag tx as ocr_unverified when scan is empty, (b) alert admin, (c) verify EMERGENT_LLM_KEY is configured in production.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/wallet/deposit-request-with-proof", "issue": "Proof image is uploaded to object storage BEFORE the OCR mismatch/duplicate checks; on 400/409 the uploaded object is never deleted -> orphaned files accumulate on every fraud attempt."},
+      {"endpoint": "POST /api/wallet/deposit-request-with-proof", "issue": "Duplicate lookups (reference_number_lower and ai_detected_reference_lower) do not filter type=='deposit', unlike the admin aggregation; a non-deposit tx carrying the same field would false-positive as duplicate."},
+      {"endpoint": "POST /api/wallet/deposit-request-with-proof", "issue": "Race window: two concurrent uploads of the same screenshot can both pass the find_one duplicate check (no unique index / no atomic upsert). Consider a partial unique index on (tenant_id, ai_detected_reference_lower)."},
+      {"endpoint": "POST /api/admin/deposits/detect-duplicates", "issue": "Returns 422 instead of 401 when the Authorization header is absent."},
+      {"endpoint": "POST /api/admin/deposits/detect-duplicates", "issue": "scan_missing=true scans sequentially with no cap/timeout; with many legacy deposits (each 3-8s of Gemini) the request can exceed the ingress timeout. Consider batching/background job."},
+      {"endpoint": "POST /api/admin/deposits/detect-duplicates", "issue": "Response exposes the aggregation group key as '_id' (it is the ref string, not an ObjectId, so no leak, but a named field like 'detected_reference' would be cleaner and avoids _id conventions)."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/admin/wallet duplicate modal", "issues": ["Console shows 404s for image resources (tenant logo / proof thumbnails) — proof URLs 404 because object storage is unavailable (same EMERGENT_LLM_KEY root cause)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_deposit_ocr_antifraud.py", "/app/backend/tests/seed_dupe_group.py", "/app/test_reports/pytest/antifraud_results.xml"],
+  "action_items": [
+    "Configure EMERGENT_LLM_KEY in backend/.env (preview) and verify it in production — without it proof uploads 500 and OCR anti-fraud never runs.",
+    "Decide behaviour when OCR returns empty: currently the deposit passes unverified (fraud loophole remains). Flag/queue such deposits for manual review.",
+    "Delete the uploaded proof object when the request is rejected with 400/409 to avoid orphaned storage.",
+    "Add type=='deposit' filter to both duplicate lookups in deposit-request-with-proof.",
+    "Consider a unique/partial index or atomic insert to close the concurrent-duplicate race.",
+    "Cap or background the scan_missing=true OCR loop to avoid ingress timeouts."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~9,270 lines — should be split into routers/services modules.",
+    "object_store uses blocking `requests` inside async endpoints (upload_file/get_object) — blocks the event loop during proof upload and OCR fetch; move to httpx async or run_in_threadpool.",
+    "_norm_ref is duplicated in two endpoints (deposit-with-proof and detect-duplicates) — extract to a single module-level helper so normalization can never drift.",
+    "detect-duplicates only groups by OCR ref; it does not surface groups whose OCR is missing (ai_scan absent), i.e. exactly the legacy fraudulent rows when the key is unset — report those counts too."
+  ],
+  "updated_files": ["/app/backend/tests/test_deposit_ocr_antifraud.py", "/app/backend/tests/seed_dupe_group.py"],
+  "success_rate": {"backend": "93% (14/15; the single failure is the EMERGENT_LLM_KEY/object-store 500)", "frontend": "100%"},
+  "seed_data_creation": "Temporary wallet_transactions with description TEST_* / ai_detected_reference_lower=testuiduplicate999 for grouping + UI verification; all removed after the run (verified 0 leftovers).",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin@outletsusaec.com/123456, client A2824/123, employee maria@outletsusaec.com/empleado123 (no approve_recharges permission)",
+  "context_for_next_testing_agent": "Run with: cd /app/backend && python -m pytest tests/test_deposit_ocr_antifraud.py -v --asyncio-mode=auto -o asyncio_default_test_loop_scope=module  (module loop scope is REQUIRED, otherwise the motor client bound to a closed loop fails the in-process ASGI tests). pytest-asyncio 1.4.0 was installed. TestOcrPreInsert monkeypatches server._scan_proof_image and server.object_store.upload_file — this is the only way to exercise the OCR blocking logic while EMERGENT_LLM_KEY is unset. Once the key is configured, re-run TestDepositWithProofHttp::test_happy_path_creates_pending_tx (expects 200) and re-verify real Gemini OCR end-to-end with an actual receipt image. Weekly cutoff / real_pending_balance were not retested (iteration_14).",
+  "rca_of_the_issue": "Code-wise the fix is correct: OCR runs before insert_one, mismatch -> 400 with the required Spanish message, image duplicate -> 409, both normalized with lowercase/no-space/no-dash, and the transaction is not written on either rejection (verified by document counts). The residual risk is operational: _scan_proof_image swallows all failures and returns {} (no EMERGENT_LLM_KEY in this env), in which case the endpoint falls through to the legacy typed-reference check only — the original fraud path stays open. Additionally object_store requires the same key, so with it missing the upload itself 500s before OCR is even reached."
+}

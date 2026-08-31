@@ -1,0 +1,57 @@
+{
+  "summary": "Tested the new LIVE 'Deuda Total' feature end-to-end (backend + frontend). Backend: 20/20 pytest assertions pass — GET /api/admin/clients now returns pending_to_invoice as $$ (float) plus pending_to_invoice_count (int), pending_balance and real_pending_balance with the agreed formula (debt accumulates pending purchases; credit is NOT netted). GET /api/admin/clients/{id}/info returns pending_to_invoice, pending_purchases_count, pending_balance, real_pending_balance, invoiced_debt, invoiced_credit and is fully consistent with the list endpoint. /api/admin/reports/clients-debts (AdminStats source) also exposes pending_to_invoice as $$ and its totals match the UI KPI exactly (16349.00 invoiced + 48409.49 pending = 64758.49). Frontend: AdminLive badge, AdminClients panel, AdminInvoices selector chips and AdminStats KPI all verified with Playwright. Live update verified: after registering a $100 purchase for C5557 the badge went 930.24 -> 1041.49 (+111.25 = price+tax+commission); test purchase was deleted afterwards and data restored. Three frontend defects found (double '$$' in AdminStats breakdown, credit hidden + duplicated amount on AdminClients cards for credit+pending clients, Sin Deuda count mismatch).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/admin/clients and /api/admin/clients/{id}/info", "issue": "Requests without an Authorization header return 422 (Pydantic header validation) instead of 401/403. Pre-existing, affects all admin endpoints."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminStats > Deudas > KPI 'Deuda Total'", "issue": "Double dollar sign. formatMoney() already prefixes '$' but lines ~619/627 prepend another one, so the breakdown renders 'Fact: $$16349.00 + Por fact: $$48409.49' and the tooltip reads 'Facturado sin pagar ($$16349.00)'.", "selector": "[data-testid='kpi-total-debt']", "priority": "HIGH"},
+      {"component": "AdminClients card (credit + pending client, e.g. F4608)", "issue": "For a client with saldo a favor AND unbilled purchases, totalDebt = 0 + pending > 0 so the RED 'Deuda Total: $797.60' panel wins and the $347.52 saldo a favor is completely HIDDEN — this contradicts spec point 2 (credit must stay visible and separate). Additionally the amber 'Por facturar: $797.60' chip renders the SAME number right below the red panel (duplicate).", "selector": "[data-testid='total-debt-F4608'] / [data-testid='pending-to-invoice-F4608']", "priority": "HIGH"},
+      {"component": "AdminClients card (no invoice, only pending, e.g. A2824)", "issue": "Shows red 'Deuda Total: $660.75' AND amber 'Por facturar: $660.75' — the same value twice because invoicedDebt is 0. Spec expected only the 'Por facturar' amber indicator in this case.", "selector": "[data-testid='total-debt-A2824']", "priority": "MEDIUM"},
+      {"component": "AdminStats > Deudas KPI 'Sin Deuda'", "issue": "KPI card shows 10 while the filter chip above shows 'Sin Deuda (50)'. KPI uses filteredSummary.clients_positive_balance (clients - clientsWithAnyDebt) whereas the chip uses backend debtsSummary.clients_positive_balance. Same screen, same unfiltered dataset, two different numbers.", "selector": "AdminStats.jsx:613 vs :540", "priority": "MEDIUM"},
+      {"component": "AdminLive selected-client-total-debt-badge (F4608)", "issue": "Spec asked for an ORANGE 'Deuda Total' badge when there is no invoiced debt, but the colour scale is amount-based only (>=150 => red), so a pure 'por facturar' amount of $797.60 renders as red bg-red-100. Cosmetic deviation from the agreed spec.", "selector": "[data-testid='selected-client-total-debt-badge']", "priority": "LOW"},
+      {"component": "Admin headers (all pages)", "issue": "Tenant logo image returns 404 in preview, so the broken-image icon + alt text 'Logo' is rendered in every admin header.", "selector": "img[alt='Logo']", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "AdminLive register purchase -> live debt badge", "issue": "Badge DOES recompute correctly (930.24 -> 1041.49) but only after the client is re-selected: submitting the purchase clears customer_id, so the 'Deuda Total' badge disappears immediately after registering the product. The user asked for the debt to be visible EN VIVO while entering products, so keeping the selected client (or re-fetching info) after submit would be better UX.", "affected_selectors": ["[data-testid='selected-client-total-debt-badge']", "[data-testid='purchase-customer-id']"]}
+    ],
+    "design_issues": [
+      {"screen": "AdminInvoices invoice list rows", "issues": ["Rows still show the legacy count badge '+15 pendientes' next to the client name while the 'Nueva Factura' selector now shows $$ ('Por facturar: $1436.43 (27)'). Inconsistent representation of the same concept across the same page — confirm this is intentional."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_live_total_debt.py",
+    "/app/backend/tests/test_clients_debts_report.py",
+    "/app/test_reports/pytest/live_total_debt.xml"
+  ],
+  "action_items": [
+    "AdminStats.jsx lines ~619 and ~627: remove the extra '$' before formatMoney(...) in the KPI breakdown text and in the card title/tooltip (double '$$' shown).",
+    "AdminClients.jsx ~655-712: when pending_balance > 0 (credit) show BOTH the green 'Saldo a Favor' panel and the amber 'Por facturar' chip; do not render a red 'Deuda Total' that hides the credit. When invoicedDebt == 0 avoid printing the same amount twice (red Deuda Total + amber Por facturar).",
+    "AdminStats.jsx: align the 'Sin Deuda' KPI with the 'Sin Deuda (N)' filter chip (both should use the same definition).",
+    "AdminLive.jsx handleSubmitPurchase: keep the selected client (or re-fetch getClientInfo) after a successful purchase so the Deuda Total badge stays visible and updates in place.",
+    "Optional: use orange (not red) for the AdminLive badge when invoiced_debt == 0, as agreed in the spec."
+  ],
+  "critical_code_review_comments": [
+    "formatMoney() in AdminStats.jsx returns a '$'-prefixed string; every call site that prepends '$' produces '$$'. Consider making formatMoney return a bare number and prefix explicitly, or audit all call sites.",
+    "AdminClients.jsx renders the debt/credit panel via a large IIFE inside JSX; the branch ordering (totalDebt first) is what hides the credit. Extract to a small <ClientBalancePanel/> component with explicit credit + pending + debt cases.",
+    "server.py is 9104 lines — well above the 700-line guideline. The clients/invoices/stats aggregation blocks are prime candidates for extraction into routers/services.",
+    "The pending-purchases aggregation pipeline is duplicated verbatim in /admin/clients, /admin/clients/{id}/info and the clients-debts report. Extract a shared helper to keep the 'Deuda Total' definition in one place.",
+    "BREAKING CHANGE audit: pending_to_invoice changed from int count to float $. Verified all four consumers (AdminLive, AdminClients, AdminInvoices, AdminStats) treat it as money; the only remaining count-style display is the '+N pendientes' badge in the AdminInvoices list, which reads a different field."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_live_total_debt.py",
+    "/app/backend/tests/test_clients_debts_report.py",
+    "/app/frontend/src/pages/AdminStats.jsx",
+    "/app/frontend/src/pages/AdminInvoices.jsx"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "70%"},
+  "seed_data_creation": "No permanent seed data. One temporary purchase (TEST_DEBT_LIVE, $100 -> $111.25) was created for C5557 to prove the live update and then deleted via DELETE /api/purchases/{id}; C5557 values verified restored to pending_to_invoice 641.15 / 13 items / real_pending_balance -930.24. NOTE: two pre-existing pending live sessions ('Test Invoice Logic', 'Test Factura Nueva') were started (status now active) because the AdminLive purchase form is only reachable inside an active live.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "admin@outletsusaec.com / 123456 (body field is 'identifier', not 'email'). Login response token key is 'access_token'.",
+  "context_for_next_testing_agent": "Backend debt fields are fully correct and covered by /app/backend/tests/test_live_total_debt.py + test_clients_debts_report.py (20 passing). Useful seed data: C5557 pending_balance=-289.09, pending_to_invoice=641.15 (13), real=-930.24 | M9666 -203.40 / 523.31 (10) / -726.71 | F4608 CREDIT +347.52 with pending 797.60 (15) -> real stays +347.52 | A2824 no invoice, pending 660.75 (12). To reach the AdminLive purchase form you must first click 'Continuar' (active live) or 'Iniciar' (pending live) on /admin/live. Registering a purchase for a client with critical debt pops a confirmation modal — click 'Continuar'. I added data-testid='kpi-total-debt' (AdminStats), 'invoice-client-pending-{id}' and 'invoice-client-debt-{id}' (AdminInvoices). Remaining open items are the 4 frontend fixes listed in action_items.",
+  "rca_of_the_issue": "1) Double '$$': formatMoney() already returns '$'+value, but AdminStats.jsx lines 619/627 template literals prepend another '$'. 2) Hidden credit on AdminClients: the IIFE computes totalDebt = invoicedDebt + pending and returns the red panel whenever totalDebt > 0.01; for a credit client invoicedDebt is 0 so pending alone triggers the red branch and the invoicedCredit branch is never reached, while the separate amber chip (condition pending_balance >= 0) also fires, duplicating the number. 3) 'Sin Deuda' mismatch: KPI reads filteredSummary.clients_positive_balance (= total - clientsWithAnyDebt, which includes pending-only clients) while the filter chip reads the backend debtsSummary field (= total - clients_with_invoiced_debt)."
+}

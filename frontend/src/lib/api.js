@@ -71,6 +71,7 @@ export const getWalletTransactions = (userId) => api.get(`/wallet/transactions/$
 export const getPendingDeposits = () => api.get("/wallet/pending-deposits");
 export const deleteDeposit = (transactionId, password) => api.post(`/wallet/delete-deposit/${transactionId}`, { password });
 export const getDeletedDeposits = () => api.get("/wallet/deleted-deposits");
+export const detectDuplicateDeposits = (scanMissing = false) => api.post(`/admin/deposits/detect-duplicates?scan_missing=${scanMissing ? 'true' : 'false'}`);
 
 // Lives
 export const createLive = (data) => api.post("/lives", data);
@@ -140,6 +141,7 @@ export const updateClientCommission = (userId, commissionFee) =>
 export const updateClient = (userId, data) => api.put(`/admin/clients/${userId}`, data);
 export const getClientPassword = (userId) => api.get(`/admin/clients/${userId}/password`);
 export const getClientInfo = (customerId) => api.get(`/admin/clients/${customerId}/info`);
+export const getClientDiagnostics = (customerId) => api.get(`/admin/clients/${customerId}/diagnostics`);
 export const getLiveReport = (liveId) => api.get(`/admin/reports/live/${liveId}`);
 export const getReportsSummary = (period = "week", startDate = null, endDate = null) => {
   const params = new URLSearchParams({ period });

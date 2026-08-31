@@ -185,16 +185,25 @@ export default function AdminStats() {
     const withDebt = clients.filter(c => c.pending_balance < 0);
     const withCredit = clients.filter(c => c.pending_balance > 0);
     const withPending = clients.filter(c => (c.pending_to_invoice || 0) > 0.01);
-    const totalDebt = withDebt.reduce((sum, c) => sum + c.debt_amount, 0);
-    const totalCredit = withCredit.reduce((sum, c) => sum + c.pending_balance, 0);
+    // Deuda facturada (última factura sin pagar)
+    const invoicedDebt = withDebt.reduce((sum, c) => sum + (c.debt_amount || 0), 0);
+    // Por facturar (compras sin invoice_id todavía)
     const totalPending = withPending.reduce((sum, c) => sum + (c.pending_to_invoice || 0), 0);
+    // Deuda Total real (combinada) = facturada + por facturar. Refleja lo que el
+    // cliente debe HOY antes incluso de generar la próxima factura.
+    const totalDebtCombined = invoicedDebt + totalPending;
+    const totalCredit = withCredit.reduce((sum, c) => sum + c.pending_balance, 0);
+    // Clientes con deuda real (facturada o por facturar)
+    const clientsWithAnyDebt = clients.filter(c => (c.pending_balance || 0) < 0 || (c.pending_to_invoice || 0) > 0.01).length;
 
     return {
       total_clients: clients.length,
       clients_with_debt: withDebt.length,
+      clients_with_any_debt: clientsWithAnyDebt,
       clients_with_credit: withCredit.length,
-      clients_positive_balance: clients.length - withDebt.length,
-      total_debt: totalDebt,
+      clients_positive_balance: clients.length - clientsWithAnyDebt,
+      total_debt: totalDebtCombined,
+      total_debt_invoiced: invoicedDebt,
       total_credit: totalCredit,
       total_pending_to_invoice: totalPending,
       clients_with_pending: withPending.length,
@@ -605,11 +614,20 @@ export default function AdminStats() {
                     <p className="text-xs text-green-600">Sin Deuda</p>
                   </CardContent>
                 </Card>
-                <Card className="rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+                <Card
+                  className="rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200"
+                  data-testid="kpi-total-debt"
+                  title={`Deuda Total = Facturado sin pagar ($${formatMoney(filteredSummary.total_debt_invoiced)}) + Por facturar ($${formatMoney(filteredSummary.total_pending_to_invoice)})`}
+                >
                   <CardContent className="p-4">
                     <DollarSign className="h-5 w-5 text-orange-600 mb-2" />
                     <p className="text-2xl font-extrabold text-orange-700">{formatMoney(filteredSummary.total_debt)}</p>
                     <p className="text-xs text-orange-600">Deuda Total</p>
+                    {filteredSummary.total_pending_to_invoice > 0.01 && (
+                      <p className="text-[10px] text-orange-500 mt-1 leading-tight">
+                        Fact: ${formatMoney(filteredSummary.total_debt_invoiced)} + Por fact: ${formatMoney(filteredSummary.total_pending_to_invoice)}
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
                 <Card className="rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200" data-testid="kpi-total-credit">
