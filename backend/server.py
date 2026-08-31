@@ -2890,7 +2890,10 @@ async def get_all_deposits(include_deleted: bool = False, current_user: dict = D
     query = {"type": "deposit", "tenant_id": tid}
     if not include_deleted:
         query["is_deleted"] = {"$ne": True}
-    transactions = await db.wallet_transactions.find(query, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    # Sin truncar el historial: producción con años de operación tiene >2000
+    # recargas; el límite viejo ocultaba silenciosamente las más viejas
+    # (bug L5L: abril/mayo 2025 no aparecían en la pantalla de recargas).
+    transactions = await db.wallet_transactions.find(query, {"_id": 0}).sort("created_at", -1).to_list(20000)
     if not transactions:
         return []
     user_ids = list({t["user_id"] for t in transactions})
@@ -2920,7 +2923,7 @@ async def get_deleted_deposits(current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
     transactions = await db.wallet_transactions.find(
         {"type": "deposit", "tenant_id": tid, "is_deleted": True}, {"_id": 0}
-    ).sort("deleted_at", -1).to_list(500)
+    ).sort("deleted_at", -1).to_list(5000)
     result = []
     for t in transactions:
         user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
@@ -2944,11 +2947,11 @@ async def get_recharge_report(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
-    # Get all deposit transactions
+    # Get all deposit transactions — historial completo (antes 1000)
     deposits = await db.wallet_transactions.find(
         {"tenant_id": tid, "type": "deposit"},
         {"_id": 0}
-    ).sort("created_at", -1).to_list(1000)
+    ).sort("created_at", -1).to_list(20000)
     
     # Get users for names
     user_ids = list(set(d["user_id"] for d in deposits))
