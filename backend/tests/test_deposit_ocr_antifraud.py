@@ -206,7 +206,7 @@ class TestOcrPreInsert:
         monkeypatch.setattr(asgi_ctx.object_store, "upload_file",
                             lambda data, filename, folder: f"{folder}/TEST_{uuid.uuid4().hex}.png")
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio(loop_scope="session")
     async def test_mismatch_blocks_400_and_no_db_record(self, asgi_ctx, monkeypatch, client_user, mongo, tenant_id):
         monkeypatch.setattr(asgi_ctx, "_scan_proof_image", _mk_scan("9988776655"))
         typed = f"TEST1234{uuid.uuid4().hex[:4]}"
@@ -218,7 +218,7 @@ class TestOcrPreInsert:
         assert mongo.wallet_transactions.count_documents({"tenant_id": tenant_id}) == before
         assert mongo.wallet_transactions.find_one({"reference_number_lower": typed.lower()}) is None
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio(loop_scope="session")
     async def test_match_creates_tx_with_ai_scan_fields(self, asgi_ctx, monkeypatch, client_user, mongo, created_tx_ids):
         detected = f"77{uuid.uuid4().hex[:8]}"
         monkeypatch.setattr(asgi_ctx, "_scan_proof_image", _mk_scan(detected, amount=55.5))
@@ -237,7 +237,7 @@ class TestOcrPreInsert:
         assert doc["ai_scan"]["detected_amount"] == 55.5
         assert doc["ai_detected_reference_lower"] == detected.lower()
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio(loop_scope="session")
     async def test_same_image_different_typed_number_blocked_409(self, asgi_ctx, monkeypatch, client_user, mongo, tenant_id, created_tx_ids):
         """THE reported fraud: same screenshot, different typed number."""
         detected = f"88{uuid.uuid4().hex[:8]}"
@@ -256,7 +256,7 @@ class TestOcrPreInsert:
         assert r3.json()["detail"] == "Este comprobante ya fue registrado anteriormente."
         assert mongo.wallet_transactions.count_documents({"tenant_id": tenant_id}) == before
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio(loop_scope="session")
     async def test_ocr_failure_does_not_block(self, asgi_ctx, monkeypatch, client_user, mongo, created_tx_ids):
         async def _boom(proof_url, session_id="ocr"):
             raise RuntimeError("gemini down")
@@ -271,7 +271,7 @@ class TestOcrPreInsert:
         assert "ai_scan" not in doc
         assert "ai_detected_reference_lower" not in doc
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio(loop_scope="session")
     async def test_ocr_none_result_does_not_block(self, asgi_ctx, monkeypatch, client_user, mongo, created_tx_ids):
         async def _empty(proof_url, session_id="ocr"):
             return {}

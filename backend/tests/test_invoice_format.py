@@ -23,7 +23,7 @@ class TestInvoiceFormat:
         """Login as admin and get token"""
         login_response = requests.post(
             f"{BASE_URL}/api/auth/login",
-            json={"identifier": "admin@outletsusaec.com", "password": "admin123"}
+            json={"identifier": "admin@outletsusaec.com", "password": "123456"}
         )
         assert login_response.status_code == 200, f"Login failed: {login_response.text}"
         self.token = login_response.json()["token"]
@@ -34,7 +34,7 @@ class TestInvoiceFormat:
         """Test admin login works"""
         response = requests.post(
             f"{BASE_URL}/api/auth/login",
-            json={"identifier": "admin@outletsusaec.com", "password": "admin123"}
+            json={"identifier": "admin@outletsusaec.com", "password": "123456"}
         )
         assert response.status_code == 200
         data = response.json()
@@ -231,7 +231,7 @@ class TestInvoiceSummaryStats:
         """Login as admin"""
         login_response = requests.post(
             f"{BASE_URL}/api/auth/login",
-            json={"identifier": "admin@outletsusaec.com", "password": "admin123"}
+            json={"identifier": "admin@outletsusaec.com", "password": "123456"}
         )
         assert login_response.status_code == 200
         self.token = login_response.json()["token"]

@@ -17,7 +17,7 @@ class TestDashboardWeekFilter:
         """Login and get auth token"""
         response = requests.post(f"{BASE_URL}/api/auth/login", json={
             "identifier": "admin@outletsusaec.com",
-            "password": "admin123"
+            "password": "123456"
         })
         assert response.status_code == 200, f"Login failed: {response.text}"
         self.token = response.json()["token"]
@@ -117,7 +117,7 @@ class TestPendingPurchasesForInvoice:
         """Login and get auth token"""
         response = requests.post(f"{BASE_URL}/api/auth/login", json={
             "identifier": "admin@outletsusaec.com",
-            "password": "admin123"
+            "password": "123456"
         })
         assert response.status_code == 200, f"Login failed: {response.text}"
         self.token = response.json()["token"]

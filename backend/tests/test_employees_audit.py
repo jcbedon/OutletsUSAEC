@@ -18,7 +18,7 @@ BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
 # Test credentials
 ADMIN_EMAIL = "admin@outletsusaec.com"
-ADMIN_PASSWORD = "admin123"
+ADMIN_PASSWORD = "123456"
 
 # Test employee data
 TEST_EMPLOYEE_EMAIL = f"test_employee_{uuid.uuid4().hex[:8]}@test.com"

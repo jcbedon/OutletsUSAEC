@@ -23,7 +23,7 @@ class TestInvoiceSearchAndAnnul:
         # Login as admin
         login_response = self.session.post(f"{BASE_URL}/api/auth/login", json={
             "identifier": "admin@outletsusaec.com",
-            "password": "admin123"
+            "password": "123456"
         })
         assert login_response.status_code == 200, f"Login failed: {login_response.text}"
         

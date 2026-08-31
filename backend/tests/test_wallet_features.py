@@ -28,7 +28,7 @@ class TestWalletFeatures:
         """Login as admin to get token"""
         response = requests.post(f"{BASE_URL}/api/auth/login", json={
             "identifier": "admin@outletsusaec.com",
-            "password": "admin123"
+            "password": "123456"
         })
         assert response.status_code == 200, f"Admin login failed: {response.text}"
         data = response.json()
