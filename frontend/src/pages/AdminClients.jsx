@@ -677,34 +677,41 @@ https://outletsusaec.shop/`;
                           </div>
                           <div className="text-right">
                             {(() => {
+                              // Total projected como el modal "Crear Factura":
+                              // (compras pendientes + deuda facturada) - (disponible + saldo a favor).
+                              const projTotal = Number(client.projected_total_a_pagar || 0);
+                              const projCredit = Number(client.projected_saldo_a_favor || 0);
                               const invoicedDebt = client.pending_balance < 0 ? Math.abs(client.pending_balance) : 0;
                               const invoicedCredit = client.pending_balance > 0 ? client.pending_balance : 0;
                               const pending = Number(client.pending_to_invoice || 0);
-                              const totalDebt = invoicedDebt + pending;
-                              if (totalDebt > 0.01) {
+                              const floating = Number(client.floating_recharge || 0);
+                              if (projTotal > 0.01) {
                                 return (
                                   <div className="px-3 py-2 rounded-xl bg-red-50 border border-red-200"
-                                    title={`Facturado sin pagar: $${invoicedDebt.toFixed(2)} + Por facturar: $${pending.toFixed(2)}`}>
-                                    <p className="text-xs text-red-600 font-semibold">Deuda Total</p>
+                                    title={`Compras por facturar: $${pending.toFixed(2)} + Deuda anterior: $${invoicedDebt.toFixed(2)} − Disponible: $${floating.toFixed(2)} − Saldo a favor: $${invoicedCredit.toFixed(2)}`}>
+                                    <p className="text-xs text-red-600 font-semibold">Total al Facturar</p>
                                     <p className="text-xl font-bold text-red-600"
-                                      data-testid={`total-debt-${client.customer_id}`}>
-                                      ${totalDebt.toFixed(2)}
+                                      data-testid={`projected-total-${client.customer_id}`}>
+                                      ${projTotal.toFixed(2)}
                                     </p>
-                                    {pending > 0.01 && invoicedDebt > 0.01 && (
+                                    {(pending > 0.01 || floating > 0.01) && (
                                       <p className="text-[10px] text-red-500 font-medium leading-tight">
-                                        ${invoicedDebt.toFixed(2)} fact. + ${pending.toFixed(2)} p/fact
+                                        {pending > 0.01 && `+$${pending.toFixed(2)} p/fact`}
+                                        {invoicedDebt > 0.01 && ` +$${invoicedDebt.toFixed(2)} deuda`}
+                                        {floating > 0.01 && ` −$${floating.toFixed(2)} disp.`}
                                       </p>
                                     )}
                                   </div>
                                 );
                               }
-                              if (invoicedCredit > 0.01) {
+                              if (projCredit > 0.01) {
                                 return (
-                                  <div className="px-3 py-2 rounded-xl bg-green-50">
-                                    <p className="text-xs text-gray-500">Saldo a Favor</p>
-                                    <p className="text-xl font-bold text-green-600"
-                                      data-testid={`pending-balance-${client.customer_id}`}>
-                                      +${invoicedCredit.toFixed(2)}
+                                  <div className="px-3 py-2 rounded-xl bg-green-50 border border-green-200"
+                                    title={`Saldo a favor: $${invoicedCredit.toFixed(2)} + Disponible: $${floating.toFixed(2)} − Compras: $${pending.toFixed(2)}`}>
+                                    <p className="text-xs text-green-700 font-semibold">Saldo a Favor</p>
+                                    <p className="text-xl font-bold text-green-700"
+                                      data-testid={`projected-credit-${client.customer_id}`}>
+                                      +${projCredit.toFixed(2)}
                                     </p>
                                   </div>
                                 );
@@ -713,25 +720,16 @@ https://outletsusaec.shop/`;
                                 <div className="px-3 py-2 rounded-xl bg-gray-50">
                                   <p className="text-xs text-gray-500">Al día</p>
                                   <p className="text-xl font-bold text-gray-600"
-                                    data-testid={`pending-balance-${client.customer_id}`}>
+                                    data-testid={`projected-total-${client.customer_id}`}>
                                     $0.00
                                   </p>
                                 </div>
                               );
                             })()}
-                            {(client.pending_to_invoice || 0) > 0.01 && (client.pending_balance || 0) >= 0 && (
-                              <div
-                                className="mt-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200"
-                                title={`${client.pending_to_invoice_count || 0} compras sin facturar`}
-                                data-testid={`pending-to-invoice-${client.customer_id}`}
-                              >
-                                Por facturar: ${Number(client.pending_to_invoice).toFixed(2)}
-                              </div>
-                            )}
                             {(client.floating_recharge || 0) > 0.01 && (
                               <div
                                 className="mt-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                title="Recarga aprobada pendiente de aplicarse a la próxima factura (aún no existe factura de la semana)"
+                                title="Recarga aprobada pendiente de aplicarse a la próxima factura"
                                 data-testid={`floating-recharge-${client.customer_id}`}
                               >
                                 Disponible: ${Number(client.floating_recharge).toFixed(2)}

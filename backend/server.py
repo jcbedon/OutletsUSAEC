@@ -2357,6 +2357,18 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         applied_to_invoices = deposits_applied_dict.get(user.get("customer_id"), 0)
         floating_recharge = round(max(0.0, float(total_recharges) - float(applied_to_invoices)), 2)
 
+        # Projected totals that mirror the InvoiceDialog preview so the client
+        # list shows the SAME final amount the admin sees after clicking
+        # "Crear Factura": pending purchases + last-invoice debt, minus floating
+        # recharges + last-invoice credit. Excludes shipping (shipping is set
+        # when the shipment is created, not at invoice creation).
+        last_debt = max(0.0, -pending_balance)
+        last_credit = max(0.0, pending_balance)
+        projected_grand_total = pending_to_invoice_amount + last_debt
+        projected_credits = floating_recharge + last_credit
+        projected_total_a_pagar = round(max(0.0, projected_grand_total - projected_credits), 2)
+        projected_saldo_a_favor = round(max(0.0, projected_credits - projected_grand_total), 2)
+
         result.append({
             **user, 
             "wallet_balance": round(total_recharges, 2),
@@ -2373,6 +2385,9 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "real_pending_balance": real_pending_balance,
             # floating_recharge = deposit(s) waiting for the next invoice to absorb them
             "floating_recharge": floating_recharge,
+            # projected_* mirror the "Total a pagar" from the InvoiceDialog preview
+            "projected_total_a_pagar": projected_total_a_pagar,
+            "projected_saldo_a_favor": projected_saldo_a_favor,
         })
     return result
 
@@ -2880,6 +2895,14 @@ async def get_client_info(customer_id: str, current_user: dict = Depends(get_cur
     applied_val = float(applied_agg[0]["total"]) if applied_agg else 0.0
     floating_recharge = round(max(0.0, total_recharges_val - applied_val), 2)
 
+    # Projected totals mirroring the InvoiceDialog preview (see /admin/clients).
+    last_debt = max(0.0, -pending_balance)
+    last_credit = max(0.0, pending_balance)
+    projected_grand_total = pending_total + last_debt
+    projected_credits = floating_recharge + last_credit
+    projected_total_a_pagar = round(max(0.0, projected_grand_total - projected_credits), 2)
+    projected_saldo_a_favor = round(max(0.0, projected_credits - projected_grand_total), 2)
+
     return {
         **user,
         "wallet_balance": wallet["available"] if wallet else 0,
@@ -2891,6 +2914,8 @@ async def get_client_info(customer_id: str, current_user: dict = Depends(get_cur
         "invoiced_debt": last_total_a_pagar,
         "invoiced_credit": last_saldo_a_favor,
         "floating_recharge": floating_recharge,
+        "projected_total_a_pagar": projected_total_a_pagar,
+        "projected_saldo_a_favor": projected_saldo_a_favor,
     }
 
 # ==================== WALLET ENDPOINTS ====================

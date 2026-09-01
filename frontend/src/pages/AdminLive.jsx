@@ -1169,13 +1169,15 @@ export default function AdminLive() {
                         const pendingCount = Number(selectedCustomer.pending_purchases_count || 0);
                         const invoicedDebt = Number(selectedCustomer.invoiced_debt || 0);
                         const invoicedCredit = Number(selectedCustomer.invoiced_credit || 0);
-                        const totalDebt = invoicedDebt + pending; // Deuda real = facturado sin pagar + por facturar
-                        // Color escalonado para que sea visualmente fácil identificar
-                        // a quién hay que cobrar antes del viernes.
+                        const floating = Number(selectedCustomer.floating_recharge || 0);
+                        // Total projected = igual que el preview de "Crear Factura":
+                        // (pendientes + deuda anterior) - (disponible + saldo a favor).
+                        const projTotal = Number(selectedCustomer.projected_total_a_pagar || 0);
+                        const projCredit = Number(selectedCustomer.projected_saldo_a_favor || 0);
                         let debtCls = "";
-                        if (totalDebt >= 150) debtCls = "bg-red-100 text-red-800 border-red-300";
-                        else if (totalDebt >= 50) debtCls = "bg-amber-100 text-amber-800 border-amber-300";
-                        else if (totalDebt > 0) debtCls = "bg-yellow-50 text-yellow-800 border-yellow-200";
+                        if (projTotal >= 150) debtCls = "bg-red-100 text-red-800 border-red-300";
+                        else if (projTotal >= 50) debtCls = "bg-amber-100 text-amber-800 border-amber-300";
+                        else if (projTotal > 0) debtCls = "bg-yellow-50 text-yellow-800 border-yellow-200";
                         return (
                         <div className="mt-2 p-3 bg-green-50 rounded-xl flex items-center gap-2 flex-wrap">
                           <CheckCircle className="h-5 w-5 text-green-600" />
@@ -1187,23 +1189,23 @@ export default function AdminLive() {
                               data-testid={`selected-client-debt-dot-${dbt.color}`}
                             />
                           )}
-                          {invoicedCredit > 0 && (
+                          {projCredit > 0.01 && (
                             <span
                               className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold border rounded-md bg-emerald-50 text-emerald-800 border-emerald-200"
-                              title="Saldo a favor de la última factura"
+                              title={`Saldo a favor: $${invoicedCredit.toFixed(2)} + Disponible: $${floating.toFixed(2)} − Compras: $${pending.toFixed(2)}`}
                               data-testid="selected-client-credit-badge"
                             >
-                              + Saldo a favor: ${invoicedCredit.toFixed(2)}
+                              + Saldo a favor: ${projCredit.toFixed(2)}
                             </span>
                           )}
-                          {totalDebt > 0.01 && (
+                          {projTotal > 0.01 && (
                             <span
                               className={`ml-auto inline-flex items-center gap-1 px-2 py-1 text-xs font-bold border rounded-md ${debtCls}`}
-                              title={`Facturado sin pagar: $${invoicedDebt.toFixed(2)} + Por facturar: $${pending.toFixed(2)} (${pendingCount} compra${pendingCount !== 1 ? "s" : ""})`}
+                              title={`Compras por facturar: $${pending.toFixed(2)} + Deuda anterior: $${invoicedDebt.toFixed(2)} − Disponible: $${floating.toFixed(2)} − Saldo a favor: $${invoicedCredit.toFixed(2)}`}
                               data-testid="selected-client-total-debt-badge"
                             >
                               <Receipt className="h-3 w-3" />
-                              Deuda Total: ${totalDebt.toFixed(2)}
+                              Total al Facturar: ${projTotal.toFixed(2)}
                               {pendingCount > 0 && (
                                 <span className="opacity-70">({pendingCount} p/fact)</span>
                               )}

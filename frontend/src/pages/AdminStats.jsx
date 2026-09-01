@@ -189,12 +189,16 @@ export default function AdminStats() {
     const invoicedDebt = withDebt.reduce((sum, c) => sum + (c.debt_amount || 0), 0);
     // Por facturar (compras sin invoice_id todavía)
     const totalPending = withPending.reduce((sum, c) => sum + (c.pending_to_invoice || 0), 0);
-    // Deuda Total real (combinada) = facturada + por facturar. Refleja lo que el
-    // cliente debe HOY antes incluso de generar la próxima factura.
-    const totalDebtCombined = invoicedDebt + totalPending;
+    // Deuda Total real (proyectada) — igual que el preview de "Crear Factura":
+    // pendientes + deuda anterior − disponible − saldo a favor por cliente,
+    // acotado a >= 0 y sumado.
+    const totalDebtProjected = clients.reduce((sum, c) => sum + Number(c.projected_total_a_pagar || 0), 0);
     const totalCredit = withCredit.reduce((sum, c) => sum + c.pending_balance, 0);
-    // Clientes con deuda real (facturada o por facturar)
-    const clientsWithAnyDebt = clients.filter(c => (c.pending_balance || 0) < 0 || (c.pending_to_invoice || 0) > 0.01).length;
+    const totalCreditProjected = clients.reduce((sum, c) => sum + Number(c.projected_saldo_a_favor || 0), 0);
+    // Clientes con deuda real (proyectada > 0)
+    const clientsWithAnyDebt = clients.filter(c => Number(c.projected_total_a_pagar || 0) > 0.01).length;
+    // Clientes con recarga flotante
+    const totalFloating = clients.reduce((sum, c) => sum + Number(c.floating_recharge || 0), 0);
 
     return {
       total_clients: clients.length,
@@ -202,10 +206,12 @@ export default function AdminStats() {
       clients_with_any_debt: clientsWithAnyDebt,
       clients_with_credit: withCredit.length,
       clients_positive_balance: clients.length - clientsWithAnyDebt,
-      total_debt: totalDebtCombined,
+      total_debt: totalDebtProjected,
       total_debt_invoiced: invoicedDebt,
       total_credit: totalCredit,
+      total_credit_projected: totalCreditProjected,
       total_pending_to_invoice: totalPending,
+      total_floating: totalFloating,
       clients_with_pending: withPending.length,
     };
   }, [filteredClients]);
@@ -617,17 +623,17 @@ export default function AdminStats() {
                 <Card
                   className="rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200"
                   data-testid="kpi-total-debt"
-                  title={`Deuda Total = Facturado sin pagar ($${formatMoney(filteredSummary.total_debt_invoiced)}) + Por facturar ($${formatMoney(filteredSummary.total_pending_to_invoice)})`}
+                  title={`Total al Facturar = (Compras pendientes + Deuda anterior) − (Disponible + Saldo a favor). Igual al preview de "Crear Factura".`}
                 >
                   <CardContent className="p-4">
                     <DollarSign className="h-5 w-5 text-orange-600 mb-2" />
                     <p className="text-2xl font-extrabold text-orange-700">{formatMoney(filteredSummary.total_debt)}</p>
-                    <p className="text-xs text-orange-600">Deuda Total</p>
-                    {filteredSummary.total_pending_to_invoice > 0.01 && (
-                      <p className="text-[10px] text-orange-500 mt-1 leading-tight">
-                        Fact: ${formatMoney(filteredSummary.total_debt_invoiced)} + Por fact: ${formatMoney(filteredSummary.total_pending_to_invoice)}
-                      </p>
-                    )}
+                    <p className="text-xs text-orange-600">Total al Facturar</p>
+                    <p className="text-[10px] text-orange-500 mt-1 leading-tight">
+                      Fact: ${formatMoney(filteredSummary.total_debt_invoiced)} +
+                      P/fact: ${formatMoney(filteredSummary.total_pending_to_invoice)}
+                      {filteredSummary.total_floating > 0.01 && ` − Disp: $${formatMoney(filteredSummary.total_floating)}`}
+                    </p>
                   </CardContent>
                 </Card>
                 <Card className="rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200" data-testid="kpi-total-credit">
