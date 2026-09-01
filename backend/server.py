@@ -7977,6 +7977,22 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         }
         for x in last_inv_agg
     }
+
+    # Recargas aprobadas por cliente (para calcular floating_recharge).
+    recharges_agg = await db.wallet_transactions.aggregate([
+        {"$match": {"user_id": {"$in": user_ids}, "tenant_id": tid,
+                    "type": {"$in": ["deposit", "initial_balance", "referral_bonus"]},
+                    "status": "approved", "is_deleted": {"$ne": True}}},
+        {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}}
+    ]).to_list(len(user_ids))
+    recharges_dict = {r["_id"]: r["total"] for r in recharges_agg}
+
+    # Depósitos ya aplicados a facturas no anuladas (para calcular floating_recharge).
+    deposits_applied_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": {"$in": cust_ids}, "is_annulled": {"$ne": True}}},
+        {"$group": {"_id": "$customer_id", "total": {"$sum": "$deposits_applied"}}}
+    ]).to_list(len(cust_ids) or 1)
+    deposits_applied_dict = {d["_id"]: d.get("total", 0) or 0 for d in deposits_applied_agg}
     
     for client in clients:
         uid = client["id"]
@@ -8011,6 +8027,17 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         pending_to_invoice = round(float(pi.get("pending_to_invoice", 0) or 0), 2)
         pending_count = int(pi.get("pending_count", 0) or 0)
 
+        # Floating recharge + projected total (misma fórmula que /admin/clients)
+        total_recharges = float(recharges_dict.get(uid, 0) or 0)
+        applied_to_invoices = float(deposits_applied_dict.get(client.get("customer_id"), 0) or 0)
+        floating_recharge = round(max(0.0, total_recharges - applied_to_invoices), 2)
+        last_debt = max(0.0, -pending_balance)
+        last_credit = max(0.0, pending_balance)
+        projected_grand_total = pending_to_invoice + last_debt
+        projected_credits = floating_recharge + last_credit
+        projected_total_a_pagar = round(max(0.0, projected_grand_total - projected_credits), 2)
+        projected_saldo_a_favor = round(max(0.0, projected_credits - projected_grand_total), 2)
+
         result.append({
             "id": client["id"],
             "customer_id": client["customer_id"],
@@ -8034,11 +8061,20 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
             "last_invoice_date": (last_inv_dict.get(client.get("customer_id")) or {}).get("date"),
             "last_invoice_amount": (last_inv_dict.get(client.get("customer_id")) or {}).get("amount", 0),
             "last_invoice_number": (last_inv_dict.get(client.get("customer_id")) or {}).get("number"),
+            # Same projected values used everywhere else (mirror InvoiceDialog preview).
+            "floating_recharge": floating_recharge,
+            "projected_total_a_pagar": projected_total_a_pagar,
+            "projected_saldo_a_favor": projected_saldo_a_favor,
         })
     
-    # Sort by debt amount (highest first), then by pending_balance (most negative first)
-    result.sort(key=lambda x: (-x["debt_amount"], x["pending_balance"]))
+    # Sort by projected_total_a_pagar (highest debt first), then alphabetically
+    result.sort(key=lambda x: (-x["projected_total_a_pagar"], x["name"]))
 
+    # Summary recomputado sobre el proyectado
+    clients_with_projected_debt = sum(1 for r in result if r["projected_total_a_pagar"] > 0.01)
+    total_projected_debt = round(sum(r["projected_total_a_pagar"] for r in result), 2)
+    clients_with_projected_credit = sum(1 for r in result if r["projected_saldo_a_favor"] > 0.01)
+    total_projected_credit = round(sum(r["projected_saldo_a_favor"] for r in result), 2)
     total_pending_to_invoice = round(sum(r["pending_to_invoice"] for r in result), 2)
     clients_with_pending = sum(1 for r in result if r["pending_to_invoice"] > 0.01)
 
@@ -8046,11 +8082,17 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         "clients": result,
         "summary": {
             "total_clients": len(clients),
+            # Legacy fields (mantenidos para compatibilidad con reportes antiguos)
             "clients_with_debt": clients_with_debt,
             "total_debt": round(total_debt, 2),
             "clients_positive_balance": len(clients) - clients_with_debt,
             "total_pending_to_invoice": total_pending_to_invoice,
             "clients_with_pending_to_invoice": clients_with_pending,
+            # Proyectado — mismo valor que aparece al abrir "Crear Factura".
+            "clients_with_projected_debt": clients_with_projected_debt,
+            "total_projected_debt": total_projected_debt,
+            "clients_with_projected_credit": clients_with_projected_credit,
+            "total_projected_credit": total_projected_credit,
         }
     }
 
