@@ -2798,26 +2798,23 @@ async def client_purchase_integrity(customer_id: str, current_user: dict = Depen
 
 
 @api_router.get("/admin/backup/full")
-async def full_database_backup(key: str = ""):
+async def full_database_backup(current_user: dict = Depends(get_current_user)):
     """Temporary admin route — ZIP with a JSON dump of every collection in the
-    MongoDB database. For pre-repair snapshots.
+    MongoDB database. For pre-repair snapshots. Restricted to admin role.
 
-    Auth: simple pre-shared key passed as `?key=` in the URL so the file can
-    be downloaded directly from a browser. Key value comes from the
-    BACKUP_API_KEY env var, defaulting to "Outlets" for this one-off use.
-    REMOVE THIS ROUTE (or rotate the key) once the repair is done — a full DB
-    dump is highly sensitive.
+    NOTE: superadmin included implicitly. Employees are rejected regardless of
+    their granular permissions to prevent data exfiltration.
     """
-    expected_key = os.environ.get("BACKUP_API_KEY", "Outlets")
-    if not key or key != expected_key:
-        raise HTTPException(status_code=401, detail="Missing or invalid key")
+    if current_user["role"] not in ("admin", "superadmin"):
+        raise HTTPException(status_code=403, detail="Solo administradores")
 
     import tempfile
     import zipfile
     from datetime import datetime as _dt, timezone as _tz
 
     ts = _dt.now(_tz.utc).strftime("%Y%m%d_%H%M%S")
-    zip_name = f"mongo_backup_{ts}.zip"
+    tenant_tag = current_user.get("tenant_id", "unknown")[:8]
+    zip_name = f"mongo_backup_{tenant_tag}_{ts}.zip"
 
     tmpfile = tempfile.NamedTemporaryFile(
         prefix="mongo_backup_", suffix=".zip", delete=False
@@ -2827,7 +2824,8 @@ async def full_database_backup(key: str = ""):
 
     manifest = {
         "generated_at": _dt.now(_tz.utc).isoformat(),
-        "generated_by": "url_key",
+        "generated_by": current_user.get("email") or current_user.get("user_id"),
+        "tenant_id": current_user.get("tenant_id"),
         "collections": [],
     }
 
@@ -2858,13 +2856,12 @@ async def full_database_backup(key: str = ""):
     try:
         await db.audit_logs.insert_one({
             "id": str(uuid.uuid4()),
-            "tenant_id": None,
-            "user_id": None,
+            "tenant_id": current_user.get("tenant_id"),
+            "user_id": current_user.get("user_id"),
             "action": "admin_full_backup_download",
             "target": zip_name,
             "created_at": _dt.now(_tz.utc).isoformat(),
             "metadata": {
-                "auth": "url_key",
                 "collection_count": len(manifest["collections"]),
                 "total_documents": sum(c["document_count"] for c in manifest["collections"]),
             },
