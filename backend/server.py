@@ -2295,6 +2295,17 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}}
     ]).to_list(len(user_ids))
     recharges_dict = {r["_id"]: r["total"] for r in recharges_agg}
+
+    # Aggregate deposits ALREADY applied to invoices per customer. The delta
+    # against total_recharges tells us how much of the client's wallet is still
+    # "floating" (recharge exists but no invoice absorbed it yet — typical when
+    # the client recharges Monday morning before the first live-invoice of the
+    # week is issued).
+    deposits_applied_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": {"$in": customer_ids_list}, "is_annulled": {"$ne": True}}},
+        {"$group": {"_id": "$customer_id", "total": {"$sum": "$deposits_applied"}}}
+    ]).to_list(len(customer_ids_list) or 1)
+    deposits_applied_dict = {d["_id"]: d.get("total", 0) or 0 for d in deposits_applied_agg}
     
     # Get total_a_pagar from the most recent invoice per customer
     last_invoice_agg = await db.invoices.aggregate([
@@ -2340,6 +2351,12 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         else:
             real_pending_balance = round(-pending_to_invoice_amount, 2) if pending_to_invoice_amount > 0 else 0
 
+        # Floating recharge: recharges present in wallet but NOT yet absorbed
+        # by any non-annulled invoice. Positive value = "disponible" to be
+        # applied on the next invoice of the week.
+        applied_to_invoices = deposits_applied_dict.get(user.get("customer_id"), 0)
+        floating_recharge = round(max(0.0, float(total_recharges) - float(applied_to_invoices)), 2)
+
         result.append({
             **user, 
             "wallet_balance": round(total_recharges, 2),
@@ -2354,6 +2371,8 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "pending_to_invoice_count": pending_to_invoice_count,
             # real_pending_balance = pending_balance combined with pending purchases (see above)
             "real_pending_balance": real_pending_balance,
+            # floating_recharge = deposit(s) waiting for the next invoice to absorb them
+            "floating_recharge": floating_recharge,
         })
     return result
 
@@ -2843,6 +2862,24 @@ async def get_client_info(customer_id: str, current_user: dict = Depends(get_cur
     else:
         real_pending_balance = round(-pending_total, 2) if pending_total > 0 else 0.0
 
+    # Floating recharge: recharge already in wallet but NOT yet applied to any
+    # non-annulled invoice. Non-zero when the client recharged and the next
+    # invoice hasn't been created yet (e.g. Monday morning before the first
+    # live-invoice of the week).
+    total_recharges_agg = await db.wallet_transactions.aggregate([
+        {"$match": {"user_id": user["id"], "tenant_id": tid,
+                    "type": {"$in": ["deposit", "initial_balance", "referral_bonus"]},
+                    "status": "approved", "is_deleted": {"$ne": True}}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]).to_list(1)
+    total_recharges_val = float(total_recharges_agg[0]["total"]) if total_recharges_agg else 0.0
+    applied_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": cust_id, "is_annulled": {"$ne": True}}},
+        {"$group": {"_id": None, "total": {"$sum": "$deposits_applied"}}}
+    ]).to_list(1) if cust_id else []
+    applied_val = float(applied_agg[0]["total"]) if applied_agg else 0.0
+    floating_recharge = round(max(0.0, total_recharges_val - applied_val), 2)
+
     return {
         **user,
         "wallet_balance": wallet["available"] if wallet else 0,
@@ -2853,6 +2890,7 @@ async def get_client_info(customer_id: str, current_user: dict = Depends(get_cur
         "real_pending_balance": real_pending_balance,
         "invoiced_debt": last_total_a_pagar,
         "invoiced_credit": last_saldo_a_favor,
+        "floating_recharge": floating_recharge,
     }
 
 # ==================== WALLET ENDPOINTS ====================
@@ -3063,10 +3101,27 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
             "created_at": tx.get("created_at")
         })
 
+    # Floating recharge: recharge already in wallet but NOT yet applied to any
+    # non-annulled invoice. Client will see this as "disponible por facturar".
+    total_recharges_agg = await db.wallet_transactions.aggregate([
+        {"$match": {"user_id": user_id, "tenant_id": tid,
+                    "type": {"$in": ["deposit", "initial_balance", "referral_bonus"]},
+                    "status": "approved", "is_deleted": {"$ne": True}}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]).to_list(1)
+    total_recharges_val = float(total_recharges_agg[0]["total"]) if total_recharges_agg else 0.0
+    applied_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": customer_id, "is_annulled": {"$ne": True}}},
+        {"$group": {"_id": None, "total": {"$sum": "$deposits_applied"}}}
+    ]).to_list(1) if customer_id else []
+    applied_val = float(applied_agg[0]["total"]) if applied_agg else 0.0
+    floating_recharge = round(max(0.0, total_recharges_val - applied_val), 2)
+
     return {**wallet,
             "total_saldo_pendiente": round(saldo_pend, 2),
             "pending_debt": round(last_total_a_pagar, 2),
             "saldo_a_favor": round(last_saldo_a_favor, 2),
+            "floating_recharge": floating_recharge,
             "pending_deposit_total": round(pending_deposit_total, 2),
             "pending_deposits": pending_deposits_info}
 

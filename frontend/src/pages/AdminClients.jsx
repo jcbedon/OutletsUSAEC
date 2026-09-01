@@ -728,18 +728,51 @@ https://outletsusaec.shop/`;
                                 Por facturar: ${Number(client.pending_to_invoice).toFixed(2)}
                               </div>
                             )}
+                            {(client.floating_recharge || 0) > 0.01 && (
+                              <div
+                                className="mt-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                title="Recarga aprobada pendiente de aplicarse a la próxima factura (aún no existe factura de la semana)"
+                                data-testid={`floating-recharge-${client.customer_id}`}
+                              >
+                                Disponible: ${Number(client.floating_recharge).toFixed(2)}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            className="rounded-lg border-orange-200 text-orange-600 hover:bg-orange-50"
-                            onClick={() => handleToggleClientStatus(client)}
-                            data-testid={`disable-client-${client.customer_id}`}
-                          >
-                            <UserX className="h-4 w-4 mr-1" /> Inhabilitar
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 rounded-lg text-orange-600 hover:bg-orange-50"
+                              onClick={() => handleToggleClientStatus(client)}
+                              data-testid={`disable-client-${client.customer_id}`}
+                              title="Inhabilitar cliente"
+                            >
+                              <UserX className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 rounded-lg text-purple-700 hover:bg-purple-50"
+                              onClick={() => handleRecalcClient(client)}
+                              disabled={recalcingClientId === client.customer_id}
+                              data-testid={`recalc-client-${client.customer_id}`}
+                              title="Recalcular facturas"
+                            >
+                              <RefreshCw className={`h-4 w-4 ${recalcingClientId === client.customer_id ? "animate-spin" : ""}`} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 rounded-lg text-teal-700 hover:bg-teal-50"
+                              onClick={() => handleOpenDiagnostics(client)}
+                              data-testid={`diagnostics-client-${client.customer_id}`}
+                              title="Ver diagnóstico de historial"
+                            >
+                              <Stethoscope className="h-4 w-4" />
+                            </Button>
+                          </div>
                           <div className="flex items-center gap-2">
                             <Button 
                               variant="outline" 
@@ -749,28 +782,6 @@ https://outletsusaec.shop/`;
                               data-testid={`invoice-client-${client.customer_id}`}
                             >
                               <FileText className="h-4 w-4 mr-1" /> Factura
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="rounded-lg border-purple-200 text-purple-700 hover:bg-purple-50"
-                              onClick={() => handleRecalcClient(client)}
-                              disabled={recalcingClientId === client.customer_id}
-                              data-testid={`recalc-client-${client.customer_id}`}
-                              title={`Recalcular todas las facturas de ${client.name}`}
-                            >
-                              <RefreshCw className={`h-4 w-4 mr-1 ${recalcingClientId === client.customer_id ? "animate-spin" : ""}`} />
-                              Recalcular
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="rounded-lg border-teal-200 text-teal-700 hover:bg-teal-50"
-                              onClick={() => handleOpenDiagnostics(client)}
-                              data-testid={`diagnostics-client-${client.customer_id}`}
-                              title={`Ver diagnóstico de historial de ${client.name}`}
-                            >
-                              <Stethoscope className="h-4 w-4 mr-1" /> Diagnóstico
                             </Button>
                             <Button variant="outline" size="sm" className="rounded-lg"
                               onClick={() => handleOpenEditDialog(client)}
