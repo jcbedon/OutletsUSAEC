@@ -1,4 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Form as FastAPIForm, Response
+from fastapi.responses import FileResponse
+from bson import json_util as _bson_json_util
+import json
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -2792,6 +2795,86 @@ async def client_purchase_integrity(customer_id: str, current_user: dict = Depen
         "purchase_ids_not_found": purchase_ids_not_found,
         "is_healthy": not orphans_in_invoice and not cross_invoice_conflicts and not purchase_ids_not_found,
     }
+
+
+@api_router.get("/admin/backup/full")
+async def full_database_backup(current_user: dict = Depends(get_current_user)):
+    """Temporary admin route — ZIP with a JSON dump of every collection in the
+    MongoDB database. For pre-repair snapshots. Restricted to admin role.
+
+    NOTE: superadmin included implicitly. Employees are rejected regardless of
+    their granular permissions to prevent data exfiltration.
+    """
+    if current_user["role"] not in ("admin", "superadmin"):
+        raise HTTPException(status_code=403, detail="Solo administradores")
+
+    import tempfile
+    import zipfile
+    from datetime import datetime as _dt, timezone as _tz
+
+    ts = _dt.now(_tz.utc).strftime("%Y%m%d_%H%M%S")
+    tenant_tag = current_user.get("tenant_id", "unknown")[:8]
+    zip_name = f"mongo_backup_{tenant_tag}_{ts}.zip"
+
+    tmpfile = tempfile.NamedTemporaryFile(
+        prefix="mongo_backup_", suffix=".zip", delete=False
+    )
+    tmpfile.close()
+    zip_path = tmpfile.name
+
+    manifest = {
+        "generated_at": _dt.now(_tz.utc).isoformat(),
+        "generated_by": current_user.get("email") or current_user.get("user_id"),
+        "tenant_id": current_user.get("tenant_id"),
+        "collections": [],
+    }
+
+    try:
+        collection_names = await db.list_collection_names()
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+            for name in sorted(collection_names):
+                # Dump the full collection as a JSON array using bson.json_util
+                # so ObjectId, datetime, Decimal128, etc. serialize round-trip safely.
+                docs = await db[name].find({}).to_list(length=None)
+                payload = _bson_json_util.dumps(docs, indent=2, ensure_ascii=False)
+                zf.writestr(f"{name}.json", payload)
+                manifest["collections"].append({
+                    "name": name,
+                    "document_count": len(docs),
+                    "byte_size": len(payload.encode("utf-8")),
+                })
+            zf.writestr("_manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False, default=str))
+    except Exception as e:
+        try:
+            os.unlink(zip_path)
+        except OSError:
+            pass
+        logging.exception("Full backup failed")
+        raise HTTPException(status_code=500, detail=f"Backup falló: {e}")
+
+    # Log the export so we have an audit trail of who pulled a full DB dump.
+    try:
+        await db.audit_logs.insert_one({
+            "id": str(uuid.uuid4()),
+            "tenant_id": current_user.get("tenant_id"),
+            "user_id": current_user.get("user_id"),
+            "action": "admin_full_backup_download",
+            "target": zip_name,
+            "created_at": _dt.now(_tz.utc).isoformat(),
+            "metadata": {
+                "collection_count": len(manifest["collections"]),
+                "total_documents": sum(c["document_count"] for c in manifest["collections"]),
+            },
+        })
+    except Exception as _audit_err:
+        logging.warning(f"backup audit log failed: {_audit_err}")
+
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename=zip_name,
+        headers={"X-Backup-Collections": str(len(manifest["collections"]))},
+    )
 
 
 @api_router.get("/admin/clients/{customer_id}/diagnostics")
