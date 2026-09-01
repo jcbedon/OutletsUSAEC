@@ -129,6 +129,8 @@ export default function AdminLive() {
   const submittingRef = useRef(false);
   const [newLiveTitle, setNewLiveTitle] = useState("");
   const [newLiveStore, setNewLiveStore] = useState("");
+  // Search filter for the lives list (títulos + tienda). Applied to all sections.
+  const [livesSearchQuery, setLivesSearchQuery] = useState("");
   const [createLiveDialogOpen, setCreateLiveDialogOpen] = useState(false);
   
   // Edit Live state
@@ -811,15 +813,57 @@ export default function AdminLive() {
             {/* All Lives - Grouped by status */}
             {lives.length > 0 && (
               <div className="space-y-6">
+                {/* Search filter — filtra por título o tienda (aplica a los 3 grupos) */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Input
+                    placeholder="Buscar live por título o tienda..."
+                    value={livesSearchQuery}
+                    onChange={(e) => setLivesSearchQuery(e.target.value)}
+                    className="pl-9 rounded-xl bg-white border-slate-200"
+                    data-testid="lives-search-input"
+                  />
+                  {livesSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setLivesSearchQuery("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs font-semibold"
+                      data-testid="lives-search-clear"
+                    >
+                      Limpiar
+                    </button>
+                  )}
+                </div>
+                {(() => {
+                  const q = livesSearchQuery.trim().toLowerCase();
+                  const matchesQuery = (l) => {
+                    if (!q) return true;
+                    return (
+                      (l.title || "").toLowerCase().includes(q) ||
+                      (l.store || "").toLowerCase().includes(q)
+                    );
+                  };
+                  const activeLives = lives.filter(l => l.status === "active" && matchesQuery(l));
+                  const inactiveLives = lives.filter(l => l.status === "inactive" && matchesQuery(l));
+                  const matchedFinalized = lives.filter(l => (l.status === "ended" || l.status === "completed") && matchesQuery(l));
+                  if (q && activeLives.length === 0 && inactiveLives.length === 0 && matchedFinalized.length === 0) {
+                    return (
+                      <div className="text-center py-6 text-sm text-slate-500 bg-slate-50 rounded-xl" data-testid="lives-search-empty">
+                        Ningún live coincide con "{livesSearchQuery}"
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 {/* Active Lives */}
-                {lives.filter(l => l.status === "active").length > 0 && (
+                {lives.filter(l => l.status === "active" && (!livesSearchQuery.trim() || (l.title || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()) || (l.store || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()))).length > 0 && (
                   <div>
                     <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                       <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
                       Lives Activos
                     </h2>
                     <div className="space-y-3">
-                      {lives.filter(l => l.status === "active").map((live) => (
+                      {lives.filter(l => l.status === "active" && (!livesSearchQuery.trim() || (l.title || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()) || (l.store || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()))).map((live) => (
                         <Card key={live.id} className="rounded-xl border-green-200 bg-green-50/50">
                           <CardContent className="p-4 flex items-center justify-between">
                             <div>
@@ -848,11 +892,11 @@ export default function AdminLive() {
                 )}
 
                 {/* Inactive Lives (not started) */}
-                {lives.filter(l => l.status === "inactive").length > 0 && (
+                {lives.filter(l => l.status === "inactive" && (!livesSearchQuery.trim() || (l.title || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()) || (l.store || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()))).length > 0 && (
                   <div>
                     <h2 className="text-lg font-bold text-slate-800 mb-4">Lives Pendientes</h2>
                     <div className="space-y-3">
-                      {lives.filter(l => l.status === "inactive").map((live) => (
+                      {lives.filter(l => l.status === "inactive" && (!livesSearchQuery.trim() || (l.title || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()) || (l.store || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()))).map((live) => (
                         <Card key={live.id} className="rounded-xl">
                           <CardContent className="p-4 flex items-center justify-between">
                             <div>
@@ -878,7 +922,12 @@ export default function AdminLive() {
 
                 {/* Ended Lives — filtered/grouped by week with Monday 12:00 cutoff */}
                 {(() => {
-                  const finalizedLives = lives.filter(l => l.status === "ended" || l.status === "completed");
+                  const q = livesSearchQuery.trim().toLowerCase();
+                  const finalizedLives = lives.filter(l => {
+                    if (!(l.status === "ended" || l.status === "completed")) return false;
+                    if (!q) return true;
+                    return (l.title || "").toLowerCase().includes(q) || (l.store || "").toLowerCase().includes(q);
+                  });
                   if (finalizedLives.length === 0) return null;
 
                   // Build the week-bucket dropdown options (always include current week)
