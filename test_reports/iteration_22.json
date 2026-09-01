@@ -1,0 +1,52 @@
+{
+  "summary": "Backend-only retest of the iteration_22 fix (server.py 5990-6009: two-step counter = update_one($setOnInsert seq=legacy_count, upsert) followed by find_one_and_update($inc, return_document=AFTER)). RESULT: the legacy-alignment race reported as 'minor' in iteration_21 is FIXED. (1) NEW test tests/test_invoice_number_counter.py::TestLegacyAlignment::test_legacy_alignment_under_concurrency (5 injected legacy invoices CID-001..CID-005, counter doc absent, 5 CONCURRENT POSTs with DISJOINT purchase_ids) -> 5x200 and invoice_numbers exactly CID-006..CID-010, no duplicates, no gaps. Executed 18 independent runs: invoice numbering was correct in 18/18 (previous repro tests/test_invoice_number_legacy_race.py failed ~33% before the fix; now 0/18 failures on numbering). (2) Fresh customer: 4-way and 8-way concurrent disjoint POSTs -> CID-001..CID-004 and CID-001..CID-008 exact, contiguous. (3) Sequential: 3 serial invoices -> CID-001/-002/-003, counter doc seq=3, tenant scoped, per-customer isolation OK. (4) TOCTOU regression: 5 concurrent POSTs with IDENTICAL purchase_ids -> exactly 1x200 + 4x409, single invoice doc, purchase-integrity healthy. (5) Guards: unknown purchase_id -> 400, already-invoiced -> 409, soft-deleted -> 409 with no invoice created. (6) Requested regression suites: tests/test_invoice_atomic_claim.py + test_invoice_concurrent_race.py + test_invoice_double_submit_guard.py = 25/25 PASS; tests/test_invoice_number_counter.py 11/11 PASS; tests/test_invoice_number_legacy_race.py 1/1 PASS => 37/37 PASS. (7) Full suite: 340 passed / 17 failed / 6 skipped - the same pre-existing failure set as iteration_20/21 (EMERGENT_LLM_KEY missing -> OCR/upload, employees/audit RBAC, admin_recharge, invoice_format legacy expectations, multi_tenant isolation, stats_taxes, idor retest). No new failures, no create_invoice 500s in backend.err.log. ONE residual latent defect confirmed: db.counters still has NO unique index, and in 2/18 concurrent-burst runs TWO counter documents were created for the same (tenant_id, scope, customer_id) key (~11%). Numbers stayed correct in those runs, but the duplicate counter doc is a structural risk: subsequent find_one_and_update may select either document and hand out an already-used number.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "db.counters (indexes)",
+        "issue": "No unique index on (tenant_id, scope, customer_id). Reproduced with the new concurrency test: 2 of 18 runs ended with 2 counter documents for the same key (upsert on a non-unique key can insert twice). Numbering was still correct in those runs, but from that state two divergent sequences exist and a duplicate invoice_number becomes possible. Fix: create a unique compound index on counters(tenant_id, scope, customer_id) in the index bootstrap (currently 33 indexes ensured at startup, none on counters)."
+      },
+      {
+        "endpoint": "db.invoices (indexes)",
+        "issue": "Still no unique index on (tenant_id, invoice_number). Adding it + one retry on DuplicateKeyError would make duplicate numbers structurally impossible instead of relying only on counter correctness."
+      },
+      {
+        "endpoint": "POST /api/invoices",
+        "issue": "Open from iteration_20 (unchanged, out of scope of this retest): atomic-claim rollback is not fair (two requests each winning a different subset both roll back -> 0 invoices created); the purchases query and claim filter do not include {'is_deleted': {'$ne': True}} (the 409 relies on the in-memory check only); GET /api/admin/clients/{cid}/purchase-integrity returns 422 instead of 401 without Authorization."
+      },
+      {
+        "endpoint": "test data hygiene",
+        "issue": "Some invoice test suites (double_submit_guard etc.) do not delete their db.counters docs on teardown; 9 orphan counters for deleted TEST clients were found and removed manually. Add counters cleanup to those fixtures."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_invoice_number_counter.py",
+    "/app/backend/tests/test_invoice_number_legacy_race.py",
+    "/app/backend/tests/test_invoice_atomic_claim.py",
+    "/app/backend/tests/test_invoice_double_submit_guard.py",
+    "/app/backend/tests/test_invoice_concurrent_race.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Add a UNIQUE index on counters(tenant_id, scope, customer_id) in the startup index bootstrap - only remaining hole in the numbering design (2/18 concurrent bursts created a second counter doc).",
+    "Recommended hardening: unique index on invoices(tenant_id, invoice_number) + retry once on DuplicateKeyError.",
+    "Pre-existing / unrelated (still open): EMERGENT_LLM_KEY not configured (OCR/upload 500s), employees/audit RBAC hole, tenant-isolation failures in test_multi_tenant_saas.py, admin_recharge and invoice_format legacy expectations."
+  ],
+  "critical_code_review_comments": [
+    "server.py 5996-6009: the $setOnInsert(seq=legacy_count) + $inc(return AFTER) two-step is the correct primitive; legacy alignment is now part of initialization, so the read-then-write window of iteration_21 is gone (verified 18x with 5-way concurrency on a legacy customer).",
+    "The counter_key upsert is only safe once a unique index exists on that key - without it Mongo can insert two documents concurrently. This is the last piece of the fix.",
+    "legacy_count = count_documents(...) is still executed on every invoice creation (extra count query on a hot path); it is only used by $setOnInsert, so it could be skipped when the counter document already exists (find_one first) for performance on large tenants.",
+    "The counter is never decremented on annul/delete, so numbers show gaps after annulments - accounting-friendly, but confirm intended."
+  ],
+  "updated_files": ["/app/backend/tests/test_invoice_number_counter.py"],
+  "success_rate": {"backend": "100% on the requested scope (37/37 invoice numbering + guard tests); full suite 340/357 with 17 pre-existing unrelated failures", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "Temporary TESTCOUNTER*/TESTLEGRACE* clients + purchases + injected legacy invoice docs, cleaned by module fixtures; additionally removed 9 orphan db.counters docs left by older test runs.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin@outletsusaec.com / 123456 (from /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Re-run: pytest tests/test_invoice_number_counter.py tests/test_invoice_number_legacy_race.py tests/test_invoice_atomic_claim.py tests/test_invoice_concurrent_race.py tests/test_invoice_double_submit_guard.py (expect 37/37). test_legacy_alignment_under_concurrency also asserts that exactly ONE counter doc exists - that assertion fails ~11% of runs until the unique index on counters(tenant_id, scope, customer_id) is added; run it 10+ times to validate that fix. Full-suite baseline: 340 passed / 17 failed / 6 skipped (same pre-existing failures as iteration_20/21).",
+  "rca_of_the_issue": "Iteration_21 residual bug: legacy alignment ran AFTER the $inc, so on a legacy customer's first concurrent burst a request holding a low seq could print a number already present in history. Iteration_22 fix moves initialization into an idempotent $setOnInsert upsert executed before the $inc, so every allocation starts from legacy_count - verified fixed. Remaining latent risk: the initializing upsert targets a non-unique key, so two concurrent inserts can create two counter documents (observed 11% of bursts); a unique compound index on the counter key closes it."
+}

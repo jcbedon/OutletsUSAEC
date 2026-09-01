@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import ReturnDocument
 import os
 import logging
 from pathlib import Path
@@ -160,6 +161,19 @@ async def _ensure_indexes():
             await db[coll].create_index(keys, background=True)
         except Exception as _idx_err:
             logging.warning(f"[indexes] {coll} {keys} skipped: {_idx_err}")
+    # Unique index on counters (tenant_id, scope, customer_id) — needed so the
+    # $setOnInsert upsert in create_invoice cannot race and produce two counter
+    # docs for the same key. Without this, concurrent first-time creates for a
+    # customer could yield divergent number sequences.
+    try:
+        await db.counters.create_index(
+            [("tenant_id", 1), ("scope", 1), ("customer_id", 1)],
+            unique=True,
+            name="uniq_tenant_scope_customer",
+            background=True,
+        )
+    except Exception as _idx_err:
+        logging.warning(f"[indexes] counters unique idx skipped: {_idx_err}")
     logging.info(f"[indexes] ensured {len(spec)} compound indexes")
 
 
@@ -2697,6 +2711,88 @@ async def get_client_password(user_id: str, current_user: dict = Depends(get_cur
         "password_plain": user.get("password_plain"),
         "available": bool(user.get("password_plain")),
     }
+
+@api_router.get("/admin/clients/{customer_id}/purchase-integrity")
+async def client_purchase_integrity(customer_id: str, current_user: dict = Depends(get_current_user)):
+    """Detect orphan/duplicate state between a client's purchases and their
+    invoices. Used to investigate the "already-invoiced items reappearing as
+    pending" bug (production KIWI). Returns three lists:
+      • orphans_in_invoice: purchases whose invoice_id points to an invoice that
+        does NOT list them in purchase_ids (silent detach — the exact symptom).
+      • purchase_ids_not_found: invoice.purchase_ids that point to purchases
+        which no longer exist or belong to a different customer.
+      • cross_invoice_conflicts: purchases whose invoice_id points to invoice A
+        but that ALSO appear in invoice B's purchase_ids (race / stale UI).
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    cid = customer_id.upper().strip()
+
+    invoices = await db.invoices.find(
+        {"tenant_id": tid, "customer_id": cid},
+        {"_id": 0, "id": 1, "invoice_number": 1, "purchase_ids": 1, "is_annulled": 1, "status": 1, "created_at": 1}
+    ).to_list(20000)
+
+    purchases = await db.purchases.find(
+        {"tenant_id": tid, "customer_id": cid},
+        {"_id": 0, "id": 1, "invoice_id": 1, "item_name": 1, "total": 1, "created_at": 1, "is_deleted": 1}
+    ).to_list(20000)
+
+    inv_by_id = {i["id"]: i for i in invoices}
+    purchase_by_id = {p["id"]: p for p in purchases}
+
+    orphans_in_invoice = []
+    cross_invoice_conflicts = []
+    for p in purchases:
+        inv_id = p.get("invoice_id")
+        if not inv_id:
+            continue
+        inv = inv_by_id.get(inv_id)
+        if not inv:
+            orphans_in_invoice.append({
+                **p, "reason": "invoice_not_found_or_different_customer"
+            })
+            continue
+        if p["id"] not in inv.get("purchase_ids", []):
+            orphans_in_invoice.append({
+                **p, "reason": "not_in_invoice_purchase_ids",
+                "invoice_number": inv.get("invoice_number")
+            })
+        for other_inv in invoices:
+            if other_inv["id"] == inv_id:
+                continue
+            if p["id"] in other_inv.get("purchase_ids", []):
+                cross_invoice_conflicts.append({
+                    "purchase_id": p["id"],
+                    "item_name": p.get("item_name"),
+                    "linked_invoice_id": inv_id,
+                    "linked_invoice_number": inv.get("invoice_number"),
+                    "also_in_invoice_id": other_inv["id"],
+                    "also_in_invoice_number": other_inv.get("invoice_number"),
+                    "also_in_is_annulled": other_inv.get("is_annulled", False),
+                })
+
+    purchase_ids_not_found = []
+    for inv in invoices:
+        for pid in inv.get("purchase_ids", []) or []:
+            if pid not in purchase_by_id:
+                purchase_ids_not_found.append({
+                    "invoice_id": inv["id"],
+                    "invoice_number": inv.get("invoice_number"),
+                    "missing_purchase_id": pid,
+                })
+
+    return {
+        "customer_id": cid,
+        "invoice_count": len(invoices),
+        "purchase_count": len(purchases),
+        "orphans_in_invoice": orphans_in_invoice,
+        "cross_invoice_conflicts": cross_invoice_conflicts,
+        "purchase_ids_not_found": purchase_ids_not_found,
+        "is_healthy": not orphans_in_invoice and not cross_invoice_conflicts and not purchase_ids_not_found,
+    }
+
 
 @api_router.get("/admin/clients/{customer_id}/diagnostics")
 async def client_history_diagnostics(customer_id: str, current_user: dict = Depends(get_current_user)):
@@ -5870,6 +5966,33 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     
     if len(purchases) != len(purchase_ids):
         raise HTTPException(status_code=400, detail="Algunas compras no fueron encontradas")
+
+    # Guard against race conditions / stale UI submits: only PENDING purchases
+    # (no invoice_id yet, not soft-deleted) may be included in a new invoice.
+    # Without this, a double-click or a double-tab submit silently reassigned
+    # already-invoiced purchases to the new invoice, leaving the old invoice
+    # with orphan IDs and resurfacing those items as "pending" again — the
+    # exact production bug reported for KIWI.
+    already_invoiced = [p for p in purchases if p.get("invoice_id")]
+    if already_invoiced:
+        details = ", ".join(
+            f"{p.get('item_name', p['id'])} (factura {p.get('invoice_id')})"
+            for p in already_invoiced[:5]
+        )
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{len(already_invoiced)} compra(s) ya están facturadas: {details}. "
+                "Refresca la página y vuelve a intentarlo."
+            )
+        )
+    soft_deleted = [p for p in purchases if p.get("is_deleted")]
+    if soft_deleted:
+        details = ", ".join(p.get("item_name", p["id"]) for p in soft_deleted[:5])
+        raise HTTPException(
+            status_code=409,
+            detail=f"{len(soft_deleted)} compra(s) están eliminadas y no pueden facturarse: {details}."
+        )
     
     # Calculate totals
     subtotal = sum(p["price"] for p in purchases)
@@ -5877,10 +6000,25 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     total_commission = sum(p.get("commission", 0) for p in purchases)
     total = sum(p["total"] for p in purchases)
     
-    # Generate invoice number using customer_id + sequential number
-    # Count existing invoices for this customer to get the next number
-    customer_invoice_count = await db.invoices.count_documents({"customer_id": customer_id, "tenant_id": tid})
-    customer_seq = customer_invoice_count + 1
+    # Generate invoice number using an ATOMIC counter per (tenant, customer)
+    # so two concurrent POSTs can never share the same number.
+    # Two-step to also handle tenants with pre-counter (legacy) invoices:
+    #   1. setOnInsert seeds the counter to legacy_count so the first $inc
+    #      produces legacy_count+1, avoiding a collision with legacy -00X ids.
+    #   2. $inc returns the next number atomically.
+    counter_key = {"tenant_id": tid, "scope": "invoice_number", "customer_id": customer_id}
+    legacy_count = await db.invoices.count_documents({"customer_id": customer_id, "tenant_id": tid})
+    await db.counters.update_one(
+        counter_key,
+        {"$setOnInsert": {"seq": legacy_count}},
+        upsert=True,
+    )
+    counter_doc = await db.counters.find_one_and_update(
+        counter_key,
+        {"$inc": {"seq": 1}},
+        return_document=ReturnDocument.AFTER,
+    )
+    customer_seq = counter_doc["seq"]
     invoice_number = f"{customer_id}-{customer_seq:03d}"
     
     invoice = Invoice(
@@ -5959,12 +6097,37 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
     
     await db.invoices.insert_one(invoice_dict)
     
-    # Mark purchases as invoiced
+    # Mark purchases as invoiced — ATOMIC CLAIM.
+    # The optional pre-check above catches most stale submits but is TOCTOU-
+    # racy against two truly-concurrent submits. To close the race we filter
+    # on invoice_id being still null AT THE MOMENT OF UPDATE. If the number of
+    # modified documents does not match the request we roll back: another
+    # concurrent create_invoice already claimed some/all of these purchases,
+    # so we release any that WE managed to claim (they belong to the winner's
+    # invoice) and delete our just-inserted invoice document.
     now = datetime.now(timezone.utc).isoformat()
-    await db.purchases.update_many(
-        {"id": {"$in": purchase_ids}, "tenant_id": tid},
+    claim_result = await db.purchases.update_many(
+        {
+            "id": {"$in": purchase_ids},
+            "tenant_id": tid,
+            "$or": [{"invoice_id": None}, {"invoice_id": {"$exists": False}}, {"invoice_id": ""}],
+        },
         {"$set": {"invoice_id": invoice.id, "invoiced_at": now}}
     )
+    if claim_result.modified_count != len(purchase_ids):
+        # Rollback: release the purchases we may have claimed and drop the invoice.
+        await db.purchases.update_many(
+            {"id": {"$in": purchase_ids}, "tenant_id": tid, "invoice_id": invoice.id},
+            {"$set": {"invoice_id": None}, "$unset": {"invoiced_at": ""}}
+        )
+        await db.invoices.delete_one({"id": invoice.id, "tenant_id": tid})
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Otra factura reclamó estas compras al mismo tiempo. "
+                "Refresca la página y vuelve a intentarlo."
+            )
+        )
 
     # Recalculate the full invoice chain to ensure consistency across invoices
     # (handles edge cases like shipping costs added later on previous invoices)
