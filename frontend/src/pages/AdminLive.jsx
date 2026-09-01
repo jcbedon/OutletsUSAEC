@@ -1801,6 +1801,20 @@ export default function AdminLive() {
                       ) : (
                         <p className="text-xs text-slate-500">Este producto no pertenece a ninguna factura.</p>
                       )}
+                      {deletePreview.live && (
+                        <div className="rounded-lg p-2.5 border text-xs bg-indigo-50 border-indigo-200" data-testid="delete-preview-live-block">
+                          <p className="text-indigo-800">
+                            También se descontará del live{" "}
+                            <span className="font-semibold text-indigo-900">{deletePreview.live.title}</span>
+                            {deletePreview.live.store && <> ({deletePreview.live.store})</>}
+                            {deletePreview.live.status && (
+                              <span className={`ml-1 text-[10px] uppercase font-bold px-1 py-0.5 rounded ${deletePreview.live.status === "active" ? "text-emerald-700 bg-emerald-100" : "text-slate-600 bg-slate-100"}`}>
+                                {deletePreview.live.status}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

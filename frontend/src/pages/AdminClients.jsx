@@ -677,8 +677,6 @@ https://outletsusaec.shop/`;
                           </div>
                           <div className="text-right">
                             {(() => {
-                              // Total projected como el modal "Crear Factura":
-                              // (compras pendientes + deuda facturada) - (disponible + saldo a favor).
                               const projTotal = Number(client.projected_total_a_pagar || 0);
                               const projCredit = Number(client.projected_saldo_a_favor || 0);
                               const invoicedDebt = client.pending_balance < 0 ? Math.abs(client.pending_balance) : 0;
@@ -694,13 +692,6 @@ https://outletsusaec.shop/`;
                                       data-testid={`projected-total-${client.customer_id}`}>
                                       ${projTotal.toFixed(2)}
                                     </p>
-                                    {(pending > 0.01 || floating > 0.01) && (
-                                      <p className="text-[10px] text-red-500 font-medium leading-tight">
-                                        {pending > 0.01 && `+$${pending.toFixed(2)} p/fact`}
-                                        {invoicedDebt > 0.01 && ` +$${invoicedDebt.toFixed(2)} deuda`}
-                                        {floating > 0.01 && ` −$${floating.toFixed(2)} disp.`}
-                                      </p>
-                                    )}
                                   </div>
                                 );
                               }
@@ -729,10 +720,10 @@ https://outletsusaec.shop/`;
                             {(client.floating_recharge || 0) > 0.01 && (
                               <div
                                 className="mt-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"
-                                title="Recarga aprobada pendiente de aplicarse a la próxima factura"
+                                title="Recarga aprobada aún no aplicada a factura"
                                 data-testid={`floating-recharge-${client.customer_id}`}
                               >
-                                Disponible: ${Number(client.floating_recharge).toFixed(2)}
+                                Recarga pendiente de facturar: ${Number(client.floating_recharge).toFixed(2)}
                               </div>
                             )}
                           </div>

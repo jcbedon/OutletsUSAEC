@@ -4859,6 +4859,24 @@ async def get_delete_purchase_preview(purchase_id: str, current_user: dict = Dep
         "belongs_to_invoice": False,
     }
 
+    # Attach live info so the confirmation dialog can warn the admin that this
+    # item will also be discounted from its live totals (purchase_count,
+    # total_sales, total_commissions).
+    live_id = purchase.get("live_id")
+    if live_id:
+        live = await db.lives.find_one(
+            {"id": live_id, "tenant_id": tid},
+            {"_id": 0, "id": 1, "title": 1, "store": 1, "status": 1, "created_at": 1}
+        )
+        if live:
+            preview["live"] = {
+                "id": live["id"],
+                "title": live.get("title"),
+                "store": live.get("store"),
+                "status": live.get("status"),
+                "created_at": live.get("created_at"),
+            }
+
     invoice_id = purchase.get("invoice_id")
     if invoice_id:
         invoice = await db.invoices.find_one(
