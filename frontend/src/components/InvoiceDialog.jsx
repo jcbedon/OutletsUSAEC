@@ -352,33 +352,17 @@ export default function InvoiceDialog({ open, onOpenChange, client, tenantInfo, 
 
   const handleRemoveItem = async (purchaseId) => {
     if (!currentInvoice) return;
-
+    
     if (currentInvoice.purchases?.length <= 1) {
       toast.error("No puedes quitar el último artículo");
       return;
     }
-
-    // Locate the purchase to enrich the confirmation with its live context so
-    // the admin sees exactly which live this item was registered in and can
-    // decide informedly before detaching it from the invoice.
-    const target = (currentInvoice.purchases || []).find((p) => p.id === purchaseId);
-    const liveTitle = target?.live_title || target?.live?.title || null;
-    const liveId = target?.live_id || null;
-    const itemLabel = target?.item_name || "este artículo";
-    let msg = `¿Quitar "${itemLabel}" de la factura?`;
-    if (liveId) {
-      msg += `\n\nPertenece al live: ${liveTitle || liveId}`;
-      msg += `\nEl artículo NO se elimina del live, solo se despega de esta factura.`;
-    }
-    if (!window.confirm(msg)) return;
-
+    
     try {
       setLoading(true);
       await removeItemFromInvoice(currentInvoice.id, purchaseId);
-      toast.success(liveId
-        ? `Artículo removido de la factura (sigue registrado en el live ${liveTitle || liveId})`
-        : "Artículo removido de la factura");
-
+      toast.success("Artículo removido de la factura");
+      
       // Reload invoice
       const invoiceRes = await getInvoiceDetail(currentInvoice.id);
       setCurrentInvoice(invoiceRes.data);

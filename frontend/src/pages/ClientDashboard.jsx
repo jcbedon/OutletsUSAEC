@@ -407,13 +407,11 @@ export default function ClientDashboard() {
               const saldoFavor = wallet?.saldo_a_favor || 0;
               const pendingDeposit = wallet?.pending_deposit_total || 0;
               const pendingDepositsList = wallet?.pending_deposits || [];
-              const floatingRecharge = wallet?.floating_recharge || 0;
               const hasDebt = pendingDebt > 0;
               const hasFavor = saldoFavor > 0;
               const hasPendingDeposit = pendingDeposit > 0;
               const hasPendingDepositRequest = pendingDepositsList.length > 0;
               const hasUnreadDeposit = hasPendingDepositRequest && !hasPendingDeposit;
-              const hasFloating = floatingRecharge > 0.01;
 
               // Projected balance if the pending deposit(s) get approved:
               // - if client has favor: favor + deposit
@@ -440,14 +438,6 @@ export default function ClientDashboard() {
                       </Badge>
                     </div>
                   </div>
-
-                  {hasFloating && (
-                    <div className="mb-4 rounded-xl bg-emerald-400/20 border border-emerald-200/40 p-3" data-testid="floating-recharge-note">
-                      <p className="text-xs text-emerald-100 font-medium leading-relaxed">
-                        Tienes <span className="font-extrabold text-white">${floatingRecharge.toFixed(2)}</span> disponible en tu saldo. Este monto se aplicará cuando se cree tu próxima factura — el valor final se reflejará ahí.
-                      </p>
-                    </div>
-                  )}
 
                   {hasPendingDeposit && (
                     <div className="mb-4 rounded-xl bg-amber-400/20 border border-amber-200/40 p-3" data-testid="pending-deposit-note">

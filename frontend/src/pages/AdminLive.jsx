@@ -1218,17 +1218,15 @@ export default function AdminLive() {
                         const pendingCount = Number(selectedCustomer.pending_purchases_count || 0);
                         const invoicedDebt = Number(selectedCustomer.invoiced_debt || 0);
                         const invoicedCredit = Number(selectedCustomer.invoiced_credit || 0);
-                        const floating = Number(selectedCustomer.floating_recharge || 0);
-                        // Total projected = igual que el preview de "Crear Factura":
-                        // (pendientes + deuda anterior) - (disponible + saldo a favor).
-                        const projTotal = Number(selectedCustomer.projected_total_a_pagar || 0);
-                        const projCredit = Number(selectedCustomer.projected_saldo_a_favor || 0);
-                        // Escalated color for debt tier so admin can spot at-risk clients quickly.
-                        let debtCls = "bg-red-100 text-red-800 border-red-300";
-                        if (projTotal < 50) debtCls = "bg-yellow-50 text-yellow-800 border-yellow-200";
-                        else if (projTotal < 150) debtCls = "bg-amber-100 text-amber-800 border-amber-300";
+                        const totalDebt = invoicedDebt + pending; // Deuda real = facturado sin pagar + por facturar
+                        // Color escalonado para que sea visualmente fácil identificar
+                        // a quién hay que cobrar antes del viernes.
+                        let debtCls = "";
+                        if (totalDebt >= 150) debtCls = "bg-red-100 text-red-800 border-red-300";
+                        else if (totalDebt >= 50) debtCls = "bg-amber-100 text-amber-800 border-amber-300";
+                        else if (totalDebt > 0) debtCls = "bg-yellow-50 text-yellow-800 border-yellow-200";
                         return (
-                        <div className="mt-2 p-3 bg-green-50 rounded-xl flex items-center gap-2 flex-wrap" data-testid="selected-client-summary">
+                        <div className="mt-2 p-3 bg-green-50 rounded-xl flex items-center gap-2 flex-wrap">
                           <CheckCircle className="h-5 w-5 text-green-600" />
                           <span className="font-medium text-green-800">{selectedCustomer.name}</span>
                           {dbt && (
@@ -1238,37 +1236,26 @@ export default function AdminLive() {
                               data-testid={`selected-client-debt-dot-${dbt.color}`}
                             />
                           )}
-                          {/* Total al Facturar — SIEMPRE visible mientras haya cliente seleccionado
-                              (mismo valor del preview "Crear Factura"). */}
-                          {projCredit > 0.01 ? (
+                          {invoicedCredit > 0 && (
                             <span
-                              className="ml-auto inline-flex items-center gap-1 px-2 py-1 text-xs font-bold border rounded-md bg-emerald-50 text-emerald-800 border-emerald-200"
-                              title={`Saldo a favor: $${invoicedCredit.toFixed(2)} + Disponible: $${floating.toFixed(2)} − Compras: $${pending.toFixed(2)}`}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold border rounded-md bg-emerald-50 text-emerald-800 border-emerald-200"
+                              title="Saldo a favor de la última factura"
                               data-testid="selected-client-credit-badge"
                             >
-                              <Receipt className="h-3 w-3" />
-                              Saldo a Favor: +${projCredit.toFixed(2)}
+                              + Saldo a favor: ${invoicedCredit.toFixed(2)}
                             </span>
-                          ) : (
+                          )}
+                          {totalDebt > 0.01 && (
                             <span
-                              className={`ml-auto inline-flex items-center gap-1 px-2 py-1 text-xs font-bold border rounded-md ${projTotal > 0.01 ? debtCls : "bg-slate-50 text-slate-700 border-slate-200"}`}
-                              title={`Compras por facturar: $${pending.toFixed(2)} + Deuda anterior: $${invoicedDebt.toFixed(2)} − Disponible: $${floating.toFixed(2)} − Saldo a favor: $${invoicedCredit.toFixed(2)}`}
+                              className={`ml-auto inline-flex items-center gap-1 px-2 py-1 text-xs font-bold border rounded-md ${debtCls}`}
+                              title={`Facturado sin pagar: $${invoicedDebt.toFixed(2)} + Por facturar: $${pending.toFixed(2)} (${pendingCount} compra${pendingCount !== 1 ? "s" : ""})`}
                               data-testid="selected-client-total-debt-badge"
                             >
                               <Receipt className="h-3 w-3" />
-                              Total al Facturar: ${projTotal.toFixed(2)}
+                              Deuda Total: ${totalDebt.toFixed(2)}
                               {pendingCount > 0 && (
                                 <span className="opacity-70">({pendingCount} p/fact)</span>
                               )}
-                            </span>
-                          )}
-                          {floating > 0.01 && (
-                            <span
-                              className="w-full mt-1 px-2 py-1 text-[11px] font-semibold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200"
-                              title="Recarga aprobada aún no aplicada a factura"
-                              data-testid="selected-client-floating-badge"
-                            >
-                              Recarga pendiente de facturar: ${floating.toFixed(2)}
                             </span>
                           )}
                         </div>
@@ -1860,20 +1847,6 @@ export default function AdminLive() {
                         </div>
                       ) : (
                         <p className="text-xs text-slate-500">Este producto no pertenece a ninguna factura.</p>
-                      )}
-                      {deletePreview.live && (
-                        <div className="rounded-lg p-2.5 border text-xs bg-indigo-50 border-indigo-200" data-testid="delete-preview-live-block">
-                          <p className="text-indigo-800">
-                            También se descontará del live{" "}
-                            <span className="font-semibold text-indigo-900">{deletePreview.live.title}</span>
-                            {deletePreview.live.store && <> ({deletePreview.live.store})</>}
-                            {deletePreview.live.status && (
-                              <span className={`ml-1 text-[10px] uppercase font-bold px-1 py-0.5 rounded ${deletePreview.live.status === "active" ? "text-emerald-700 bg-emerald-100" : "text-slate-600 bg-slate-100"}`}>
-                                {deletePreview.live.status}
-                              </span>
-                            )}
-                          </p>
-                        </div>
                       )}
                     </>
                   )}

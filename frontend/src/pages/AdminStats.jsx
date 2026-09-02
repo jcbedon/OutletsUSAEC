@@ -133,11 +133,11 @@ export default function AdminStats() {
       );
     }
     
-    // Filtro de estado (basado en el proyectado — mismo valor de Crear Factura)
+    // Filtro de estado
     if (statusFilter === "with_debt") {
-      result = result.filter(c => Number(c.projected_total_a_pagar || 0) > 0.01);
+      result = result.filter(c => c.pending_balance < 0);
     } else if (statusFilter === "no_debt") {
-      result = result.filter(c => Number(c.projected_total_a_pagar || 0) <= 0.01);
+      result = result.filter(c => c.pending_balance >= 0);
     } else if (statusFilter === "with_pending") {
       // Clientes con compras pendientes de facturar (acumulado mid-semana).
       result = result.filter(c => (c.pending_to_invoice || 0) > 0.01);
@@ -148,8 +148,8 @@ export default function AdminStats() {
       let comparison = 0;
       switch (sortBy) {
         case "debt":
-          // Highest projected debt first (matches Crear Factura preview).
-          comparison = Number(b.projected_total_a_pagar || 0) - Number(a.projected_total_a_pagar || 0);
+          // Highest debt first: use last_invoice_amount fallback to debt_amount
+          comparison = (b.last_invoice_amount || b.debt_amount || 0) - (a.last_invoice_amount || a.debt_amount || 0);
           break;
         case "name":
           comparison = a.name.localeCompare(b.name);
@@ -171,7 +171,7 @@ export default function AdminStats() {
           break;
         }
         default:
-          comparison = Number(b.projected_total_a_pagar || 0) - Number(a.projected_total_a_pagar || 0);
+          comparison = b.debt_amount - a.debt_amount;
       }
       return sortAsc ? -comparison : comparison;
     });
@@ -189,16 +189,12 @@ export default function AdminStats() {
     const invoicedDebt = withDebt.reduce((sum, c) => sum + (c.debt_amount || 0), 0);
     // Por facturar (compras sin invoice_id todavía)
     const totalPending = withPending.reduce((sum, c) => sum + (c.pending_to_invoice || 0), 0);
-    // Deuda Total real (proyectada) — igual que el preview de "Crear Factura":
-    // pendientes + deuda anterior − disponible − saldo a favor por cliente,
-    // acotado a >= 0 y sumado.
-    const totalDebtProjected = clients.reduce((sum, c) => sum + Number(c.projected_total_a_pagar || 0), 0);
+    // Deuda Total real (combinada) = facturada + por facturar. Refleja lo que el
+    // cliente debe HOY antes incluso de generar la próxima factura.
+    const totalDebtCombined = invoicedDebt + totalPending;
     const totalCredit = withCredit.reduce((sum, c) => sum + c.pending_balance, 0);
-    const totalCreditProjected = clients.reduce((sum, c) => sum + Number(c.projected_saldo_a_favor || 0), 0);
-    // Clientes con deuda real (proyectada > 0)
-    const clientsWithAnyDebt = clients.filter(c => Number(c.projected_total_a_pagar || 0) > 0.01).length;
-    // Clientes con recarga flotante
-    const totalFloating = clients.reduce((sum, c) => sum + Number(c.floating_recharge || 0), 0);
+    // Clientes con deuda real (facturada o por facturar)
+    const clientsWithAnyDebt = clients.filter(c => (c.pending_balance || 0) < 0 || (c.pending_to_invoice || 0) > 0.01).length;
 
     return {
       total_clients: clients.length,
@@ -206,12 +202,10 @@ export default function AdminStats() {
       clients_with_any_debt: clientsWithAnyDebt,
       clients_with_credit: withCredit.length,
       clients_positive_balance: clients.length - clientsWithAnyDebt,
-      total_debt: totalDebtProjected,
+      total_debt: totalDebtCombined,
       total_debt_invoiced: invoicedDebt,
       total_credit: totalCredit,
-      total_credit_projected: totalCreditProjected,
       total_pending_to_invoice: totalPending,
-      total_floating: totalFloating,
       clients_with_pending: withPending.length,
     };
   }, [filteredClients]);
@@ -623,17 +617,17 @@ export default function AdminStats() {
                 <Card
                   className="rounded-xl bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200"
                   data-testid="kpi-total-debt"
-                  title={`Total al Facturar = (Compras pendientes + Deuda anterior) − (Disponible + Saldo a favor). Igual al preview de "Crear Factura".`}
+                  title={`Deuda Total = Facturado sin pagar ($${formatMoney(filteredSummary.total_debt_invoiced)}) + Por facturar ($${formatMoney(filteredSummary.total_pending_to_invoice)})`}
                 >
                   <CardContent className="p-4">
                     <DollarSign className="h-5 w-5 text-orange-600 mb-2" />
                     <p className="text-2xl font-extrabold text-orange-700">{formatMoney(filteredSummary.total_debt)}</p>
-                    <p className="text-xs text-orange-600">Total al Facturar</p>
-                    <p className="text-[10px] text-orange-500 mt-1 leading-tight">
-                      Fact: ${formatMoney(filteredSummary.total_debt_invoiced)} +
-                      P/fact: ${formatMoney(filteredSummary.total_pending_to_invoice)}
-                      {filteredSummary.total_floating > 0.01 && ` − Disp: $${formatMoney(filteredSummary.total_floating)}`}
-                    </p>
+                    <p className="text-xs text-orange-600">Deuda Total</p>
+                    {filteredSummary.total_pending_to_invoice > 0.01 && (
+                      <p className="text-[10px] text-orange-500 mt-1 leading-tight">
+                        Fact: ${formatMoney(filteredSummary.total_debt_invoiced)} + Por fact: ${formatMoney(filteredSummary.total_pending_to_invoice)}
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
                 <Card className="rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200" data-testid="kpi-total-credit">
@@ -752,19 +746,16 @@ export default function AdminStats() {
                         <tr className="border-b bg-gray-50">
                           <th className="text-left p-2 font-medium">Cliente</th>
                           <th className="text-left p-2 font-medium">ID</th>
-                          <th className="text-right p-2 font-medium" title="Total al Facturar (mismo cálculo que en Crear Factura)">Deuda / Saldo a favor</th>
                           <th className="text-right p-2 font-medium">Última Factura</th>
+                          <th className="text-right p-2 font-medium" title="Compras de esta semana aún no facturadas">Por Facturar</th>
+                          <th className="text-right p-2 font-medium">Fecha</th>
                           <th className="text-right p-2 font-medium">Estado</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredClients.slice(0, tableLimit).map((client) => {
-                          const projTotal = Number(client.projected_total_a_pagar || 0);
-                          const projCredit = Number(client.projected_saldo_a_favor || 0);
-                          const pending = Number(client.pending_to_invoice || 0);
-                          const invoicedDebt = client.pending_balance < 0 ? Math.abs(client.pending_balance) : 0;
-                          const invoicedCredit = client.pending_balance > 0 ? client.pending_balance : 0;
-                          const floating = Number(client.floating_recharge || 0);
+                          // "Última factura" amount — what the user wants displayed:
+                          // total_a_pagar of just the last non-annulled invoice.
                           const lastAmount = Number(client.last_invoice_amount || 0);
                           const lastDateStr = client.last_invoice_date;
                           const daysUnpaid = lastDateStr
@@ -772,31 +763,23 @@ export default function AdminStats() {
                             : null;
                           let statusLabel = "Sin factura";
                           let statusClass = "text-slate-400";
-                          if (daysUnpaid !== null && projTotal > 0) {
+                          if (daysUnpaid !== null && lastAmount > 0) {
                             if (daysUnpaid > 5) {
-                              statusLabel = `Más de 5 días — LIQUIDAR (${daysUnpaid}d)`;
+                              statusLabel = `Más de 5 días sin pagar — LIQUIDAR (${daysUnpaid}d)`;
                               statusClass = "text-red-600 font-bold";
                             } else if (daysUnpaid > 2) {
-                              statusLabel = `Más de 2 días (${daysUnpaid}d)`;
+                              statusLabel = `Más de 2 días sin pagar (${daysUnpaid}d)`;
                               statusClass = "text-orange-600 font-semibold";
                             } else {
-                              statusLabel = `Menos de 2 días (${daysUnpaid}d)`;
+                              statusLabel = `Menos de 2 días sin pagar (${daysUnpaid}d)`;
                               statusClass = "text-green-600 font-semibold";
                             }
-                          } else if (projCredit > 0.01) {
-                            statusLabel = "Saldo a favor";
-                            statusClass = "text-emerald-600 font-semibold";
-                          } else if (daysUnpaid !== null && projTotal === 0) {
+                          } else if (daysUnpaid !== null && lastAmount === 0) {
                             statusLabel = "Al día";
                             statusClass = "text-green-600 font-semibold";
                           }
-                          const tooltip = projTotal > 0.01
-                            ? `Compras por facturar: $${pending.toFixed(2)} + Deuda anterior: $${invoicedDebt.toFixed(2)} − Disponible: $${floating.toFixed(2)} − Saldo a favor anterior: $${invoicedCredit.toFixed(2)}`
-                            : projCredit > 0.01
-                              ? `Saldo a favor: $${invoicedCredit.toFixed(2)} + Disponible: $${floating.toFixed(2)} − Compras: $${pending.toFixed(2)}`
-                              : "Sin deuda proyectada";
                           return (
-                            <tr key={client.id} className={`border-b hover:bg-gray-50 ${projTotal > 0 && daysUnpaid !== null && daysUnpaid > 5 ? 'bg-red-50/50' : ''}`} data-testid={`debts-row-${client.customer_id}`}>
+                            <tr key={client.id} className={`border-b hover:bg-gray-50 ${lastAmount > 0 && daysUnpaid !== null && daysUnpaid > 5 ? 'bg-red-50/50' : ''}`} data-testid={`debts-row-${client.customer_id}`}>
                               <td className="p-2">
                                 <div className="font-medium text-slate-800">{client.name}</div>
                                 <div className="text-xs text-gray-500">{client.whatsapp}</div>
@@ -804,29 +787,30 @@ export default function AdminStats() {
                               <td className="p-2">
                                 <Badge variant="outline" className="text-xs">{client.customer_id}</Badge>
                               </td>
-                              <td className="p-2 text-right" title={tooltip} data-testid={`debts-projected-${client.customer_id}`}>
-                                {projTotal > 0.01 ? (
-                                  <span className="font-bold text-red-600">{formatMoney(projTotal)}</span>
-                                ) : projCredit > 0.01 ? (
-                                  <span className="font-bold text-emerald-600">+{formatMoney(projCredit)}</span>
-                                ) : (
-                                  <span className="font-bold text-gray-500">{formatMoney(0)}</span>
+                              <td className="p-2 text-right">
+                                <span className={`font-bold ${lastAmount > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                  {formatMoney(lastAmount)}
+                                </span>
+                                {client.last_invoice_number && (
+                                  <div className="text-[10px] text-gray-400">{client.last_invoice_number}</div>
                                 )}
-                                {floating > 0.01 && (
-                                  <div className="text-[10px] text-emerald-600 font-medium">
-                                    Recarga pendiente: ${floating.toFixed(2)}
-                                  </div>
+                              </td>
+                              <td className="p-2 text-right" data-testid={`debts-pending-${client.customer_id}`}>
+                                {(client.pending_to_invoice || 0) > 0.01 ? (
+                                  <>
+                                    <span className="font-bold text-amber-700">
+                                      {formatMoney(client.pending_to_invoice)}
+                                    </span>
+                                    <div className="text-[10px] text-amber-600">
+                                      {client.pending_purchases_count || 0} compras
+                                    </div>
+                                  </>
+                                ) : (
+                                  <span className="text-gray-300 text-xs">—</span>
                                 )}
                               </td>
                               <td className="p-2 text-right text-gray-600">
-                                {lastDateStr ? (
-                                  <div>
-                                    <div className="text-slate-700">{new Date(lastDateStr).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: '2-digit' })}</div>
-                                    {client.last_invoice_number && (
-                                      <div className="text-[10px] text-gray-400">{client.last_invoice_number} · ${lastAmount.toFixed(2)}</div>
-                                    )}
-                                  </div>
-                                ) : '—'}
+                                {lastDateStr ? new Date(lastDateStr).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                               </td>
                               <td className={`p-2 text-right text-xs ${statusClass}`} data-testid={`debts-status-${client.customer_id}`}>
                                 {statusLabel}

@@ -16,47 +16,11 @@ from typing import List, Optional
 import object_store
 import uuid
 from datetime import datetime, timezone, timedelta
-from zoneinfo import ZoneInfo
 import random
 import string
 import hashlib
 import jwt
 import shutil
-
-# ==================== WEEKLY RECHARGE CUTOFF ====================
-# Feature: "Cerrar semana en recargas" (Weekly Recharge Cutoff).
-# Recharges are assigned to the invoice that belongs to the SAME billing week
-# (Monday 00:00 – Sunday 23:59:59.999999 America/Chicago).
-# Applied only to recharges with created_at >= WEEKLY_CUTOFF_EFFECTIVE_FROM.
-# Older recharges keep the legacy "latest invoice before deposit" logic so
-# historical assignments remain untouched.
-WEEKLY_CUTOFF_TZ = ZoneInfo("America/Chicago")
-WEEKLY_CUTOFF_EFFECTIVE_FROM = datetime(2026, 2, 16, 0, 0, 0, tzinfo=WEEKLY_CUTOFF_TZ)
-
-
-def _parse_iso_utc(iso_str):
-    """Parse an ISO datetime string; return timezone-aware UTC datetime or None."""
-    if not iso_str:
-        return None
-    try:
-        s = iso_str.replace("Z", "+00:00") if isinstance(iso_str, str) else iso_str
-        dt = datetime.fromisoformat(s) if isinstance(s, str) else s
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
-    except (ValueError, TypeError, AttributeError):
-        return None
-
-
-def _billing_week_bounds(dt_utc):
-    """Return (week_start_utc, week_end_utc) for the Mon 00:00 – Sun 23:59:59.999999
-    America/Chicago week containing dt_utc."""
-    dt_local = dt_utc.astimezone(WEEKLY_CUTOFF_TZ)
-    monday_local = (dt_local - timedelta(days=dt_local.weekday())).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    sunday_end_local = monday_local + timedelta(days=7) - timedelta(microseconds=1)
-    return monday_local.astimezone(timezone.utc), sunday_end_local.astimezone(timezone.utc)
 
 ROOT_DIR = Path(__file__).parent.parent  # /app instead of /app/backend
 BACKEND_DIR = Path(__file__).parent  # /app/backend
@@ -862,64 +826,23 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     
     if not all_invoices:
         return
-
-    # Pre-parse invoice datetimes once (used by the weekly-cutoff branch).
-    for inv in all_invoices:
-        inv["_created_dt"] = _parse_iso_utc(inv.get("created_at", ""))
-
+    
     # Group deposits by which invoice was the latest at the time of the deposit
     deposits_by_invoice = {inv["id"]: [] for inv in all_invoices}
-
+    
     for dep in all_deposits:
-        dep_date_str = dep.get("created_at", "")
-        dep_date_utc = _parse_iso_utc(dep_date_str)
+        dep_date = dep.get("created_at", "")
+        # Find the latest invoice created BEFORE or AT the deposit date
         target_invoice = None
-
-        # NEW LOGIC (>= WEEKLY_CUTOFF_EFFECTIVE_FROM): assign to the invoice
-        # inside the same Mon–Sun America/Chicago billing week as the deposit.
-        # If no invoice exists in that week, look for the next future invoice.
-        # If none exists at all, the deposit "floats" (still counts in wallet
-        # balance) until a future invoice absorbs it.
-        if dep_date_utc and dep_date_utc >= WEEKLY_CUTOFF_EFFECTIVE_FROM:
-            wk_start, wk_end = _billing_week_bounds(dep_date_utc)
-            week_invoices = [
-                inv for inv in all_invoices
-                if inv.get("_created_dt") and wk_start <= inv["_created_dt"] <= wk_end
-            ]
-            if week_invoices:
-                # Prefer the latest invoice within the week created BEFORE or AT
-                # the deposit. If deposit precedes all invoices of the week, use
-                # the first invoice of the week.
-                for inv in week_invoices:
-                    if inv["_created_dt"] <= dep_date_utc:
-                        target_invoice = inv
-                    else:
-                        break
-                if target_invoice is None:
-                    target_invoice = week_invoices[0]
+        for inv in all_invoices:
+            if inv["created_at"] <= dep_date:
+                target_invoice = inv
             else:
-                # No invoice in this billing week — assign to the earliest FUTURE
-                # invoice (floating deposit gets absorbed by the next invoice).
-                for inv in all_invoices:
-                    if inv.get("_created_dt") and inv["_created_dt"] > wk_end:
-                        target_invoice = inv
-                        break
-                if target_invoice is None:
-                    # Deposit floats: no invoice this week or later yet.
-                    # Wallet balance still reflects it via wallet_transactions.
-                    continue
-        else:
-            # LEGACY LOGIC (deposits before the cutoff date): keep historical
-            # assignments untouched — latest invoice created BEFORE or AT the
-            # deposit, or the first invoice if the deposit precedes all invoices.
-            for inv in all_invoices:
-                if inv["created_at"] <= dep_date_str:
-                    target_invoice = inv
-                else:
-                    break
-            if target_invoice is None:
-                target_invoice = all_invoices[0]
-
+                break
+        # If no invoice existed before the deposit, assign to the first invoice
+        if target_invoice is None:
+            target_invoice = all_invoices[0]
+        
         deposits_by_invoice[target_invoice["id"]].append({
             "deposit_id": dep.get("id", ""),
             "amount_applied": dep["amount"],
@@ -2312,17 +2235,6 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}}
     ]).to_list(len(user_ids))
     recharges_dict = {r["_id"]: r["total"] for r in recharges_agg}
-
-    # Aggregate deposits ALREADY applied to invoices per customer. The delta
-    # against total_recharges tells us how much of the client's wallet is still
-    # "floating" (recharge exists but no invoice absorbed it yet — typical when
-    # the client recharges Monday morning before the first live-invoice of the
-    # week is issued).
-    deposits_applied_agg = await db.invoices.aggregate([
-        {"$match": {"tenant_id": tid, "customer_id": {"$in": customer_ids_list}, "is_annulled": {"$ne": True}}},
-        {"$group": {"_id": "$customer_id", "total": {"$sum": "$deposits_applied"}}}
-    ]).to_list(len(customer_ids_list) or 1)
-    deposits_applied_dict = {d["_id"]: d.get("total", 0) or 0 for d in deposits_applied_agg}
     
     # Get total_a_pagar from the most recent invoice per customer
     last_invoice_agg = await db.invoices.aggregate([
@@ -2368,24 +2280,6 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         else:
             real_pending_balance = round(-pending_to_invoice_amount, 2) if pending_to_invoice_amount > 0 else 0
 
-        # Floating recharge: recharges present in wallet but NOT yet absorbed
-        # by any non-annulled invoice. Positive value = "disponible" to be
-        # applied on the next invoice of the week.
-        applied_to_invoices = deposits_applied_dict.get(user.get("customer_id"), 0)
-        floating_recharge = round(max(0.0, float(total_recharges) - float(applied_to_invoices)), 2)
-
-        # Projected totals that mirror the InvoiceDialog preview so the client
-        # list shows the SAME final amount the admin sees after clicking
-        # "Crear Factura": pending purchases + last-invoice debt, minus floating
-        # recharges + last-invoice credit. Excludes shipping (shipping is set
-        # when the shipment is created, not at invoice creation).
-        last_debt = max(0.0, -pending_balance)
-        last_credit = max(0.0, pending_balance)
-        projected_grand_total = pending_to_invoice_amount + last_debt
-        projected_credits = floating_recharge + last_credit
-        projected_total_a_pagar = round(max(0.0, projected_grand_total - projected_credits), 2)
-        projected_saldo_a_favor = round(max(0.0, projected_credits - projected_grand_total), 2)
-
         result.append({
             **user, 
             "wallet_balance": round(total_recharges, 2),
@@ -2400,11 +2294,6 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "pending_to_invoice_count": pending_to_invoice_count,
             # real_pending_balance = pending_balance combined with pending purchases (see above)
             "real_pending_balance": real_pending_balance,
-            # floating_recharge = deposit(s) waiting for the next invoice to absorb them
-            "floating_recharge": floating_recharge,
-            # projected_* mirror the "Total a pagar" from the InvoiceDialog preview
-            "projected_total_a_pagar": projected_total_a_pagar,
-            "projected_saldo_a_favor": projected_saldo_a_favor,
         })
     return result
 
@@ -3056,32 +2945,6 @@ async def get_client_info(customer_id: str, current_user: dict = Depends(get_cur
     else:
         real_pending_balance = round(-pending_total, 2) if pending_total > 0 else 0.0
 
-    # Floating recharge: recharge already in wallet but NOT yet applied to any
-    # non-annulled invoice. Non-zero when the client recharged and the next
-    # invoice hasn't been created yet (e.g. Monday morning before the first
-    # live-invoice of the week).
-    total_recharges_agg = await db.wallet_transactions.aggregate([
-        {"$match": {"user_id": user["id"], "tenant_id": tid,
-                    "type": {"$in": ["deposit", "initial_balance", "referral_bonus"]},
-                    "status": "approved", "is_deleted": {"$ne": True}}},
-        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
-    ]).to_list(1)
-    total_recharges_val = float(total_recharges_agg[0]["total"]) if total_recharges_agg else 0.0
-    applied_agg = await db.invoices.aggregate([
-        {"$match": {"tenant_id": tid, "customer_id": cust_id, "is_annulled": {"$ne": True}}},
-        {"$group": {"_id": None, "total": {"$sum": "$deposits_applied"}}}
-    ]).to_list(1) if cust_id else []
-    applied_val = float(applied_agg[0]["total"]) if applied_agg else 0.0
-    floating_recharge = round(max(0.0, total_recharges_val - applied_val), 2)
-
-    # Projected totals mirroring the InvoiceDialog preview (see /admin/clients).
-    last_debt = max(0.0, -pending_balance)
-    last_credit = max(0.0, pending_balance)
-    projected_grand_total = pending_total + last_debt
-    projected_credits = floating_recharge + last_credit
-    projected_total_a_pagar = round(max(0.0, projected_grand_total - projected_credits), 2)
-    projected_saldo_a_favor = round(max(0.0, projected_credits - projected_grand_total), 2)
-
     return {
         **user,
         "wallet_balance": wallet["available"] if wallet else 0,
@@ -3092,9 +2955,6 @@ async def get_client_info(customer_id: str, current_user: dict = Depends(get_cur
         "real_pending_balance": real_pending_balance,
         "invoiced_debt": last_total_a_pagar,
         "invoiced_credit": last_saldo_a_favor,
-        "floating_recharge": floating_recharge,
-        "projected_total_a_pagar": projected_total_a_pagar,
-        "projected_saldo_a_favor": projected_saldo_a_favor,
     }
 
 # ==================== WALLET ENDPOINTS ====================
@@ -3305,27 +3165,10 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
             "created_at": tx.get("created_at")
         })
 
-    # Floating recharge: recharge already in wallet but NOT yet applied to any
-    # non-annulled invoice. Client will see this as "disponible por facturar".
-    total_recharges_agg = await db.wallet_transactions.aggregate([
-        {"$match": {"user_id": user_id, "tenant_id": tid,
-                    "type": {"$in": ["deposit", "initial_balance", "referral_bonus"]},
-                    "status": "approved", "is_deleted": {"$ne": True}}},
-        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
-    ]).to_list(1)
-    total_recharges_val = float(total_recharges_agg[0]["total"]) if total_recharges_agg else 0.0
-    applied_agg = await db.invoices.aggregate([
-        {"$match": {"tenant_id": tid, "customer_id": customer_id, "is_annulled": {"$ne": True}}},
-        {"$group": {"_id": None, "total": {"$sum": "$deposits_applied"}}}
-    ]).to_list(1) if customer_id else []
-    applied_val = float(applied_agg[0]["total"]) if applied_agg else 0.0
-    floating_recharge = round(max(0.0, total_recharges_val - applied_val), 2)
-
     return {**wallet,
             "total_saldo_pendiente": round(saldo_pend, 2),
             "pending_debt": round(last_total_a_pagar, 2),
             "saldo_a_favor": round(last_saldo_a_favor, 2),
-            "floating_recharge": floating_recharge,
             "pending_deposit_total": round(pending_deposit_total, 2),
             "pending_deposits": pending_deposits_info}
 
@@ -5037,24 +4880,6 @@ async def get_delete_purchase_preview(purchase_id: str, current_user: dict = Dep
         "customer_name": customer.get("name"),
         "belongs_to_invoice": False,
     }
-
-    # Attach live info so the confirmation dialog can warn the admin that this
-    # item will also be discounted from its live totals (purchase_count,
-    # total_sales, total_commissions).
-    live_id = purchase.get("live_id")
-    if live_id:
-        live = await db.lives.find_one(
-            {"id": live_id, "tenant_id": tid},
-            {"_id": 0, "id": 1, "title": 1, "store": 1, "status": 1, "created_at": 1}
-        )
-        if live:
-            preview["live"] = {
-                "id": live["id"],
-                "title": live.get("title"),
-                "store": live.get("store"),
-                "status": live.get("status"),
-                "created_at": live.get("created_at"),
-            }
 
     invoice_id = purchase.get("invoice_id")
     if invoice_id:
@@ -8223,22 +8048,6 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         }
         for x in last_inv_agg
     }
-
-    # Recargas aprobadas por cliente (para calcular floating_recharge).
-    recharges_agg = await db.wallet_transactions.aggregate([
-        {"$match": {"user_id": {"$in": user_ids}, "tenant_id": tid,
-                    "type": {"$in": ["deposit", "initial_balance", "referral_bonus"]},
-                    "status": "approved", "is_deleted": {"$ne": True}}},
-        {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}}
-    ]).to_list(len(user_ids))
-    recharges_dict = {r["_id"]: r["total"] for r in recharges_agg}
-
-    # Depósitos ya aplicados a facturas no anuladas (para calcular floating_recharge).
-    deposits_applied_agg = await db.invoices.aggregate([
-        {"$match": {"tenant_id": tid, "customer_id": {"$in": cust_ids}, "is_annulled": {"$ne": True}}},
-        {"$group": {"_id": "$customer_id", "total": {"$sum": "$deposits_applied"}}}
-    ]).to_list(len(cust_ids) or 1)
-    deposits_applied_dict = {d["_id"]: d.get("total", 0) or 0 for d in deposits_applied_agg}
     
     for client in clients:
         uid = client["id"]
@@ -8273,17 +8082,6 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         pending_to_invoice = round(float(pi.get("pending_to_invoice", 0) or 0), 2)
         pending_count = int(pi.get("pending_count", 0) or 0)
 
-        # Floating recharge + projected total (misma fórmula que /admin/clients)
-        total_recharges = float(recharges_dict.get(uid, 0) or 0)
-        applied_to_invoices = float(deposits_applied_dict.get(client.get("customer_id"), 0) or 0)
-        floating_recharge = round(max(0.0, total_recharges - applied_to_invoices), 2)
-        last_debt = max(0.0, -pending_balance)
-        last_credit = max(0.0, pending_balance)
-        projected_grand_total = pending_to_invoice + last_debt
-        projected_credits = floating_recharge + last_credit
-        projected_total_a_pagar = round(max(0.0, projected_grand_total - projected_credits), 2)
-        projected_saldo_a_favor = round(max(0.0, projected_credits - projected_grand_total), 2)
-
         result.append({
             "id": client["id"],
             "customer_id": client["customer_id"],
@@ -8307,20 +8105,11 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
             "last_invoice_date": (last_inv_dict.get(client.get("customer_id")) or {}).get("date"),
             "last_invoice_amount": (last_inv_dict.get(client.get("customer_id")) or {}).get("amount", 0),
             "last_invoice_number": (last_inv_dict.get(client.get("customer_id")) or {}).get("number"),
-            # Same projected values used everywhere else (mirror InvoiceDialog preview).
-            "floating_recharge": floating_recharge,
-            "projected_total_a_pagar": projected_total_a_pagar,
-            "projected_saldo_a_favor": projected_saldo_a_favor,
         })
     
-    # Sort by projected_total_a_pagar (highest debt first), then alphabetically
-    result.sort(key=lambda x: (-x["projected_total_a_pagar"], x["name"]))
+    # Sort by debt amount (highest first), then by pending_balance (most negative first)
+    result.sort(key=lambda x: (-x["debt_amount"], x["pending_balance"]))
 
-    # Summary recomputado sobre el proyectado
-    clients_with_projected_debt = sum(1 for r in result if r["projected_total_a_pagar"] > 0.01)
-    total_projected_debt = round(sum(r["projected_total_a_pagar"] for r in result), 2)
-    clients_with_projected_credit = sum(1 for r in result if r["projected_saldo_a_favor"] > 0.01)
-    total_projected_credit = round(sum(r["projected_saldo_a_favor"] for r in result), 2)
     total_pending_to_invoice = round(sum(r["pending_to_invoice"] for r in result), 2)
     clients_with_pending = sum(1 for r in result if r["pending_to_invoice"] > 0.01)
 
@@ -8328,17 +8117,11 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         "clients": result,
         "summary": {
             "total_clients": len(clients),
-            # Legacy fields (mantenidos para compatibilidad con reportes antiguos)
             "clients_with_debt": clients_with_debt,
             "total_debt": round(total_debt, 2),
             "clients_positive_balance": len(clients) - clients_with_debt,
             "total_pending_to_invoice": total_pending_to_invoice,
             "clients_with_pending_to_invoice": clients_with_pending,
-            # Proyectado — mismo valor que aparece al abrir "Crear Factura".
-            "clients_with_projected_debt": clients_with_projected_debt,
-            "total_projected_debt": total_projected_debt,
-            "clients_with_projected_credit": clients_with_projected_credit,
-            "total_projected_credit": total_projected_credit,
         }
     }
 
