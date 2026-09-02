@@ -676,58 +676,13 @@ https://outletsusaec.shop/`;
                             </div>
                           </div>
                           <div className="text-right">
-                            {(() => {
-                              const invoicedDebt = client.pending_balance < 0 ? Math.abs(client.pending_balance) : 0;
-                              const invoicedCredit = client.pending_balance > 0 ? client.pending_balance : 0;
-                              const pending = Number(client.pending_to_invoice || 0);
-                              const totalDebt = invoicedDebt + pending;
-                              if (totalDebt > 0.01) {
-                                return (
-                                  <div className="px-3 py-2 rounded-xl bg-red-50 border border-red-200"
-                                    title={`Facturado sin pagar: $${invoicedDebt.toFixed(2)} + Por facturar: $${pending.toFixed(2)}`}>
-                                    <p className="text-xs text-red-600 font-semibold">Deuda Total</p>
-                                    <p className="text-xl font-bold text-red-600"
-                                      data-testid={`total-debt-${client.customer_id}`}>
-                                      ${totalDebt.toFixed(2)}
-                                    </p>
-                                    {pending > 0.01 && invoicedDebt > 0.01 && (
-                                      <p className="text-[10px] text-red-500 font-medium leading-tight">
-                                        ${invoicedDebt.toFixed(2)} fact. + ${pending.toFixed(2)} p/fact
-                                      </p>
-                                    )}
-                                  </div>
-                                );
-                              }
-                              if (invoicedCredit > 0.01) {
-                                return (
-                                  <div className="px-3 py-2 rounded-xl bg-green-50">
-                                    <p className="text-xs text-gray-500">Saldo a Favor</p>
-                                    <p className="text-xl font-bold text-green-600"
-                                      data-testid={`pending-balance-${client.customer_id}`}>
-                                      +${invoicedCredit.toFixed(2)}
-                                    </p>
-                                  </div>
-                                );
-                              }
-                              return (
-                                <div className="px-3 py-2 rounded-xl bg-gray-50">
-                                  <p className="text-xs text-gray-500">Al día</p>
-                                  <p className="text-xl font-bold text-gray-600"
-                                    data-testid={`pending-balance-${client.customer_id}`}>
-                                    $0.00
-                                  </p>
-                                </div>
-                              );
-                            })()}
-                            {(client.pending_to_invoice || 0) > 0.01 && (client.pending_balance || 0) >= 0 && (
-                              <div
-                                className="mt-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200"
-                                title={`${client.pending_to_invoice_count || 0} compras sin facturar`}
-                                data-testid={`pending-to-invoice-${client.customer_id}`}
-                              >
-                                Por facturar: ${Number(client.pending_to_invoice).toFixed(2)}
-                              </div>
-                            )}
+                            <div className={`px-3 py-2 rounded-xl ${client.pending_balance > 0 ? 'bg-green-50' : client.pending_balance < 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
+                              <p className="text-xs text-gray-500">{client.pending_balance > 0 ? 'Saldo a Favor' : 'Total a Pagar'}</p>
+                              <p className={`text-xl font-bold ${client.pending_balance > 0 ? 'text-green-600' : client.pending_balance < 0 ? 'text-red-600' : 'text-gray-600'}`}
+                                data-testid={`pending-balance-${client.customer_id}`}>
+                                {client.pending_balance > 0 ? '+' : ''}${Math.abs(client.pending_balance || 0).toFixed(2)}
+                              </p>
+                            </div>
                           </div>
                         </div>
                         <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
