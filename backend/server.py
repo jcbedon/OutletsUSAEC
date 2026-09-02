@@ -8,6 +8,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ReturnDocument
+import asyncio
 import os
 import logging
 from pathlib import Path
@@ -3247,13 +3248,21 @@ async def request_deposit_with_proof(
 
     # OCR ANTES del insert: bloquea (a) que el cliente ingrese un número que
     # no coincide con el del comprobante y (b) que reutilice el mismo screenshot
-    # con un número distinto (duplicate por imagen).
+    # con un número distinto (duplicate por imagen). Wrapped en asyncio.wait_for
+    # con 15s timeout — si Gemini está lento, seguimos el flujo sin OCR (best
+    # effort) para no dejar al cliente esperando eternamente.
     scan = None
     detected_ref_raw = None
     detected_ref_norm = None
     if proof_url:
         try:
-            scan = await _scan_proof_image(proof_url, session_id=f"auto-preinsert-{user_id}")
+            scan = await asyncio.wait_for(
+                _scan_proof_image(proof_url, session_id=f"auto-preinsert-{user_id}"),
+                timeout=15.0,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"OCR pre-insert timed out for user {user_id}")
+            scan = None
         except Exception as e:
             logger.warning(f"OCR pre-insert scan failed for user {user_id}: {e}")
             scan = None
