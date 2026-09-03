@@ -3120,9 +3120,24 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
     wallet = await db.wallets.find_one({"user_id": user_id, "tenant_id": tid}, {"_id": 0})
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
-    
+
     # Include total saldo_pendiente from invoices
     customer_id = wallet.get("customer_id")
+
+    # Self-heal safety net: re-run the invoice/deposit chain on every wallet
+    # fetch. It is idempotent (produces the same totals if nothing changed)
+    # and cheap for typical clients (<50 invoices, <200 deposits). This
+    # closes a class of production bugs where a recharge was approved but
+    # the invoice chain was never refreshed for that client — leaving the
+    # dashboard stuck on the pre-recharge balance until the admin manually
+    # ran "Recalcular Todo". Wrapped in try/except so a bug here never
+    # blocks the wallet endpoint.
+    if customer_id:
+        try:
+            await recalculate_client_invoices(tid, customer_id)
+        except Exception as _recalc_err:
+            logger.warning(f"[get_wallet] recalc for {customer_id} failed: {_recalc_err}")
+
     saldo_pend = 0
     if customer_id:
         agg = await db.invoices.aggregate([
