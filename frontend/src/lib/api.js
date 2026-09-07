@@ -57,7 +57,7 @@ export const getWallet = (userId) => api.get(`/wallet/${userId}`);
 export const getWalletByCustomerId = (customerId) => api.get(`/wallet/by-customer/${customerId}`);
 export const requestDeposit = (data) => api.post("/wallet/deposit-request", data);
 export const requestDepositWithProof = (formData) => api.post("/wallet/deposit-request-with-proof", formData, { headers: { "Content-Type": "multipart/form-data" } });
-export const approveDeposit = (transactionId) => api.post(`/wallet/approve-deposit/${transactionId}`);
+export const approveDeposit = (transactionId, payload = {}) => api.post(`/wallet/approve-deposit/${transactionId}`, payload);
 export const setDepositAmount = (transactionId, amount) => api.put(`/wallet/deposit/${transactionId}/amount`, { amount });
 export const scanDepositProof = (transactionId) => api.post(`/wallet/deposit/${transactionId}/scan-proof`);
 export const setDepositDate = (transactionId, depositDate) => api.put(`/wallet/${transactionId}/deposit-date`, { deposit_date: depositDate });

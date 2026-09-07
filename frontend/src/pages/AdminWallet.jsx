@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount, scanDepositProof, listBankAccounts, detectDuplicateDeposits } from "@/lib/api";
+import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount, scanDepositProof, listBankAccounts, detectDuplicateDeposits, getClientInvoices } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -124,6 +124,15 @@ export default function AdminWallet() {
   const [duplicateScanOpen, setDuplicateScanOpen] = useState(false);
   const [duplicateScanning, setDuplicateScanning] = useState(false);
   const [duplicateResult, setDuplicateResult] = useState(null);
+
+  // Approval assignment dialog (choose invoice or "abono siguientes compras")
+  const [applyDialogOpen, setApplyDialogOpen] = useState(false);
+  const [applyTargetTx, setApplyTargetTx] = useState(null);
+  const [applyLoading, setApplyLoading] = useState(false);
+  const [applyPendingInvoices, setApplyPendingInvoices] = useState([]);
+  const [applyClosedInvoices, setApplyClosedInvoices] = useState([]);
+  const [applyMode, setApplyMode] = useState("invoice"); // "invoice" | "floating"
+  const [applyTargetInvoiceId, setApplyTargetInvoiceId] = useState(null);
   
   const APP_URL = process.env.REACT_APP_BACKEND_URL?.replace('/api', '') || window.location.origin;
 
@@ -215,15 +224,67 @@ export default function AdminWallet() {
       }
       try {
         await setDepositAmount(transactionId, newAmount);
+        // Reflect the persisted amount locally so the dialog shows the right value
+        tx.amount = newAmount;
       } catch (error) {
         toast.error(error.response?.data?.detail || "Error al asignar monto");
         return;
       }
     }
-    setApproving(transactionId);
+    // Load the client's invoices before opening the assignment dialog
+    setApplyLoading(true);
+    setApplyTargetTx(tx);
+    setApplyTargetInvoiceId(null);
+    setApplyMode("floating");
+    setApplyDialogOpen(true);
     try {
-      await approveDeposit(transactionId);
-      toast.success("Depósito aprobado");
+      const res = await getClientInvoices(tx.customer_id, false);
+      const invoices = Array.isArray(res.data) ? res.data : [];
+      // Split into pending (owed) and closed (settled) buckets — oldest to newest per bucket
+      const parsePayable = (inv) => Number(inv.total_a_pagar ?? 0);
+      const pending = invoices.filter((inv) => parsePayable(inv) > 0);
+      const closed = invoices.filter((inv) => parsePayable(inv) <= 0);
+      pending.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+      closed.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+      setApplyPendingInvoices(pending);
+      setApplyClosedInvoices(closed);
+      // If there's at least one pending invoice, preselect the oldest as a sensible default
+      if (pending.length > 0) {
+        setApplyMode("invoice");
+        setApplyTargetInvoiceId(pending[0].id);
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "No se pudieron cargar las facturas del cliente");
+    } finally {
+      setApplyLoading(false);
+    }
+  };
+
+  const confirmApprove = async () => {
+    if (!applyTargetTx) return;
+    const payload = {};
+    if (applyMode === "invoice") {
+      if (!applyTargetInvoiceId) {
+        toast.error("Selecciona una factura para aplicar la recarga");
+        return;
+      }
+      payload.target_invoice_id = applyTargetInvoiceId;
+    } else if (applyMode === "floating") {
+      payload.is_floating_credit = true;
+    }
+    setApproving(applyTargetTx.id);
+    try {
+      await approveDeposit(applyTargetTx.id, payload);
+      toast.success(
+        applyMode === "floating"
+          ? "Recarga aprobada como abono para siguientes compras"
+          : "Recarga aprobada y aplicada a la factura"
+      );
+      setApplyDialogOpen(false);
+      setApplyTargetTx(null);
+      setApplyPendingInvoices([]);
+      setApplyClosedInvoices([]);
+      setApplyTargetInvoiceId(null);
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al aprobar");
@@ -954,6 +1015,147 @@ export default function AdminWallet() {
                     <>
                       <CheckCircle className="h-4 w-4 mr-2" />
                       Crear Recarga
+                    </>
+                  )}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Assign Recharge to Invoice / Floating Credit Dialog */}
+          <Dialog open={applyDialogOpen} onOpenChange={(o) => { if (!o) { setApplyDialogOpen(false); setApplyTargetTx(null); } }}>
+            <DialogContent className="rounded-2xl max-w-lg" data-testid="apply-recharge-dialog">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-emerald-700">
+                  <CheckCircle className="h-5 w-5" />
+                  Asignar recarga
+                </DialogTitle>
+                <DialogDescription>
+                  {applyTargetTx ? (
+                    <span>
+                      <span className="font-semibold">${Number(applyTargetTx.amount || 0).toFixed(2)}</span>
+                      {" "}para <span className="font-semibold">{applyTargetTx.customer_id}</span>. Elige a qué factura aplicar o guarda como abono para las próximas compras.
+                    </span>
+                  ) : null}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                {applyLoading ? (
+                  <div className="flex items-center justify-center py-8 text-gray-500">
+                    <Loader2 className="h-5 w-5 animate-spin mr-2" /> Cargando facturas…
+                  </div>
+                ) : (
+                  <>
+                    {/* Floating credit option */}
+                    <button
+                      type="button"
+                      onClick={() => { setApplyMode("floating"); setApplyTargetInvoiceId(null); }}
+                      data-testid="apply-floating-option"
+                      className={`w-full text-left p-3 rounded-xl border-2 transition ${applyMode === "floating" ? "border-emerald-500 bg-emerald-50" : "border-gray-200 hover:border-gray-300"}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`h-4 w-4 rounded-full border-2 ${applyMode === "floating" ? "border-emerald-500 bg-emerald-500" : "border-gray-300"}`} />
+                        <span className="font-semibold text-sm">Abono para siguientes compras</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1 ml-6">
+                        Se guarda como saldo disponible y se aplicará automáticamente a la próxima factura que se cree.
+                      </p>
+                    </button>
+
+                    {/* Pending invoices */}
+                    {applyPendingInvoices.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2 mt-3">
+                          Facturas pendientes ({applyPendingInvoices.length})
+                        </p>
+                        <div className="space-y-2">
+                          {applyPendingInvoices.map((inv) => {
+                            const selected = applyMode === "invoice" && applyTargetInvoiceId === inv.id;
+                            const owed = Number(inv.total_a_pagar || 0);
+                            return (
+                              <button
+                                key={inv.id}
+                                type="button"
+                                onClick={() => { setApplyMode("invoice"); setApplyTargetInvoiceId(inv.id); }}
+                                data-testid={`apply-invoice-${inv.invoice_number}`}
+                                className={`w-full text-left p-3 rounded-xl border-2 transition ${selected ? "border-emerald-500 bg-emerald-50" : "border-gray-200 hover:border-gray-300"}`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`h-4 w-4 rounded-full border-2 ${selected ? "border-emerald-500 bg-emerald-500" : "border-gray-300"}`} />
+                                    <span className="font-semibold text-sm">{inv.invoice_number}</span>
+                                    <span className="text-xs text-gray-500">{(inv.created_at || "").slice(0, 10)}</span>
+                                  </div>
+                                  <span className="text-sm font-semibold text-red-600">-${owed.toFixed(2)}</span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Closed invoices */}
+                    {applyClosedInvoices.length > 0 && (
+                      <details className="mt-3" open={applyPendingInvoices.length === 0}>
+                        <summary className="text-xs font-semibold text-gray-600 uppercase tracking-wide cursor-pointer">
+                          Facturas cerradas ({applyClosedInvoices.length}) — clic para expandir
+                        </summary>
+                        <div className="space-y-2 mt-2">
+                          {applyClosedInvoices.slice(0, 20).map((inv) => {
+                            const selected = applyMode === "invoice" && applyTargetInvoiceId === inv.id;
+                            const favor = Number(inv.saldo_a_favor || 0);
+                            return (
+                              <button
+                                key={inv.id}
+                                type="button"
+                                onClick={() => { setApplyMode("invoice"); setApplyTargetInvoiceId(inv.id); }}
+                                data-testid={`apply-invoice-closed-${inv.invoice_number}`}
+                                className={`w-full text-left p-3 rounded-xl border-2 transition ${selected ? "border-emerald-500 bg-emerald-50" : "border-gray-200 hover:border-gray-300"}`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <div className={`h-4 w-4 rounded-full border-2 ${selected ? "border-emerald-500 bg-emerald-500" : "border-gray-300"}`} />
+                                    <span className="font-semibold text-sm">{inv.invoice_number}</span>
+                                    <span className="text-xs text-gray-500">{(inv.created_at || "").slice(0, 10)}</span>
+                                  </div>
+                                  <span className="text-xs text-green-600">
+                                    {favor > 0 ? `+$${favor.toFixed(2)}` : "Saldada"}
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    )}
+
+                    {applyPendingInvoices.length === 0 && applyClosedInvoices.length === 0 && (
+                      <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-sm text-blue-900">
+                        Este cliente aún no tiene facturas. La recarga quedará como abono para su próxima compra.
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <DialogFooter className="gap-2">
+                <Button variant="outline" className="rounded-xl" onClick={() => setApplyDialogOpen(false)}>Cancelar</Button>
+                <Button
+                  onClick={confirmApprove}
+                  disabled={applyLoading || approving === applyTargetTx?.id || (applyMode === "invoice" && !applyTargetInvoiceId)}
+                  className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
+                  data-testid="confirm-apply-recharge-btn"
+                >
+                  {approving === applyTargetTx?.id ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Aprobando…
+                    </span>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Aprobar y aplicar
                     </>
                   )}
                 </Button>

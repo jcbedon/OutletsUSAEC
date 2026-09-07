@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Form as FastAPIForm, Response
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Form as FastAPIForm, Response, Body
 from fastapi.responses import FileResponse
 from bson import json_util as _bson_json_util
 import json
@@ -13,7 +13,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 import object_store
 import uuid
 from datetime import datetime, timezone, timedelta
@@ -324,6 +324,13 @@ class WalletTransaction(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     approved_at: Optional[str] = None
     purchase_id: Optional[str] = None
+    # Manual assignment (set by admin on approval). If populated the recalc
+    # engine assigns this deposit to the given invoice_id regardless of dates.
+    target_invoice_id: Optional[str] = None
+    # Floating credit ("abono para siguientes compras"): the deposit is NOT
+    # applied to any current invoice — it stays as available credit and
+    # auto-consumes when the next invoice is created.
+    is_floating_credit: bool = False
 
 class Live(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -785,7 +792,7 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
 
     all_deposits = await db.wallet_transactions.find(
         {"user_id": client["id"], "tenant_id": tenant_id, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
-        {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
+        {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1, "target_invoice_id": 1, "is_floating_credit": 1}
     ).sort("created_at", 1).to_list(5000)
     
     all_invoices = await db.invoices.find(
@@ -830,20 +837,32 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     
     # Group deposits by which invoice was the latest at the time of the deposit
     deposits_by_invoice = {inv["id"]: [] for inv in all_invoices}
-    
+    valid_invoice_ids = set(deposits_by_invoice.keys())
+
     for dep in all_deposits:
-        dep_date = dep.get("created_at", "")
-        # Find the latest invoice created BEFORE or AT the deposit date
+        # Floating credit: NOT applied to any invoice — stays as free credit.
+        if dep.get("is_floating_credit"):
+            continue
+
+        # Manual assignment wins over date-based logic if the target invoice
+        # still exists (i.e. not annulled/deleted).
+        manual_target = dep.get("target_invoice_id")
         target_invoice = None
-        for inv in all_invoices:
-            if inv["created_at"] <= dep_date:
-                target_invoice = inv
-            else:
-                break
-        # If no invoice existed before the deposit, assign to the first invoice
+        if manual_target and manual_target in valid_invoice_ids:
+            target_invoice = next((i for i in all_invoices if i["id"] == manual_target), None)
+
         if target_invoice is None:
-            target_invoice = all_invoices[0]
-        
+            dep_date = dep.get("created_at", "")
+            # Find the latest invoice created BEFORE or AT the deposit date
+            for inv in all_invoices:
+                if inv["created_at"] <= dep_date:
+                    target_invoice = inv
+                else:
+                    break
+            # If no invoice existed before the deposit, assign to the first invoice
+            if target_invoice is None:
+                target_invoice = all_invoices[0]
+
         deposits_by_invoice[target_invoice["id"]].append({
             "deposit_id": dep.get("id", ""),
             "amount_applied": dep["amount"],
@@ -2236,6 +2255,20 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}}
     ]).to_list(len(user_ids))
     recharges_dict = {r["_id"]: r["total"] for r in recharges_agg}
+
+    # Aggregate floating-credit ("abono disponible") per user: approved
+    # recharges marked "for future invoices" that have not been auto-consumed
+    # yet at invoice creation time.
+    floating_agg = await db.wallet_transactions.aggregate([
+        {"$match": {
+            "user_id": {"$in": user_ids}, "tenant_id": tid,
+            "type": "deposit", "status": "approved",
+            "is_deleted": {"$ne": True},
+            "is_floating_credit": True,
+        }},
+        {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}}
+    ]).to_list(len(user_ids))
+    floating_dict = {f["_id"]: f["total"] for f in floating_agg}
     
     # Get total_a_pagar from the most recent invoice per customer
     last_invoice_agg = await db.invoices.aggregate([
@@ -2295,6 +2328,9 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "pending_to_invoice_count": pending_to_invoice_count,
             # real_pending_balance = pending_balance combined with pending purchases (see above)
             "real_pending_balance": real_pending_balance,
+            # abono_disponible = approved deposits marked "para siguientes compras"
+            # still unconsumed (float that will apply to the next invoice created)
+            "abono_disponible": round(float(floating_dict.get(uid, 0) or 0), 2),
         })
     return result
 
@@ -3181,10 +3217,23 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
             "created_at": tx.get("created_at")
         })
 
+    # Sum floating credits (approved deposits marked as "abono para siguientes
+    # compras" that have NOT been consumed yet).
+    floating_agg = await db.wallet_transactions.aggregate([
+        {"$match": {
+            "tenant_id": tid, "user_id": user_id, "type": "deposit",
+            "status": "approved", "is_deleted": {"$ne": True},
+            "is_floating_credit": True,
+        }},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]).to_list(1)
+    abono_disponible = round((floating_agg[0]["total"] if floating_agg else 0) or 0, 2)
+
     return {**wallet,
             "total_saldo_pendiente": round(saldo_pend, 2),
             "pending_debt": round(last_total_a_pagar, 2),
             "saldo_a_favor": round(last_saldo_a_favor, 2),
+            "abono_disponible": abono_disponible,
             "pending_deposit_total": round(pending_deposit_total, 2),
             "pending_deposits": pending_deposits_info}
 
@@ -3646,7 +3695,11 @@ async def set_deposit_amount(transaction_id: str, data: dict, current_user: dict
     return {"message": "Monto actualizado", "amount": amount}
 
 @api_router.post("/wallet/approve-deposit/{transaction_id}")
-async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_current_user)):
+async def approve_deposit(
+    transaction_id: str,
+    payload: Optional[Dict[str, Any]] = Body(None),
+    current_user: dict = Depends(get_current_user),
+):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
@@ -3666,10 +3719,36 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
         raise HTTPException(status_code=400, detail="Debes asignar el monto antes de aprobar")
     wallet = await db.wallets.find_one({"user_id": transaction["user_id"], "tenant_id": tid}, {"_id": 0})
     new_balance = wallet["available"] + transaction["amount"]
+
+    # ── Manual assignment (target invoice or floating credit) ──
+    # `payload` is optional to preserve backwards compat with old clients that
+    # POST without a body (they get the default date-based auto-assign).
+    payload = payload or {}
+    target_invoice_id = payload.get("target_invoice_id")
+    is_floating_credit = bool(payload.get("is_floating_credit", False))
+    if target_invoice_id and is_floating_credit:
+        raise HTTPException(status_code=400, detail="No puedes elegir factura y abono flotante a la vez")
+    if target_invoice_id:
+        target_inv = await db.invoices.find_one(
+            {"id": target_invoice_id, "customer_id": transaction["customer_id"],
+             "tenant_id": tid, "is_annulled": {"$ne": True}},
+            {"_id": 0, "id": 1}
+        )
+        if not target_inv:
+            raise HTTPException(status_code=404, detail="Factura destino no encontrada o anulada")
+
+    approval_fields = {
+        "status": "approved",
+        "balance_after": new_balance,
+        "approved_at": datetime.now(timezone.utc).isoformat(),
+        "target_invoice_id": target_invoice_id if target_invoice_id else None,
+        "is_floating_credit": is_floating_credit,
+    }
+
     await db.wallets.update_one({"user_id": transaction["user_id"], "tenant_id": tid},
         {"$set": {"available": new_balance, "updated_at": datetime.now(timezone.utc).isoformat()}})
     await db.wallet_transactions.update_one({"id": transaction_id, "tenant_id": tid},
-        {"$set": {"status": "approved", "balance_after": new_balance, "approved_at": datetime.now(timezone.utc).isoformat()}})
+        {"$set": approval_fields})
     await create_notification(tid, transaction["user_id"], transaction["customer_id"], "wallet_credited",
         "Saldo Acreditado", f"Se han acreditado ${transaction['amount']:.2f} USD. Saldo actual: ${new_balance:.2f} USD")
     
@@ -6061,11 +6140,24 @@ async def create_invoice(data: dict, current_user: dict = Depends(get_current_us
             )
         )
 
+    # ── Auto-consume floating credits ("abono para siguientes compras") ──
+    # Any approved deposit still marked is_floating_credit=True now gets
+    # attached to this newly-created invoice so its balance is applied
+    # immediately. The client's UI stops showing them as "abono disponible"
+    # and the invoice shows them as regular applied deposits.
+    await db.wallet_transactions.update_many(
+        {
+            "tenant_id": tid, "customer_id": customer_id,
+            "type": "deposit", "status": "approved",
+            "is_deleted": {"$ne": True},
+            "is_floating_credit": True,
+        },
+        {"$set": {"is_floating_credit": False, "target_invoice_id": invoice.id}}
+    )
+
     # Recalculate the full invoice chain to ensure consistency across invoices
     # (handles edge cases like shipping costs added later on previous invoices)
     await recalculate_client_invoices(tid, customer_id)
-
-    # Audit
     actor_name = await get_actor_name(current_user["user_id"])
     await log_audit_action(
         tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,

@@ -683,6 +683,17 @@ https://outletsusaec.shop/`;
                                 {client.pending_balance > 0 ? '+' : ''}${Math.abs(client.pending_balance || 0).toFixed(2)}
                               </p>
                             </div>
+                            {Number(client.abono_disponible || 0) > 0 && (
+                              <div
+                                className="mt-2 px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200"
+                                data-testid={`abono-disponible-${client.customer_id}`}
+                              >
+                                <p className="text-[10px] text-blue-700 font-semibold uppercase tracking-wide">Abono Disponible</p>
+                                <p className="text-sm font-bold text-blue-700">
+                                  +${Number(client.abono_disponible).toFixed(2)}
+                                </p>
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
