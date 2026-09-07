@@ -2287,13 +2287,52 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
     ]).to_list(len(user_ids))
     recharges_dict = {r["_id"]: r["total"] for r in recharges_agg}
     
-    # Get total_a_pagar from the most recent invoice per customer
+    # Get total_a_pagar from the most recent invoice per customer.
+    # We also pull the raw ingredients used by the InvoiceDialog popup so we
+    # can recompute saldo_a_favor / total_a_pagar on-the-fly if the stored
+    # aggregate values drifted from the raw fields (this happens after some
+    # recalc engine changes that rewrote assignment logic without touching
+    # historical rows).
     last_invoice_agg = await db.invoices.aggregate([
         {"$match": {"tenant_id": tid, "customer_id": {"$in": customer_ids_list}, "is_annulled": {"$ne": True}}},
         {"$sort": {"created_at": -1}},
-        {"$group": {"_id": "$customer_id", "total_a_pagar": {"$first": "$total_a_pagar"}, "saldo_a_favor": {"$first": "$saldo_a_favor"}}}
+        {"$group": {
+            "_id": "$customer_id",
+            "total_a_pagar": {"$first": "$total_a_pagar"},
+            "saldo_a_favor": {"$first": "$saldo_a_favor"},
+            "subtotal": {"$first": "$subtotal"},
+            "total_commission": {"$first": "$total_commission"},
+            "total_tax": {"$first": "$total_tax"},
+            "shipping_cost": {"$first": "$shipping_cost"},
+            "saldo_pendiente": {"$first": "$saldo_pendiente"},
+            "deposits_applied": {"$first": "$deposits_applied"},
+            "saldo_a_favor_anterior": {"$first": "$saldo_a_favor_anterior"},
+        }}
     ]).to_list(len(customer_ids_list) or 1)
-    last_invoice_dict = {li["_id"]: {"total_a_pagar": li.get("total_a_pagar", 0) or 0, "saldo_a_favor": li.get("saldo_a_favor", 0) or 0} for li in last_invoice_agg}
+
+    def _reconcile(li):
+        stored_debt = float(li.get("total_a_pagar", 0) or 0)
+        stored_favor = float(li.get("saldo_a_favor", 0) or 0)
+        # Recompute from raw fields (mirrors InvoiceDialog popup formula)
+        grand = (
+            float(li.get("subtotal", 0) or 0)
+            + float(li.get("total_commission", 0) or 0)
+            + float(li.get("total_tax", 0) or 0)
+            + float(li.get("shipping_cost", 0) or 0)
+            + float(li.get("saldo_pendiente", 0) or 0)
+        )
+        credits = float(li.get("deposits_applied", 0) or 0) + float(li.get("saldo_a_favor_anterior", 0) or 0)
+        computed_debt = round(max(0, grand - credits), 2)
+        computed_favor = round(max(0, credits - grand), 2)
+        # Prefer the computed values whenever they differ from the stored
+        # aggregate. This keeps the AdminClients list, the client dashboard
+        # and the invoice popup showing the exact same numbers even if the
+        # stored `saldo_a_favor` on the invoice is stale.
+        if abs(computed_debt - stored_debt) > 0.005 or abs(computed_favor - stored_favor) > 0.005:
+            return {"total_a_pagar": computed_debt, "saldo_a_favor": computed_favor}
+        return {"total_a_pagar": round(stored_debt, 2), "saldo_a_favor": round(stored_favor, 2)}
+
+    last_invoice_dict = {li["_id"]: _reconcile(li) for li in last_invoice_agg}
     
     result = []
     for user in users:
@@ -2827,18 +2866,42 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
         ]).to_list(1)
         saldo_pend = agg[0]["total"] if agg else 0
     
-    # Get total_a_pagar and saldo_a_favor from the last invoice
+    # Get total_a_pagar and saldo_a_favor from the last invoice.
+    # Same defensive reconciliation used by /admin/clients: prefer values
+    # recomputed from raw fields (subtotal, commission, tax, shipping,
+    # saldo_pendiente, deposits_applied, saldo_a_favor_anterior) whenever
+    # they diverge from the stored aggregates. This keeps the client
+    # dashboard, admin list and invoice popup showing the same numbers.
     last_total_a_pagar = 0
     last_saldo_a_favor = 0
     if customer_id:
         last_inv = await db.invoices.find_one(
             {"tenant_id": tid, "customer_id": customer_id, "is_annulled": {"$ne": True}},
-            {"_id": 0, "total_a_pagar": 1, "saldo_a_favor": 1},
+            {"_id": 0, "total_a_pagar": 1, "saldo_a_favor": 1,
+             "subtotal": 1, "total_commission": 1, "total_tax": 1,
+             "shipping_cost": 1, "saldo_pendiente": 1,
+             "deposits_applied": 1, "saldo_a_favor_anterior": 1},
             sort=[("created_at", -1)]
         )
         if last_inv:
-            last_total_a_pagar = last_inv.get("total_a_pagar", 0) or 0
-            last_saldo_a_favor = last_inv.get("saldo_a_favor", 0) or 0
+            stored_debt = float(last_inv.get("total_a_pagar", 0) or 0)
+            stored_favor = float(last_inv.get("saldo_a_favor", 0) or 0)
+            grand = (
+                float(last_inv.get("subtotal", 0) or 0)
+                + float(last_inv.get("total_commission", 0) or 0)
+                + float(last_inv.get("total_tax", 0) or 0)
+                + float(last_inv.get("shipping_cost", 0) or 0)
+                + float(last_inv.get("saldo_pendiente", 0) or 0)
+            )
+            credits = float(last_inv.get("deposits_applied", 0) or 0) + float(last_inv.get("saldo_a_favor_anterior", 0) or 0)
+            computed_debt = round(max(0, grand - credits), 2)
+            computed_favor = round(max(0, credits - grand), 2)
+            if abs(computed_debt - stored_debt) > 0.005 or abs(computed_favor - stored_favor) > 0.005:
+                last_total_a_pagar = computed_debt
+                last_saldo_a_favor = computed_favor
+            else:
+                last_total_a_pagar = stored_debt
+                last_saldo_a_favor = stored_favor
     
     # Sum pending deposit amounts (AI-detected if admin hasn't set amount yet)
     pending_cursor = db.wallet_transactions.find(

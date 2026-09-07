@@ -13,6 +13,7 @@ Spanish. Respond in Spanish only.
 - OCR: Gemini Vision via Emergent LLM key
 
 ## Implemented (recent — session Feb 2026)
+- **[03-feb-2026]** Fix defensivo saldo_a_favor: `/api/admin/clients` y `/api/wallet/{id}` ahora recomputan `saldo_a_favor`/`total_a_pagar` en on-the-fly cuando los valores agregados almacenados divergen de los campos crudos (subtotal + comisión + impuesto + envío + saldo_pendiente vs. deposits_applied + saldo_a_favor_anterior). Cierra el bug del cliente CHOCLO donde el popup mostraba $32 pero AdminClients y dashboard mostraban $0 tras el rollback a Aug-30 code. Validado en preview: forzando `saldo_a_favor=0` en la última factura, ambos endpoints devuelven el valor computado ($1036.4) sin necesidad de correr recalc manual.
 - Live cantidad selector, Deudas panel fix, Manual recharge + bank ledger sync
 - Top clientes saldo a favor, Inactivos tab, Granular employee perms
 - pending_to_invoice global warnings, iOS PWA BFCache session fix
