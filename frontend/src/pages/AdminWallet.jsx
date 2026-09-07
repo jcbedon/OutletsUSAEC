@@ -133,6 +133,9 @@ export default function AdminWallet() {
   const [applyClosedInvoices, setApplyClosedInvoices] = useState([]);
   const [applyMode, setApplyMode] = useState("invoice"); // "invoice" | "floating"
   const [applyTargetInvoiceId, setApplyTargetInvoiceId] = useState(null);
+  // "approve" = confirming a pending client-uploaded recharge
+  // "create"  = admin manual recharge (uses the same UI to pick target)
+  const [applyFlowType, setApplyFlowType] = useState("approve");
   
   const APP_URL = process.env.REACT_APP_BACKEND_URL?.replace('/api', '') || window.location.origin;
 
@@ -231,16 +234,20 @@ export default function AdminWallet() {
         return;
       }
     }
-    // Load the client's invoices before opening the assignment dialog
+    setApplyFlowType("approve");
+    await openApplyDialogForClient(tx.customer_id, tx);
+  };
+
+  // Shared loader used by both flows (approve pending & create manual)
+  const openApplyDialogForClient = async (customerId, txPreview) => {
     setApplyLoading(true);
-    setApplyTargetTx(tx);
+    setApplyTargetTx(txPreview);
     setApplyTargetInvoiceId(null);
     setApplyMode("floating");
     setApplyDialogOpen(true);
     try {
-      const res = await getClientInvoices(tx.customer_id, false);
+      const res = await getClientInvoices(customerId, false);
       const invoices = Array.isArray(res.data) ? res.data : [];
-      // Split into pending (owed) and closed (settled) buckets — oldest to newest per bucket
       const parsePayable = (inv) => Number(inv.total_a_pagar ?? 0);
       const pending = invoices.filter((inv) => parsePayable(inv) > 0);
       const closed = invoices.filter((inv) => parsePayable(inv) <= 0);
@@ -248,7 +255,6 @@ export default function AdminWallet() {
       closed.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
       setApplyPendingInvoices(pending);
       setApplyClosedInvoices(closed);
-      // If there's at least one pending invoice, preselect the oldest as a sensible default
       if (pending.length > 0) {
         setApplyMode("invoice");
         setApplyTargetInvoiceId(pending[0].id);
@@ -262,16 +268,50 @@ export default function AdminWallet() {
 
   const confirmApprove = async () => {
     if (!applyTargetTx) return;
-    const payload = {};
-    if (applyMode === "invoice") {
-      if (!applyTargetInvoiceId) {
-        toast.error("Selecciona una factura para aplicar la recarga");
-        return;
-      }
-      payload.target_invoice_id = applyTargetInvoiceId;
-    } else if (applyMode === "floating") {
-      payload.is_floating_credit = true;
+    if (applyMode === "invoice" && !applyTargetInvoiceId) {
+      toast.error("Selecciona una factura para aplicar la recarga");
+      return;
     }
+
+    if (applyFlowType === "create") {
+      // Admin manual recharge: submit the full form with the extra target fields
+      setCreatingRecharge(true);
+      try {
+        const formData = new FormData();
+        formData.append("user_id", rechargeClient.id);
+        formData.append("amount", parseFloat(rechargeAmount));
+        formData.append("description", rechargeDescription || "Recarga creada por administrador");
+        formData.append("proof", rechargeProof);
+        if (rechargeBankAccountId) formData.append("bank_account_id", rechargeBankAccountId);
+        if (applyMode === "invoice") formData.append("target_invoice_id", applyTargetInvoiceId);
+        if (applyMode === "floating") formData.append("is_floating_credit", "true");
+        await adminCreateRecharge(formData);
+        toast.success(
+          applyMode === "floating"
+            ? "Recarga creada como abono para siguientes compras"
+            : "Recarga creada y aplicada a la factura"
+        );
+        setRechargeDialogOpen(false);
+        resetRechargeForm();
+        setApplyDialogOpen(false);
+        setApplyTargetTx(null);
+        setApplyPendingInvoices([]);
+        setApplyClosedInvoices([]);
+        setApplyTargetInvoiceId(null);
+        loadData();
+      } catch (error) {
+        toast.error(error.response?.data?.detail || "Error al crear la recarga");
+      } finally {
+        setCreatingRecharge(false);
+      }
+      return;
+    }
+
+    // Default: approve a pending client-uploaded recharge
+    const payload = {};
+    if (applyMode === "invoice") payload.target_invoice_id = applyTargetInvoiceId;
+    else if (applyMode === "floating") payload.is_floating_credit = true;
+
     setApproving(applyTargetTx.id);
     try {
       await approveDeposit(applyTargetTx.id, payload);
@@ -397,28 +437,20 @@ export default function AdminWallet() {
       toast.error("Selecciona la cuenta bancaria de destino");
       return;
     }
-    
-    setCreatingRecharge(true);
-    try {
-      const formData = new FormData();
-      formData.append("user_id", rechargeClient.id);
-      formData.append("amount", parseFloat(rechargeAmount));
-      formData.append("description", rechargeDescription || "Recarga creada por administrador");
-      formData.append("proof", rechargeProof);
-      if (rechargeBankAccountId) {
-        formData.append("bank_account_id", rechargeBankAccountId);
-      }
-      
-      await adminCreateRecharge(formData);
-      toast.success("Recarga creada exitosamente");
-      setRechargeDialogOpen(false);
-      resetRechargeForm();
-      loadData();
-    } catch (error) {
-      toast.error(error.response?.data?.detail || "Error al crear la recarga");
-    } finally {
-      setCreatingRecharge(false);
-    }
+
+    // Open the same "apply-recharge-dialog" used for pending approvals so the
+    // admin can decide where this manual recharge lands. The actual POST to
+    // /wallet/admin-recharge happens inside `confirmApprove` when flow is
+    // "create".
+    setApplyFlowType("create");
+    // Feed the dialog a stub tx object so its header shows the correct amount
+    // and customer_id label.
+    const stubTx = {
+      id: `manual-${Date.now()}`,
+      customer_id: rechargeClient.customer_id,
+      amount: parseFloat(rechargeAmount),
+    };
+    await openApplyDialogForClient(rechargeClient.customer_id, stubTx);
   };
 
   const resetRechargeForm = () => {
@@ -1144,18 +1176,23 @@ export default function AdminWallet() {
                 <Button variant="outline" className="rounded-xl" onClick={() => setApplyDialogOpen(false)}>Cancelar</Button>
                 <Button
                   onClick={confirmApprove}
-                  disabled={applyLoading || approving === applyTargetTx?.id || (applyMode === "invoice" && !applyTargetInvoiceId)}
+                  disabled={
+                    applyLoading ||
+                    (applyFlowType === "approve" ? approving === applyTargetTx?.id : creatingRecharge) ||
+                    (applyMode === "invoice" && !applyTargetInvoiceId)
+                  }
                   className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
                   data-testid="confirm-apply-recharge-btn"
                 >
-                  {approving === applyTargetTx?.id ? (
+                  {(applyFlowType === "approve" ? approving === applyTargetTx?.id : creatingRecharge) ? (
                     <span className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Aprobando…
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {applyFlowType === "create" ? "Creando…" : "Aprobando…"}
                     </span>
                   ) : (
                     <>
                       <CheckCircle className="h-4 w-4 mr-2" />
-                      Aprobar y aplicar
+                      {applyFlowType === "create" ? "Crear y aplicar" : "Aprobar y aplicar"}
                     </>
                   )}
                 </Button>

@@ -4116,6 +4116,8 @@ async def admin_create_recharge(
     description: str = FastAPIForm(None),
     bank_account_id: str = FastAPIForm(None),
     proof: UploadFile = File(...),
+    target_invoice_id: Optional[str] = FastAPIForm(None),
+    is_floating_credit: bool = FastAPIForm(False),
     current_user: dict = Depends(get_current_user)
 ):
     """
@@ -4134,7 +4136,11 @@ async def admin_create_recharge(
     
     if amount <= 0:
         raise HTTPException(status_code=400, detail="El monto debe ser mayor a 0")
-    
+
+    # Manual assignment validation (mirrors approve_deposit)
+    if target_invoice_id and is_floating_credit:
+        raise HTTPException(status_code=400, detail="No puedes elegir factura y abono flotante a la vez")
+
     # Validate user exists
     user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0})
     if not user:
@@ -4143,7 +4149,18 @@ async def admin_create_recharge(
     wallet = await db.wallets.find_one({"user_id": user_id, "tenant_id": tid}, {"_id": 0})
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
-    
+
+    # Validate target invoice EARLY so we don't upload proof / mutate wallet
+    # only to fail at the tx-insert step.
+    if target_invoice_id:
+        target_inv = await db.invoices.find_one(
+            {"id": target_invoice_id, "customer_id": user["customer_id"],
+             "tenant_id": tid, "is_annulled": {"$ne": True}},
+            {"_id": 0, "id": 1}
+        )
+        if not target_inv:
+            raise HTTPException(status_code=404, detail="Factura destino no encontrada o anulada")
+
     # Save proof file (mandatory)
     if not proof or not proof.filename:
         raise HTTPException(status_code=400, detail="El comprobante es obligatorio")
@@ -4194,13 +4211,16 @@ async def admin_create_recharge(
         balance_after=new_balance,
         description=description or "Recarga creada por administrador",
         status="approved",
-        approved_at=datetime.now(timezone.utc).isoformat()
+        approved_at=datetime.now(timezone.utc).isoformat(),
+        target_invoice_id=target_invoice_id if target_invoice_id else None,
+        is_floating_credit=is_floating_credit,
     )
     tx_dict = tx.model_dump()
     tx_dict["proof_url"] = proof_url
     tx_dict["created_by_admin"] = True
     if resolved_bank_account_id:
         tx_dict["bank_account_id"] = resolved_bank_account_id
+
     await db.wallet_transactions.insert_one(tx_dict)
     
     # Create notification for client
