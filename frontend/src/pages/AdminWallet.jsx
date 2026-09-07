@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount, scanDepositProof, listBankAccounts, detectDuplicateDeposits, getClientInvoices } from "@/lib/api";
+import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount, scanDepositProof, listBankAccounts } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart, QrCode, Smartphone, Loader2, Trash2, AlertTriangle, ShieldAlert } from "lucide-react";
+import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart, QrCode, Smartphone, Loader2, Trash2 } from "lucide-react";
 import RechargeReport from "@/components/RechargeReport";
 import QRCode from "qrcode";
 
@@ -119,23 +119,6 @@ export default function AdminWallet() {
   const [uploadToken, setUploadToken] = useState("");
   const [polling, setPolling] = useState(false);
   const pollingRef = useRef(null);
-
-  // Duplicate detection state
-  const [duplicateScanOpen, setDuplicateScanOpen] = useState(false);
-  const [duplicateScanning, setDuplicateScanning] = useState(false);
-  const [duplicateResult, setDuplicateResult] = useState(null);
-
-  // Approval assignment dialog (choose invoice or "abono siguientes compras")
-  const [applyDialogOpen, setApplyDialogOpen] = useState(false);
-  const [applyTargetTx, setApplyTargetTx] = useState(null);
-  const [applyLoading, setApplyLoading] = useState(false);
-  const [applyPendingInvoices, setApplyPendingInvoices] = useState([]);
-  const [applyClosedInvoices, setApplyClosedInvoices] = useState([]);
-  const [applyMode, setApplyMode] = useState("invoice"); // "invoice" | "floating"
-  const [applyTargetInvoiceId, setApplyTargetInvoiceId] = useState(null);
-  // "approve" = confirming a pending client-uploaded recharge
-  // "create"  = admin manual recharge (uses the same UI to pick target)
-  const [applyFlowType, setApplyFlowType] = useState("approve");
   
   const APP_URL = process.env.REACT_APP_BACKEND_URL?.replace('/api', '') || window.location.origin;
 
@@ -198,23 +181,6 @@ export default function AdminWallet() {
     }
   };
 
-  const runDuplicateDetection = async (scanMissing) => {
-    setDuplicateScanning(true);
-    try {
-      const res = await detectDuplicateDeposits(scanMissing);
-      setDuplicateResult(res.data);
-      if (res.data.duplicate_groups_count === 0) {
-        toast.success(scanMissing ? `Escaneadas ${res.data.scanned} recargas. Sin duplicados por imagen detectados.` : "Sin duplicados por imagen detectados.");
-      } else {
-        toast.warning(`Se encontraron ${res.data.duplicate_groups_count} grupo(s) de recargas con el mismo comprobante.`);
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.detail || "Error al detectar duplicados");
-    } finally {
-      setDuplicateScanning(false);
-    }
-  };
-
   const handleApprove = async (transactionId) => {
     const tx = pendingDeposits.find(d => d.id === transactionId);
     // If amount missing or zero, require admin to input it (client-submitted recharges)
@@ -227,104 +193,15 @@ export default function AdminWallet() {
       }
       try {
         await setDepositAmount(transactionId, newAmount);
-        // Reflect the persisted amount locally so the dialog shows the right value
-        tx.amount = newAmount;
       } catch (error) {
         toast.error(error.response?.data?.detail || "Error al asignar monto");
         return;
       }
     }
-    setApplyFlowType("approve");
-    await openApplyDialogForClient(tx.customer_id, tx);
-  };
-
-  // Shared loader used by both flows (approve pending & create manual)
-  const openApplyDialogForClient = async (customerId, txPreview) => {
-    setApplyLoading(true);
-    setApplyTargetTx(txPreview);
-    setApplyTargetInvoiceId(null);
-    setApplyMode("floating");
-    setApplyDialogOpen(true);
+    setApproving(transactionId);
     try {
-      const res = await getClientInvoices(customerId, false);
-      const invoices = Array.isArray(res.data) ? res.data : [];
-      const parsePayable = (inv) => Number(inv.total_a_pagar ?? 0);
-      const pending = invoices.filter((inv) => parsePayable(inv) > 0);
-      const closed = invoices.filter((inv) => parsePayable(inv) <= 0);
-      pending.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
-      closed.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
-      setApplyPendingInvoices(pending);
-      setApplyClosedInvoices(closed);
-      if (pending.length > 0) {
-        setApplyMode("invoice");
-        setApplyTargetInvoiceId(pending[0].id);
-      }
-    } catch (err) {
-      toast.error(err.response?.data?.detail || "No se pudieron cargar las facturas del cliente");
-    } finally {
-      setApplyLoading(false);
-    }
-  };
-
-  const confirmApprove = async () => {
-    if (!applyTargetTx) return;
-    if (applyMode === "invoice" && !applyTargetInvoiceId) {
-      toast.error("Selecciona una factura para aplicar la recarga");
-      return;
-    }
-
-    if (applyFlowType === "create") {
-      // Admin manual recharge: submit the full form with the extra target fields
-      setCreatingRecharge(true);
-      try {
-        const formData = new FormData();
-        formData.append("user_id", rechargeClient.id);
-        formData.append("amount", parseFloat(rechargeAmount));
-        formData.append("description", rechargeDescription || "Recarga creada por administrador");
-        formData.append("proof", rechargeProof);
-        if (rechargeBankAccountId) formData.append("bank_account_id", rechargeBankAccountId);
-        if (applyMode === "invoice") formData.append("target_invoice_id", applyTargetInvoiceId);
-        if (applyMode === "floating") formData.append("is_floating_credit", "true");
-        await adminCreateRecharge(formData);
-        toast.success(
-          applyMode === "floating"
-            ? "Recarga creada como abono para siguientes compras"
-            : "Recarga creada y aplicada a la factura"
-        );
-        setRechargeDialogOpen(false);
-        resetRechargeForm();
-        setApplyDialogOpen(false);
-        setApplyTargetTx(null);
-        setApplyPendingInvoices([]);
-        setApplyClosedInvoices([]);
-        setApplyTargetInvoiceId(null);
-        loadData();
-      } catch (error) {
-        toast.error(error.response?.data?.detail || "Error al crear la recarga");
-      } finally {
-        setCreatingRecharge(false);
-      }
-      return;
-    }
-
-    // Default: approve a pending client-uploaded recharge
-    const payload = {};
-    if (applyMode === "invoice") payload.target_invoice_id = applyTargetInvoiceId;
-    else if (applyMode === "floating") payload.is_floating_credit = true;
-
-    setApproving(applyTargetTx.id);
-    try {
-      await approveDeposit(applyTargetTx.id, payload);
-      toast.success(
-        applyMode === "floating"
-          ? "Recarga aprobada como abono para siguientes compras"
-          : "Recarga aprobada y aplicada a la factura"
-      );
-      setApplyDialogOpen(false);
-      setApplyTargetTx(null);
-      setApplyPendingInvoices([]);
-      setApplyClosedInvoices([]);
-      setApplyTargetInvoiceId(null);
+      await approveDeposit(transactionId);
+      toast.success("Depósito aprobado");
       loadData();
     } catch (error) {
       toast.error(error.response?.data?.detail || "Error al aprobar");
@@ -437,20 +314,28 @@ export default function AdminWallet() {
       toast.error("Selecciona la cuenta bancaria de destino");
       return;
     }
-
-    // Open the same "apply-recharge-dialog" used for pending approvals so the
-    // admin can decide where this manual recharge lands. The actual POST to
-    // /wallet/admin-recharge happens inside `confirmApprove` when flow is
-    // "create".
-    setApplyFlowType("create");
-    // Feed the dialog a stub tx object so its header shows the correct amount
-    // and customer_id label.
-    const stubTx = {
-      id: `manual-${Date.now()}`,
-      customer_id: rechargeClient.customer_id,
-      amount: parseFloat(rechargeAmount),
-    };
-    await openApplyDialogForClient(rechargeClient.customer_id, stubTx);
+    
+    setCreatingRecharge(true);
+    try {
+      const formData = new FormData();
+      formData.append("user_id", rechargeClient.id);
+      formData.append("amount", parseFloat(rechargeAmount));
+      formData.append("description", rechargeDescription || "Recarga creada por administrador");
+      formData.append("proof", rechargeProof);
+      if (rechargeBankAccountId) {
+        formData.append("bank_account_id", rechargeBankAccountId);
+      }
+      
+      await adminCreateRecharge(formData);
+      toast.success("Recarga creada exitosamente");
+      setRechargeDialogOpen(false);
+      resetRechargeForm();
+      loadData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al crear la recarga");
+    } finally {
+      setCreatingRecharge(false);
+    }
   };
 
   const resetRechargeForm = () => {
@@ -712,16 +597,7 @@ export default function AdminWallet() {
         </Tabs>
 
         {/* Action Buttons */}
-        <div className="flex gap-3 mb-6 flex-wrap">
-          <Button
-            variant="outline"
-            className="rounded-xl border-orange-300 text-orange-700 hover:bg-orange-50"
-            onClick={() => { setDuplicateScanOpen(true); setDuplicateResult(null); }}
-            data-testid="detect-duplicates-btn"
-          >
-            <ShieldAlert className="h-4 w-4 mr-2" />
-            Detectar Duplicados
-          </Button>
+        <div className="flex gap-3 mb-6">
           <Dialog open={adjustDialogOpen} onOpenChange={setAdjustDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="rounded-xl border-red-200 text-red-600 hover:bg-red-50" data-testid="adjust-balance-btn">
@@ -1047,152 +923,6 @@ export default function AdminWallet() {
                     <>
                       <CheckCircle className="h-4 w-4 mr-2" />
                       Crear Recarga
-                    </>
-                  )}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {/* Assign Recharge to Invoice / Floating Credit Dialog */}
-          <Dialog open={applyDialogOpen} onOpenChange={(o) => { if (!o) { setApplyDialogOpen(false); setApplyTargetTx(null); } }}>
-            <DialogContent className="rounded-2xl max-w-lg" data-testid="apply-recharge-dialog">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2 text-emerald-700">
-                  <CheckCircle className="h-5 w-5" />
-                  Asignar recarga
-                </DialogTitle>
-                <DialogDescription>
-                  {applyTargetTx ? (
-                    <span>
-                      <span className="font-semibold">${Number(applyTargetTx.amount || 0).toFixed(2)}</span>
-                      {" "}para <span className="font-semibold">{applyTargetTx.customer_id}</span>. Elige a qué factura aplicar o guarda como abono para las próximas compras.
-                    </span>
-                  ) : null}
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
-                {applyLoading ? (
-                  <div className="flex items-center justify-center py-8 text-gray-500">
-                    <Loader2 className="h-5 w-5 animate-spin mr-2" /> Cargando facturas…
-                  </div>
-                ) : (
-                  <>
-                    {/* Floating credit option */}
-                    <button
-                      type="button"
-                      onClick={() => { setApplyMode("floating"); setApplyTargetInvoiceId(null); }}
-                      data-testid="apply-floating-option"
-                      className={`w-full text-left p-3 rounded-xl border-2 transition ${applyMode === "floating" ? "border-emerald-500 bg-emerald-50" : "border-gray-200 hover:border-gray-300"}`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className={`h-4 w-4 rounded-full border-2 ${applyMode === "floating" ? "border-emerald-500 bg-emerald-500" : "border-gray-300"}`} />
-                        <span className="font-semibold text-sm">Abono para siguientes compras</span>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1 ml-6">
-                        Se guarda como saldo disponible y se aplicará automáticamente a la próxima factura que se cree.
-                      </p>
-                    </button>
-
-                    {/* Pending invoices */}
-                    {applyPendingInvoices.length > 0 && (
-                      <div>
-                        <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2 mt-3">
-                          Facturas pendientes ({applyPendingInvoices.length})
-                        </p>
-                        <div className="space-y-2">
-                          {applyPendingInvoices.map((inv) => {
-                            const selected = applyMode === "invoice" && applyTargetInvoiceId === inv.id;
-                            const owed = Number(inv.total_a_pagar || 0);
-                            return (
-                              <button
-                                key={inv.id}
-                                type="button"
-                                onClick={() => { setApplyMode("invoice"); setApplyTargetInvoiceId(inv.id); }}
-                                data-testid={`apply-invoice-${inv.invoice_number}`}
-                                className={`w-full text-left p-3 rounded-xl border-2 transition ${selected ? "border-emerald-500 bg-emerald-50" : "border-gray-200 hover:border-gray-300"}`}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <div className={`h-4 w-4 rounded-full border-2 ${selected ? "border-emerald-500 bg-emerald-500" : "border-gray-300"}`} />
-                                    <span className="font-semibold text-sm">{inv.invoice_number}</span>
-                                    <span className="text-xs text-gray-500">{(inv.created_at || "").slice(0, 10)}</span>
-                                  </div>
-                                  <span className="text-sm font-semibold text-red-600">-${owed.toFixed(2)}</span>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Closed invoices */}
-                    {applyClosedInvoices.length > 0 && (
-                      <details className="mt-3" open={applyPendingInvoices.length === 0}>
-                        <summary className="text-xs font-semibold text-gray-600 uppercase tracking-wide cursor-pointer">
-                          Facturas cerradas ({applyClosedInvoices.length}) — clic para expandir
-                        </summary>
-                        <div className="space-y-2 mt-2">
-                          {applyClosedInvoices.slice(0, 20).map((inv) => {
-                            const selected = applyMode === "invoice" && applyTargetInvoiceId === inv.id;
-                            const favor = Number(inv.saldo_a_favor || 0);
-                            return (
-                              <button
-                                key={inv.id}
-                                type="button"
-                                onClick={() => { setApplyMode("invoice"); setApplyTargetInvoiceId(inv.id); }}
-                                data-testid={`apply-invoice-closed-${inv.invoice_number}`}
-                                className={`w-full text-left p-3 rounded-xl border-2 transition ${selected ? "border-emerald-500 bg-emerald-50" : "border-gray-200 hover:border-gray-300"}`}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-2">
-                                    <div className={`h-4 w-4 rounded-full border-2 ${selected ? "border-emerald-500 bg-emerald-500" : "border-gray-300"}`} />
-                                    <span className="font-semibold text-sm">{inv.invoice_number}</span>
-                                    <span className="text-xs text-gray-500">{(inv.created_at || "").slice(0, 10)}</span>
-                                  </div>
-                                  <span className="text-xs text-green-600">
-                                    {favor > 0 ? `+$${favor.toFixed(2)}` : "Saldada"}
-                                  </span>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </details>
-                    )}
-
-                    {applyPendingInvoices.length === 0 && applyClosedInvoices.length === 0 && (
-                      <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-sm text-blue-900">
-                        Este cliente aún no tiene facturas. La recarga quedará como abono para su próxima compra.
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-
-              <DialogFooter className="gap-2">
-                <Button variant="outline" className="rounded-xl" onClick={() => setApplyDialogOpen(false)}>Cancelar</Button>
-                <Button
-                  onClick={confirmApprove}
-                  disabled={
-                    applyLoading ||
-                    (applyFlowType === "approve" ? approving === applyTargetTx?.id : creatingRecharge) ||
-                    (applyMode === "invoice" && !applyTargetInvoiceId)
-                  }
-                  className="rounded-xl bg-emerald-600 hover:bg-emerald-700"
-                  data-testid="confirm-apply-recharge-btn"
-                >
-                  {(applyFlowType === "approve" ? approving === applyTargetTx?.id : creatingRecharge) ? (
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      {applyFlowType === "create" ? "Creando…" : "Aprobando…"}
-                    </span>
-                  ) : (
-                    <>
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      {applyFlowType === "create" ? "Crear y aplicar" : "Aprobar y aplicar"}
                     </>
                   )}
                 </Button>
@@ -1702,101 +1432,6 @@ export default function AdminWallet() {
             <RechargeReport />
           </div>
         )}
-
-        {/* Duplicate Detection Dialog */}
-        <Dialog open={duplicateScanOpen} onOpenChange={setDuplicateScanOpen}>
-          <DialogContent className="rounded-2xl max-w-3xl max-h-[85vh] overflow-y-auto" data-testid="duplicate-scan-dialog">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <ShieldAlert className="h-5 w-5 text-orange-600" />
-                Detectar Recargas Duplicadas por Imagen
-              </DialogTitle>
-              <DialogDescription>
-                Corre OCR sobre las recargas y agrupa las que comparten el mismo comprobante detectado en la imagen, aunque el cliente haya escrito un número distinto.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  onClick={() => runDuplicateDetection(false)}
-                  disabled={duplicateScanning}
-                  className="rounded-xl bg-orange-600 hover:bg-orange-700 text-white"
-                  data-testid="duplicate-scan-existing-btn"
-                >
-                  {duplicateScanning && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Buscar con OCR existente (rápido)
-                </Button>
-                <Button
-                  onClick={() => runDuplicateDetection(true)}
-                  disabled={duplicateScanning}
-                  variant="outline"
-                  className="rounded-xl border-orange-300 text-orange-700 hover:bg-orange-50"
-                  data-testid="duplicate-scan-full-btn"
-                >
-                  {duplicateScanning && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Escanear todo (incluye recargas viejas)
-                </Button>
-              </div>
-              {duplicateResult && (
-                <div className="space-y-3">
-                  <div className="text-sm text-gray-600 flex gap-4 flex-wrap">
-                    {duplicateResult.scanned > 0 && (
-                      <span>Escaneadas ahora: <b>{duplicateResult.scanned}</b></span>
-                    )}
-                    {duplicateResult.scan_errors > 0 && (
-                      <span className="text-red-600">Errores OCR: <b>{duplicateResult.scan_errors}</b></span>
-                    )}
-                    <span>Grupos duplicados: <b className={duplicateResult.duplicate_groups_count > 0 ? 'text-orange-700' : 'text-green-700'}>{duplicateResult.duplicate_groups_count}</b></span>
-                  </div>
-                  {(duplicateResult.duplicate_groups || []).map((g) => (
-                    <div key={g._id} className="border border-orange-200 bg-orange-50 rounded-xl p-3" data-testid={`duplicate-group-${g._id}`}>
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className="h-4 w-4 text-orange-600" />
-                          <span className="text-sm font-semibold text-orange-900">Comprobante detectado: {g._id}</span>
-                        </div>
-                        <Badge variant="outline" className="border-orange-300 text-orange-700 bg-white text-xs">
-                          {g.count} recargas
-                        </Badge>
-                      </div>
-                      <div className="space-y-1">
-                        {(g.transactions || []).map((t) => (
-                          <div key={t.id} className="text-xs bg-white rounded-lg px-2 py-1.5 flex flex-wrap items-center gap-2 justify-between">
-                            <div className="flex flex-col">
-                              <span className="font-medium text-slate-800">{t.client_name || 'Sin nombre'} <span className="text-gray-500">#{t.customer_id}</span></span>
-                              <span className="text-gray-500">Ref. escrita: <b>{t.reference_number || '—'}</b> · OCR: <b>{t.ai_detected_reference_number || '—'}</b></span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-slate-700">${Number(t.amount || 0).toFixed(2)}</span>
-                              <Badge variant="outline" className={`text-[10px] ${t.status === 'approved' ? 'text-green-700 border-green-300' : 'text-amber-700 border-amber-300'}`}>{t.status}</Badge>
-                              {t.proof_url && (
-                                <a
-                                  href={t.proof_url.startsWith('http') ? t.proof_url : `${process.env.REACT_APP_BACKEND_URL}${t.proof_url}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-blue-600 hover:underline"
-                                  data-testid={`view-proof-${t.id}`}
-                                >
-                                  Ver comprobante
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {duplicateResult.duplicate_groups_count === 0 && (
-                    <div className="text-center py-6 text-green-700 bg-green-50 rounded-xl border border-green-200">
-                      <CheckCircle className="h-8 w-8 mx-auto mb-1" />
-                      <p className="text-sm font-medium">Sin duplicados por imagen detectados</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
   );

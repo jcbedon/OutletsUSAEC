@@ -57,7 +57,7 @@ export const getWallet = (userId) => api.get(`/wallet/${userId}`);
 export const getWalletByCustomerId = (customerId) => api.get(`/wallet/by-customer/${customerId}`);
 export const requestDeposit = (data) => api.post("/wallet/deposit-request", data);
 export const requestDepositWithProof = (formData) => api.post("/wallet/deposit-request-with-proof", formData, { headers: { "Content-Type": "multipart/form-data" } });
-export const approveDeposit = (transactionId, payload = {}) => api.post(`/wallet/approve-deposit/${transactionId}`, payload);
+export const approveDeposit = (transactionId) => api.post(`/wallet/approve-deposit/${transactionId}`);
 export const setDepositAmount = (transactionId, amount) => api.put(`/wallet/deposit/${transactionId}/amount`, { amount });
 export const scanDepositProof = (transactionId) => api.post(`/wallet/deposit/${transactionId}/scan-proof`);
 export const setDepositDate = (transactionId, depositDate) => api.put(`/wallet/${transactionId}/deposit-date`, { deposit_date: depositDate });
@@ -71,7 +71,6 @@ export const getWalletTransactions = (userId) => api.get(`/wallet/transactions/$
 export const getPendingDeposits = () => api.get("/wallet/pending-deposits");
 export const deleteDeposit = (transactionId, password) => api.post(`/wallet/delete-deposit/${transactionId}`, { password });
 export const getDeletedDeposits = () => api.get("/wallet/deleted-deposits");
-export const detectDuplicateDeposits = (scanMissing = false) => api.post(`/admin/deposits/detect-duplicates?scan_missing=${scanMissing ? 'true' : 'false'}`);
 
 // Lives
 export const createLive = (data) => api.post("/lives", data);
@@ -141,7 +140,6 @@ export const updateClientCommission = (userId, commissionFee) =>
 export const updateClient = (userId, data) => api.put(`/admin/clients/${userId}`, data);
 export const getClientPassword = (userId) => api.get(`/admin/clients/${userId}/password`);
 export const getClientInfo = (customerId) => api.get(`/admin/clients/${customerId}/info`);
-export const getClientDiagnostics = (customerId) => api.get(`/admin/clients/${customerId}/diagnostics`);
 export const getLiveReport = (liveId) => api.get(`/admin/reports/live/${liveId}`);
 export const getReportsSummary = (period = "week", startDate = null, endDate = null) => {
   const params = new URLSearchParams({ period });

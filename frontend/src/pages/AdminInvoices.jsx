@@ -872,10 +872,10 @@ export default function AdminInvoices() {
                       (c.whatsapp && c.whatsapp.includes(clientSearch))
                     )
                     .sort((a, b) => {
-                      // First sort by pending_to_invoice $ (descending - clients with pending first)
-                      const aP = Number(a.pending_to_invoice || 0);
-                      const bP = Number(b.pending_to_invoice || 0);
-                      if (bP !== aP) return bP - aP;
+                      // First sort by pending_to_invoice (descending - clients with pending first)
+                      if ((b.pending_to_invoice || 0) !== (a.pending_to_invoice || 0)) {
+                        return (b.pending_to_invoice || 0) - (a.pending_to_invoice || 0);
+                      }
                       // Then sort alphabetically
                       return a.name.localeCompare(b.name);
                     })
@@ -883,39 +883,23 @@ export default function AdminInvoices() {
                       <div
                         key={client.id}
                         className={`p-3 rounded-xl border bg-white hover:border-blue-300 hover:shadow-md cursor-pointer transition-all flex items-center justify-between ${
-                          Number(client.pending_to_invoice || 0) > 0.01 ? 'border-l-4 border-l-amber-400' : ''
+                          client.pending_to_invoice > 0 ? 'border-l-4 border-l-amber-400' : ''
                         }`}
                         onClick={() => handleSelectClientForInvoice(client)}
                         data-testid={`select-client-${client.customer_id}`}
                       >
                         <div className="flex items-center gap-3">
                           <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                            Number(client.pending_to_invoice || 0) > 0.01 ? 'bg-amber-50' : 'bg-blue-50'
+                            client.pending_to_invoice > 0 ? 'bg-amber-50' : 'bg-blue-50'
                           }`}>
-                            <User className={`h-5 w-5 ${Number(client.pending_to_invoice || 0) > 0.01 ? 'text-amber-600' : 'text-blue-600'}`} />
+                            <User className={`h-5 w-5 ${client.pending_to_invoice > 0 ? 'text-amber-600' : 'text-blue-600'}`} />
                           </div>
                           <div>
-                            <div className="flex items-center gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
                               <p className="font-medium" style={{ color: '#1E3A5F' }}>{client.name}</p>
-                              {Number(client.pending_to_invoice || 0) > 0.01 && (
-                                <span
-                                  className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-semibold"
-                                  title={`${client.pending_to_invoice_count || 0} compras sin facturar`}
-                                  data-testid={`invoice-client-pending-${client.customer_id}`}
-                                >
-                                  Por facturar: ${Number(client.pending_to_invoice).toFixed(2)}
-                                  {(client.pending_to_invoice_count || 0) > 0 && (
-                                    <span className="opacity-70 ml-1">({client.pending_to_invoice_count})</span>
-                                  )}
-                                </span>
-                              )}
-                              {(client.pending_balance || 0) < 0 && (
-                                <span
-                                  className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold"
-                                  title="Facturado sin pagar (última factura)"
-                                  data-testid={`invoice-client-debt-${client.customer_id}`}
-                                >
-                                  Debe: ${Math.abs(client.pending_balance).toFixed(2)}
+                              {client.pending_to_invoice > 0 && (
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+                                  {client.pending_to_invoice} pendiente{client.pending_to_invoice > 1 ? 's' : ''}
                                 </span>
                               )}
                             </div>

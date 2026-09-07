@@ -129,8 +129,6 @@ export default function AdminLive() {
   const submittingRef = useRef(false);
   const [newLiveTitle, setNewLiveTitle] = useState("");
   const [newLiveStore, setNewLiveStore] = useState("");
-  // Search filter for the lives list (títulos + tienda). Applied to all sections.
-  const [livesSearchQuery, setLivesSearchQuery] = useState("");
   const [createLiveDialogOpen, setCreateLiveDialogOpen] = useState(false);
   
   // Edit Live state
@@ -813,57 +811,15 @@ export default function AdminLive() {
             {/* All Lives - Grouped by status */}
             {lives.length > 0 && (
               <div className="space-y-6">
-                {/* Search filter — filtra por título o tienda (aplica a los 3 grupos) */}
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                  <Input
-                    placeholder="Buscar live por título o tienda..."
-                    value={livesSearchQuery}
-                    onChange={(e) => setLivesSearchQuery(e.target.value)}
-                    className="pl-9 rounded-xl bg-white border-slate-200"
-                    data-testid="lives-search-input"
-                  />
-                  {livesSearchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setLivesSearchQuery("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs font-semibold"
-                      data-testid="lives-search-clear"
-                    >
-                      Limpiar
-                    </button>
-                  )}
-                </div>
-                {(() => {
-                  const q = livesSearchQuery.trim().toLowerCase();
-                  const matchesQuery = (l) => {
-                    if (!q) return true;
-                    return (
-                      (l.title || "").toLowerCase().includes(q) ||
-                      (l.store || "").toLowerCase().includes(q)
-                    );
-                  };
-                  const activeLives = lives.filter(l => l.status === "active" && matchesQuery(l));
-                  const inactiveLives = lives.filter(l => l.status === "inactive" && matchesQuery(l));
-                  const matchedFinalized = lives.filter(l => (l.status === "ended" || l.status === "completed") && matchesQuery(l));
-                  if (q && activeLives.length === 0 && inactiveLives.length === 0 && matchedFinalized.length === 0) {
-                    return (
-                      <div className="text-center py-6 text-sm text-slate-500 bg-slate-50 rounded-xl" data-testid="lives-search-empty">
-                        Ningún live coincide con "{livesSearchQuery}"
-                      </div>
-                    );
-                  }
-                  return null;
-                })()}
                 {/* Active Lives */}
-                {lives.filter(l => l.status === "active" && (!livesSearchQuery.trim() || (l.title || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()) || (l.store || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()))).length > 0 && (
+                {lives.filter(l => l.status === "active").length > 0 && (
                   <div>
                     <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
                       <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
                       Lives Activos
                     </h2>
                     <div className="space-y-3">
-                      {lives.filter(l => l.status === "active" && (!livesSearchQuery.trim() || (l.title || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()) || (l.store || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()))).map((live) => (
+                      {lives.filter(l => l.status === "active").map((live) => (
                         <Card key={live.id} className="rounded-xl border-green-200 bg-green-50/50">
                           <CardContent className="p-4 flex items-center justify-between">
                             <div>
@@ -892,11 +848,11 @@ export default function AdminLive() {
                 )}
 
                 {/* Inactive Lives (not started) */}
-                {lives.filter(l => l.status === "inactive" && (!livesSearchQuery.trim() || (l.title || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()) || (l.store || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()))).length > 0 && (
+                {lives.filter(l => l.status === "inactive").length > 0 && (
                   <div>
                     <h2 className="text-lg font-bold text-slate-800 mb-4">Lives Pendientes</h2>
                     <div className="space-y-3">
-                      {lives.filter(l => l.status === "inactive" && (!livesSearchQuery.trim() || (l.title || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()) || (l.store || "").toLowerCase().includes(livesSearchQuery.trim().toLowerCase()))).map((live) => (
+                      {lives.filter(l => l.status === "inactive").map((live) => (
                         <Card key={live.id} className="rounded-xl">
                           <CardContent className="p-4 flex items-center justify-between">
                             <div>
@@ -922,12 +878,7 @@ export default function AdminLive() {
 
                 {/* Ended Lives — filtered/grouped by week with Monday 12:00 cutoff */}
                 {(() => {
-                  const q = livesSearchQuery.trim().toLowerCase();
-                  const finalizedLives = lives.filter(l => {
-                    if (!(l.status === "ended" || l.status === "completed")) return false;
-                    if (!q) return true;
-                    return (l.title || "").toLowerCase().includes(q) || (l.store || "").toLowerCase().includes(q);
-                  });
+                  const finalizedLives = lives.filter(l => l.status === "ended" || l.status === "completed");
                   if (finalizedLives.length === 0) return null;
 
                   // Build the week-bucket dropdown options (always include current week)
@@ -1216,15 +1167,12 @@ export default function AdminLive() {
                         const dbt = debtStatusMap[String(selectedCustomer.customer_id || "").toUpperCase()];
                         const pending = Number(selectedCustomer.pending_to_invoice || 0);
                         const pendingCount = Number(selectedCustomer.pending_purchases_count || 0);
-                        const invoicedDebt = Number(selectedCustomer.invoiced_debt || 0);
-                        const invoicedCredit = Number(selectedCustomer.invoiced_credit || 0);
-                        const totalDebt = invoicedDebt + pending; // Deuda real = facturado sin pagar + por facturar
                         // Color escalonado para que sea visualmente fácil identificar
                         // a quién hay que cobrar antes del viernes.
-                        let debtCls = "";
-                        if (totalDebt >= 150) debtCls = "bg-red-100 text-red-800 border-red-300";
-                        else if (totalDebt >= 50) debtCls = "bg-amber-100 text-amber-800 border-amber-300";
-                        else if (totalDebt > 0) debtCls = "bg-yellow-50 text-yellow-800 border-yellow-200";
+                        let pendingCls = "";
+                        if (pending >= 150) pendingCls = "bg-red-100 text-red-800 border-red-200";
+                        else if (pending >= 50) pendingCls = "bg-amber-100 text-amber-800 border-amber-200";
+                        else if (pending > 0) pendingCls = "bg-yellow-50 text-yellow-700 border-yellow-200";
                         return (
                         <div className="mt-2 p-3 bg-green-50 rounded-xl flex items-center gap-2 flex-wrap">
                           <CheckCircle className="h-5 w-5 text-green-600" />
@@ -1236,26 +1184,15 @@ export default function AdminLive() {
                               data-testid={`selected-client-debt-dot-${dbt.color}`}
                             />
                           )}
-                          {invoicedCredit > 0 && (
+                          {pending > 0 && (
                             <span
-                              className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold border rounded-md bg-emerald-50 text-emerald-800 border-emerald-200"
-                              title="Saldo a favor de la última factura"
-                              data-testid="selected-client-credit-badge"
-                            >
-                              + Saldo a favor: ${invoicedCredit.toFixed(2)}
-                            </span>
-                          )}
-                          {totalDebt > 0.01 && (
-                            <span
-                              className={`ml-auto inline-flex items-center gap-1 px-2 py-1 text-xs font-bold border rounded-md ${debtCls}`}
-                              title={`Facturado sin pagar: $${invoicedDebt.toFixed(2)} + Por facturar: $${pending.toFixed(2)} (${pendingCount} compra${pendingCount !== 1 ? "s" : ""})`}
-                              data-testid="selected-client-total-debt-badge"
+                              className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 text-xs font-semibold border rounded-md ${pendingCls}`}
+                              title={`${pendingCount} compras sin facturar — se cobrarán el próximo viernes`}
+                              data-testid="selected-client-pending-badge"
                             >
                               <Receipt className="h-3 w-3" />
-                              Deuda Total: ${totalDebt.toFixed(2)}
-                              {pendingCount > 0 && (
-                                <span className="opacity-70">({pendingCount} p/fact)</span>
-                              )}
+                              Por facturar: ${pending.toFixed(2)}
+                              <span className="opacity-70">({pendingCount})</span>
                             </span>
                           )}
                         </div>

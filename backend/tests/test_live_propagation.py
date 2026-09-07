@@ -21,7 +21,7 @@ class TestLivePropagation:
         # Login as admin
         login_response = self.session.post(f"{BASE_URL}/api/auth/login", json={
             "identifier": "admin@outletsusaec.com",
-            "password": "123456"
+            "password": "admin123"
         })
         
         if login_response.status_code != 200:

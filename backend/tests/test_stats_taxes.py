@@ -18,7 +18,7 @@ class TestBusinessStatsAPI:
         """Login and get auth token"""
         response = requests.post(f"{BASE_URL}/api/auth/login", json={
             "identifier": "admin@outletsusaec.com",
-            "password": "123456"
+            "password": "admin123"
         })
         if response.status_code == 200:
             self.token = response.json()["token"]
@@ -101,7 +101,7 @@ class TestPurchaseTaxTypes:
         """Login and get auth token"""
         response = requests.post(f"{BASE_URL}/api/auth/login", json={
             "identifier": "admin@outletsusaec.com",
-            "password": "123456"
+            "password": "admin123"
         })
         if response.status_code == 200:
             self.token = response.json()["token"]
