@@ -2292,12 +2292,15 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
     # can recompute saldo_a_favor / total_a_pagar on-the-fly if the stored
     # aggregate values drifted from the raw fields (this happens after some
     # recalc engine changes that rewrote assignment logic without touching
-    # historical rows).
+    # historical rows). We also $lookup the linked shipment so we use the
+    # SAME shipping_cost the popup uses (shipment.shipping_cost overrides
+    # invoice.shipping_cost when the shipment exists).
     last_invoice_agg = await db.invoices.aggregate([
         {"$match": {"tenant_id": tid, "customer_id": {"$in": customer_ids_list}, "is_annulled": {"$ne": True}}},
         {"$sort": {"created_at": -1}},
         {"$group": {
             "_id": "$customer_id",
+            "invoice_id": {"$first": "$id"},
             "total_a_pagar": {"$first": "$total_a_pagar"},
             "saldo_a_favor": {"$first": "$saldo_a_favor"},
             "subtotal": {"$first": "$subtotal"},
@@ -2307,18 +2310,41 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "saldo_pendiente": {"$first": "$saldo_pendiente"},
             "deposits_applied": {"$first": "$deposits_applied"},
             "saldo_a_favor_anterior": {"$first": "$saldo_a_favor_anterior"},
-        }}
+        }},
+        {"$lookup": {
+            "from": "shipments",
+            "let": {"iid": "$invoice_id"},
+            "pipeline": [
+                {"$match": {"$expr": {"$and": [
+                    {"$eq": ["$invoice_id", "$$iid"]},
+                    {"$eq": ["$tenant_id", tid]},
+                ]}}},
+                {"$project": {"_id": 0, "shipping_cost": 1}},
+                {"$limit": 1}
+            ],
+            "as": "shipment_docs"
+        }},
+        {"$addFields": {
+            "shipment_shipping_cost": {"$ifNull": [{"$first": "$shipment_docs.shipping_cost"}, None]}
+        }},
+        {"$project": {"shipment_docs": 0}},
     ]).to_list(len(customer_ids_list) or 1)
 
     def _reconcile(li):
         stored_debt = float(li.get("total_a_pagar", 0) or 0)
         stored_favor = float(li.get("saldo_a_favor", 0) or 0)
-        # Recompute from raw fields (mirrors InvoiceDialog popup formula)
+        # Mirror the InvoiceDialog popup formula: prefer shipment.shipping_cost
+        # over invoice.shipping_cost when the linked shipment exists.
+        shipment_ship = li.get("shipment_shipping_cost")
+        if shipment_ship is not None:
+            eff_shipping = float(shipment_ship or 0)
+        else:
+            eff_shipping = float(li.get("shipping_cost", 0) or 0)
         grand = (
             float(li.get("subtotal", 0) or 0)
             + float(li.get("total_commission", 0) or 0)
             + float(li.get("total_tax", 0) or 0)
-            + float(li.get("shipping_cost", 0) or 0)
+            + eff_shipping
             + float(li.get("saldo_pendiente", 0) or 0)
         )
         credits = float(li.get("deposits_applied", 0) or 0) + float(li.get("saldo_a_favor_anterior", 0) or 0)
@@ -2872,12 +2898,15 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
     # saldo_pendiente, deposits_applied, saldo_a_favor_anterior) whenever
     # they diverge from the stored aggregates. This keeps the client
     # dashboard, admin list and invoice popup showing the same numbers.
+    # We also look up the linked shipment so we use the SAME shipping_cost
+    # the popup uses (shipment.shipping_cost overrides invoice.shipping_cost
+    # when the shipment exists).
     last_total_a_pagar = 0
     last_saldo_a_favor = 0
     if customer_id:
         last_inv = await db.invoices.find_one(
             {"tenant_id": tid, "customer_id": customer_id, "is_annulled": {"$ne": True}},
-            {"_id": 0, "total_a_pagar": 1, "saldo_a_favor": 1,
+            {"_id": 0, "id": 1, "total_a_pagar": 1, "saldo_a_favor": 1,
              "subtotal": 1, "total_commission": 1, "total_tax": 1,
              "shipping_cost": 1, "saldo_pendiente": 1,
              "deposits_applied": 1, "saldo_a_favor_anterior": 1},
@@ -2886,11 +2915,20 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
         if last_inv:
             stored_debt = float(last_inv.get("total_a_pagar", 0) or 0)
             stored_favor = float(last_inv.get("saldo_a_favor", 0) or 0)
+            # Prefer the linked shipment's shipping_cost (mirror popup)
+            shipment_doc = await db.shipments.find_one(
+                {"invoice_id": last_inv["id"], "tenant_id": tid},
+                {"_id": 0, "shipping_cost": 1}
+            )
+            if shipment_doc is not None:
+                eff_shipping = float(shipment_doc.get("shipping_cost", 0) or 0)
+            else:
+                eff_shipping = float(last_inv.get("shipping_cost", 0) or 0)
             grand = (
                 float(last_inv.get("subtotal", 0) or 0)
                 + float(last_inv.get("total_commission", 0) or 0)
                 + float(last_inv.get("total_tax", 0) or 0)
-                + float(last_inv.get("shipping_cost", 0) or 0)
+                + eff_shipping
                 + float(last_inv.get("saldo_pendiente", 0) or 0)
             )
             credits = float(last_inv.get("deposits_applied", 0) or 0) + float(last_inv.get("saldo_a_favor_anterior", 0) or 0)
