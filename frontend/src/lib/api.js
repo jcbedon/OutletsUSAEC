@@ -207,6 +207,8 @@ export const listAnnulledInvoices = () => api.get("/invoices/annulled");
 export const restoreInvoice = (invoiceId, password) => api.put(`/invoices/${invoiceId}/restore`, { password });
 export const recalculateAllInvoices = () => api.post("/admin/recalculate-all-invoices");
 export const recalculateClientInvoices = (customerId) => api.post(`/admin/recalculate-invoices/${customerId}`);
+export const getFloatingDeposits = (customerId) => api.get(`/wallet/floating-deposits/${customerId}`);
+export const assignDepositToInvoice = (transactionId, invoiceId) => api.put(`/wallet/deposit/${transactionId}/assign-invoice`, { invoice_id: invoiceId });
 export const getInvoicesWithoutShipment = () => api.get("/admin/reports/invoices-without-shipment");
 export const getSalesDetail = (start, end) => api.get("/admin/reports/sales-detail", { params: { start, end } });
 export const auditInvoice = (invoiceId) => api.get(`/invoices/${invoiceId}/audit`);

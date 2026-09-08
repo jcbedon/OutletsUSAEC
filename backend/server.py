@@ -303,6 +303,10 @@ class WalletTransaction(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     approved_at: Optional[str] = None
     purchase_id: Optional[str] = None
+    # Manual override for the recalc engine: when set, the deposit is assigned
+    # to this specific invoice regardless of the weekly-cutoff / date-based
+    # rules. Admin sets this from AdminClients → "Recargas Disponibles" pill.
+    target_invoice_id: Optional[str] = None
 
 class Live(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -764,7 +768,7 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
 
     all_deposits = await db.wallet_transactions.find(
         {"user_id": client["id"], "tenant_id": tenant_id, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
-        {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1}
+        {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1, "target_invoice_id": 1}
     ).sort("created_at", 1).to_list(1000)
     
     all_invoices = await db.invoices.find(
@@ -809,20 +813,41 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     
     # Group deposits by which invoice was the latest at the time of the deposit
     deposits_by_invoice = {inv["id"]: [] for inv in all_invoices}
-    
+    valid_invoice_ids = {inv["id"] for inv in all_invoices}
+    # `latest_invoice_created_at` is used to decide whether a deposit is
+    # "floating" (made after the most recent invoice) — those don't get
+    # auto-applied to an old invoice unless the admin manually sets a
+    # target_invoice_id on them.
+    latest_invoice_created_at = all_invoices[-1]["created_at"] if all_invoices else ""
+
     for dep in all_deposits:
         dep_date = dep.get("created_at", "")
-        # Find the latest invoice created BEFORE or AT the deposit date
         target_invoice = None
-        for inv in all_invoices:
-            if inv["created_at"] <= dep_date:
-                target_invoice = inv
-            else:
-                break
-        # If no invoice existed before the deposit, assign to the first invoice
+
+        # 1) Manual override wins over everything: admin explicitly chose the
+        #    invoice this deposit should attach to.
+        manual_target = dep.get("target_invoice_id")
+        if manual_target and manual_target in valid_invoice_ids:
+            target_invoice = next((i for i in all_invoices if i["id"] == manual_target), None)
+
         if target_invoice is None:
-            target_invoice = all_invoices[0]
-        
+            # 2) Deposits created AFTER the latest invoice are treated as
+            #    floating ("Recargas Disponibles") — they don't reduce the
+            #    debt of any past invoice. Admin can move them manually via
+            #    target_invoice_id if needed.
+            if dep_date > latest_invoice_created_at:
+                continue
+
+            # 3) Default: latest invoice created BEFORE or AT the deposit
+            #    date. If no invoice existed before, use the first invoice.
+            for inv in all_invoices:
+                if inv["created_at"] <= dep_date:
+                    target_invoice = inv
+                else:
+                    break
+            if target_invoice is None:
+                target_invoice = all_invoices[0]
+
         deposits_by_invoice[target_invoice["id"]].append({
             "deposit_id": dep.get("id", ""),
             "amount_applied": dep["amount"],
@@ -2209,6 +2234,18 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}}
     ]).to_list(len(user_ids))
     recharges_dict = {r["_id"]: r["total"] for r in recharges_agg}
+
+    # Aggregate amount actually APPLIED to invoices per customer (from
+    # invoice.applied_deposits[]). Used to derive "Recargas Disponibles"
+    # = approved recharges not attached to any invoice yet.
+    applied_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": {"$in": customer_ids_list},
+                    "is_annulled": {"$ne": True}}},
+        {"$unwind": {"path": "$applied_deposits", "preserveNullAndEmptyArrays": False}},
+        {"$group": {"_id": "$customer_id",
+                    "total_applied": {"$sum": "$applied_deposits.amount_applied"}}}
+    ]).to_list(len(customer_ids_list) or 1)
+    applied_by_customer = {a["_id"]: float(a["total_applied"] or 0) for a in applied_agg}
     
     # Get total_a_pagar from the most recent invoice per customer
     last_invoice_agg = await db.invoices.aggregate([
@@ -2238,6 +2275,9 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         else:
             pending_balance = 0
         pending_to_invoice = pending_purchases_dict.get(uid, 0)
+        customer_key = user.get("customer_id")
+        applied_total = applied_by_customer.get(customer_key, 0)
+        floating_deposits = round(max(0, float(total_recharges or 0) - float(applied_total or 0)), 2)
         result.append({
             **user, 
             "wallet_balance": round(total_recharges, 2),
@@ -2247,7 +2287,8 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "pending_balance": pending_balance,
             "purchase_count": purch["count"],
             "is_active": user.get("is_active", True),
-            "pending_to_invoice": pending_to_invoice
+            "pending_to_invoice": pending_to_invoice,
+            "floating_deposits": floating_deposits,
         })
     return result
 
@@ -3073,6 +3114,83 @@ async def set_deposit_amount(transaction_id: str, data: dict, current_user: dict
         {"$set": {"amount": amount}}
     )
     return {"message": "Monto actualizado", "amount": amount}
+
+@api_router.get("/wallet/floating-deposits/{customer_id}")
+async def list_floating_deposits(customer_id: str, current_user: dict = Depends(get_current_user)):
+    """List all approved deposits for a customer that are NOT applied to any
+    non-annulled invoice yet — the pool visible as 'Recargas Disponibles'."""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    # All approved deposits for that customer
+    deposits = await db.wallet_transactions.find(
+        {"tenant_id": tid, "customer_id": customer_id, "type": "deposit",
+         "status": "approved", "is_deleted": {"$ne": True}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(1000)
+
+    # All applied deposit_ids across non-annulled invoices
+    applied_ids = set()
+    async for inv in db.invoices.find(
+        {"tenant_id": tid, "customer_id": customer_id, "is_annulled": {"$ne": True}},
+        {"_id": 0, "applied_deposits": 1}
+    ):
+        for ad in (inv.get("applied_deposits") or []):
+            did = ad.get("deposit_id")
+            if did:
+                applied_ids.add(did)
+
+    unattached = [d for d in deposits if d.get("id") not in applied_ids]
+    total = round(sum(float(d.get("amount", 0) or 0) for d in unattached), 2)
+    return {"total": total, "deposits": unattached}
+
+
+class AssignDepositRequest(BaseModel):
+    invoice_id: Optional[str] = None  # None to un-attach (back to floating)
+
+
+@api_router.put("/wallet/deposit/{transaction_id}/assign-invoice")
+async def assign_deposit_to_invoice(
+    transaction_id: str,
+    payload: AssignDepositRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Manually attach an approved deposit to a specific invoice (overrides
+    the date-based recalc logic). Passing null unlinks it back to floating."""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    tx = await db.wallet_transactions.find_one(
+        {"id": transaction_id, "tenant_id": tid, "type": "deposit"},
+        {"_id": 0}
+    )
+    if not tx:
+        raise HTTPException(status_code=404, detail="Recarga no encontrada")
+    if tx.get("status") != "approved":
+        raise HTTPException(status_code=400, detail="Solo se pueden asignar recargas aprobadas")
+
+    target = payload.invoice_id
+    if target:
+        inv = await db.invoices.find_one(
+            {"id": target, "tenant_id": tid,
+             "customer_id": tx.get("customer_id"),
+             "is_annulled": {"$ne": True}},
+            {"_id": 0, "id": 1, "invoice_number": 1}
+        )
+        if not inv:
+            raise HTTPException(status_code=404, detail="Factura destino no encontrada o anulada")
+
+    await db.wallet_transactions.update_one(
+        {"id": transaction_id, "tenant_id": tid},
+        {"$set": {"target_invoice_id": target}}
+    )
+    # Recompute the chain so the new assignment is reflected everywhere
+    await recalculate_client_invoices(tid, tx["customer_id"])
+    return {"message": "Recarga asignada correctamente", "target_invoice_id": target}
+
+
 
 @api_router.post("/wallet/approve-deposit/{transaction_id}")
 async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_current_user)):

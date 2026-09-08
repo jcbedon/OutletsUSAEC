@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings, getClientPassword, toggleClientReviewed, recalculateClientInvoices } from "@/lib/api";
+import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings, getClientPassword, toggleClientReviewed, recalculateClientInvoices, getFloatingDeposits, assignDepositToInvoice, getClientInvoices } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText, UserX, Trash2, AlertTriangle, UserCheck, Hash, Eye, EyeOff, Copy, Check, RefreshCw } from "lucide-react";
+import { ArrowLeft, Users, Search, Phone, Globe, Wallet, Edit, Save, UserPlus, Key, DollarSign, FileText, UserX, Trash2, AlertTriangle, UserCheck, Hash, Eye, EyeOff, Copy, Check, RefreshCw, Loader2, CheckCircle } from "lucide-react";
 import InvoiceDialog from "@/components/InvoiceDialog";
 
 export default function AdminClients() {
@@ -154,6 +154,65 @@ export default function AdminClients() {
   // never had `shipping_cost` synced from the linked shipment, or when
   // saldo_pendiente/deposits got out of sync after manual edits.
   const [recalcingClientId, setRecalcingClientId] = useState(null);
+
+  // Floating deposits reassignment dialog
+  const [floatDialogOpen, setFloatDialogOpen] = useState(false);
+  const [floatClient, setFloatClient] = useState(null);
+  const [floatLoading, setFloatLoading] = useState(false);
+  const [floatDeposits, setFloatDeposits] = useState([]);
+  const [floatInvoices, setFloatInvoices] = useState({ pending: [], closed: [] });
+  const [floatSelectedDep, setFloatSelectedDep] = useState(null);
+  const [floatSelectedInv, setFloatSelectedInv] = useState(null);
+  const [floatSubmitting, setFloatSubmitting] = useState(false);
+
+  const openFloatDialog = async (client) => {
+    setFloatClient(client);
+    setFloatSelectedDep(null);
+    setFloatSelectedInv(null);
+    setFloatDeposits([]);
+    setFloatInvoices({ pending: [], closed: [] });
+    setFloatDialogOpen(true);
+    setFloatLoading(true);
+    try {
+      const [depRes, invRes] = await Promise.all([
+        getFloatingDeposits(client.customer_id),
+        getClientInvoices(client.customer_id, false),
+      ]);
+      setFloatDeposits(depRes.data?.deposits || []);
+      const invs = Array.isArray(invRes.data) ? invRes.data : [];
+      const pending = invs.filter((i) => Number(i.total_a_pagar || 0) > 0);
+      const closed = invs.filter((i) => Number(i.total_a_pagar || 0) <= 0);
+      pending.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+      closed.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+      setFloatInvoices({ pending, closed });
+      if ((depRes.data?.deposits || []).length > 0) {
+        setFloatSelectedDep(depRes.data.deposits[0].id);
+      }
+      if (pending.length > 0) setFloatSelectedInv(pending[0].id);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "No se pudieron cargar recargas o facturas");
+    } finally {
+      setFloatLoading(false);
+    }
+  };
+
+  const submitFloatAssignment = async () => {
+    if (!floatSelectedDep || !floatSelectedInv) {
+      toast.error("Selecciona una recarga y una factura");
+      return;
+    }
+    setFloatSubmitting(true);
+    try {
+      await assignDepositToInvoice(floatSelectedDep, floatSelectedInv);
+      toast.success("Recarga asignada a la factura");
+      setFloatDialogOpen(false);
+      loadClients();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || "Error al asignar");
+    } finally {
+      setFloatSubmitting(false);
+    }
+  };
   const handleRecalcClient = async (client) => {
     if (!client?.customer_id) return;
     if (!window.confirm(`¿Recalcular todas las facturas de ${client.name} (${client.customer_id})?\n\nEsto reordena depósitos, sincroniza envíos y recomputa Total a pagar y Saldo a Favor.`)) {
@@ -669,6 +728,17 @@ https://outletsusaec.shop/`;
                                 Por facturar: ${Number(client.pending_to_invoice).toFixed(2)}
                               </div>
                             )}
+                            {(client.floating_deposits || 0) > 0.01 && (
+                              <button
+                                type="button"
+                                onClick={() => openFloatDialog(client)}
+                                className="mt-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition cursor-pointer w-full text-left"
+                                title="Clic para asignar manualmente estas recargas a una factura"
+                                data-testid={`floating-deposits-${client.customer_id}`}
+                              >
+                                Recargas Disponibles: ${Number(client.floating_deposits).toFixed(2)} <span className="opacity-70">→ Asignar</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                         <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
@@ -1035,6 +1105,134 @@ https://outletsusaec.shop/`;
           client={selectedClientForInvoice}
           tenantInfo={tenantInfo || defaultTenantInfo}
         />
+
+        {/* Reassign floating recharge dialog */}
+        <Dialog open={floatDialogOpen} onOpenChange={(o) => { if (!o) setFloatDialogOpen(false); }}>
+          <DialogContent className="rounded-2xl max-w-2xl" data-testid="reassign-recharge-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-sky-700">
+                <CheckCircle className="h-5 w-5" />
+                Asignar recarga a factura — {floatClient?.name || floatClient?.customer_id}
+              </DialogTitle>
+              <DialogDescription>
+                Elige una recarga disponible y la factura donde quieres aplicarla. Se ejecutará el recálculo automáticamente.
+              </DialogDescription>
+            </DialogHeader>
+
+            {floatLoading ? (
+              <div className="flex items-center justify-center py-8 text-gray-500">
+                <Loader2 className="h-5 w-5 animate-spin mr-2" /> Cargando…
+              </div>
+            ) : floatDeposits.length === 0 ? (
+              <div className="p-4 rounded-xl bg-gray-50 border border-gray-200 text-sm text-gray-600">
+                No hay recargas disponibles para asignar.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4 max-h-[400px]">
+                {/* Left: floating deposits */}
+                <div className="overflow-y-auto pr-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-sky-700 mb-2">
+                    Recargas disponibles ({floatDeposits.length})
+                  </p>
+                  <div className="space-y-2">
+                    {floatDeposits.map((d) => {
+                      const selected = floatSelectedDep === d.id;
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => setFloatSelectedDep(d.id)}
+                          data-testid={`reassign-deposit-${d.id}`}
+                          className={`w-full text-left p-2 rounded-lg border-2 transition ${selected ? "border-sky-500 bg-sky-50" : "border-gray-200 hover:border-gray-300"}`}
+                        >
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="font-semibold">${Number(d.amount || 0).toFixed(2)}</span>
+                            <span className="text-xs text-gray-500">{(d.created_at || "").slice(0, 10)}</span>
+                          </div>
+                          {d.reference_number && (
+                            <p className="text-[10px] text-gray-500 mt-1">Ref: {d.reference_number}</p>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Right: invoices */}
+                <div className="overflow-y-auto pr-1">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-2">
+                    Facturas pendientes ({floatInvoices.pending.length})
+                  </p>
+                  <div className="space-y-2 mb-3">
+                    {floatInvoices.pending.map((inv) => {
+                      const sel = floatSelectedInv === inv.id;
+                      return (
+                        <button
+                          key={inv.id}
+                          type="button"
+                          onClick={() => setFloatSelectedInv(inv.id)}
+                          data-testid={`reassign-invoice-${inv.invoice_number}`}
+                          className={`w-full text-left p-2 rounded-lg border-2 transition ${sel ? "border-sky-500 bg-sky-50" : "border-gray-200 hover:border-gray-300"}`}
+                        >
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="font-semibold">{inv.invoice_number}</span>
+                            <span className="text-xs text-red-600 font-semibold">-${Number(inv.total_a_pagar || 0).toFixed(2)}</span>
+                          </div>
+                          <p className="text-[10px] text-gray-500 mt-1">{(inv.created_at || "").slice(0, 10)}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {floatInvoices.closed.length > 0 && (
+                    <details>
+                      <summary className="text-xs font-semibold uppercase tracking-wide text-gray-600 cursor-pointer">
+                        Facturas cerradas ({floatInvoices.closed.length})
+                      </summary>
+                      <div className="space-y-2 mt-2">
+                        {floatInvoices.closed.slice(0, 20).map((inv) => {
+                          const sel = floatSelectedInv === inv.id;
+                          return (
+                            <button
+                              key={inv.id}
+                              type="button"
+                              onClick={() => setFloatSelectedInv(inv.id)}
+                              data-testid={`reassign-invoice-closed-${inv.invoice_number}`}
+                              className={`w-full text-left p-2 rounded-lg border-2 transition ${sel ? "border-sky-500 bg-sky-50" : "border-gray-200 hover:border-gray-300"}`}
+                            >
+                              <div className="flex items-center justify-between text-sm">
+                                <span className="font-semibold">{inv.invoice_number}</span>
+                                <span className="text-xs text-green-600">
+                                  {Number(inv.saldo_a_favor || 0) > 0 ? `+$${Number(inv.saldo_a_favor).toFixed(2)}` : "Saldada"}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-gray-500 mt-1">{(inv.created_at || "").slice(0, 10)}</p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" className="rounded-xl" onClick={() => setFloatDialogOpen(false)}>Cancelar</Button>
+              <Button
+                onClick={submitFloatAssignment}
+                disabled={floatLoading || floatSubmitting || !floatSelectedDep || !floatSelectedInv}
+                className="rounded-xl bg-sky-600 hover:bg-sky-700"
+                data-testid="confirm-reassign-btn"
+              >
+                {floatSubmitting ? (
+                  <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Asignando…</span>
+                ) : (
+                  <><CheckCircle className="h-4 w-4 mr-2" /> Asignar y aplicar</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
