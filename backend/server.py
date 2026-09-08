@@ -18,6 +18,39 @@ import hashlib
 import jwt
 import shutil
 
+# ─────────────────────────────────────────────────────────────
+# WEEKLY CUTOFF for deposit → invoice assignment
+# Week starts Monday 00:00 America/Guayaquil (UTC-5) and ends Sunday 23:59.
+# A recharge only auto-applies to invoices created in its SAME calendar
+# week. Recharges made after the last invoice of the week float and wait
+# for a new-week invoice. Admin can override via wallet_transaction.target_invoice_id.
+# ─────────────────────────────────────────────────────────────
+BILLING_TZ_OFFSET = timedelta(hours=-5)  # America/Guayaquil, no DST
+
+
+def _billing_week_bounds(dt_iso: str):
+    """Return (week_start_iso, week_end_iso) in UTC for the Mon-Sun calendar
+    week that contains the given UTC ISO timestamp, interpreted in
+    America/Guayaquil (UTC-5)."""
+    try:
+        dt = datetime.fromisoformat(dt_iso.replace("Z", "+00:00"))
+    except Exception:
+        return ("", "")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    local = dt.astimezone(timezone(BILLING_TZ_OFFSET))
+    # Monday = 0
+    days_since_mon = local.weekday()
+    week_start_local = (local - timedelta(days=days_since_mon)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    week_end_local = week_start_local + timedelta(days=7)
+    return (
+        week_start_local.astimezone(timezone.utc).isoformat(),
+        week_end_local.astimezone(timezone.utc).isoformat(),
+    )
+
+
 ROOT_DIR = Path(__file__).parent.parent  # /app instead of /app/backend
 BACKEND_DIR = Path(__file__).parent  # /app/backend
 load_dotenv(BACKEND_DIR / '.env')
@@ -814,11 +847,6 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     # Group deposits by which invoice was the latest at the time of the deposit
     deposits_by_invoice = {inv["id"]: [] for inv in all_invoices}
     valid_invoice_ids = {inv["id"] for inv in all_invoices}
-    # `latest_invoice_created_at` is used to decide whether a deposit is
-    # "floating" (made after the most recent invoice) — those don't get
-    # auto-applied to an old invoice unless the admin manually sets a
-    # target_invoice_id on them.
-    latest_invoice_created_at = all_invoices[-1]["created_at"] if all_invoices else ""
 
     for dep in all_deposits:
         dep_date = dep.get("created_at", "")
@@ -831,22 +859,27 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
             target_invoice = next((i for i in all_invoices if i["id"] == manual_target), None)
 
         if target_invoice is None:
-            # 2) Deposits created AFTER the latest invoice are treated as
-            #    floating ("Recargas Disponibles") — they don't reduce the
-            #    debt of any past invoice. Admin can move them manually via
-            #    target_invoice_id if needed.
-            if dep_date > latest_invoice_created_at:
+            # 2) Weekly cutoff: a deposit only auto-applies to an invoice
+            #    created in the SAME Mon-Sun week (America/Guayaquil).
+            #    If no invoice exists in that week → float (skip).
+            wk_start, wk_end = _billing_week_bounds(dep_date)
+            if not wk_start:
                 continue
-
-            # 3) Default: latest invoice created BEFORE or AT the deposit
-            #    date. If no invoice existed before, use the first invoice.
-            for inv in all_invoices:
+            same_week = [i for i in all_invoices
+                         if wk_start <= i["created_at"] < wk_end]
+            if not same_week:
+                continue  # float: waiting for a new-week invoice
+            # Latest same-week invoice created before OR at the deposit time
+            for inv in same_week:
                 if inv["created_at"] <= dep_date:
                     target_invoice = inv
                 else:
                     break
+            # If deposit is before any same-week invoice, pick the earliest
+            # of the same week (edge case: deposit early Monday, invoice
+            # later Monday).
             if target_invoice is None:
-                target_invoice = all_invoices[0]
+                target_invoice = same_week[0]
 
         deposits_by_invoice[target_invoice["id"]].append({
             "deposit_id": dep.get("id", ""),
