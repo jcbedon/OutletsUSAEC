@@ -59,6 +59,7 @@ export default function AdminClients() {
   const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
   const logoUrl = user?.tenant_logo || DEFAULT_LOGO;
   const isAdmin = user?.role === "admin";
+  const canAssignDeposits = isAdmin || Boolean(user?.permissions?.assign_deposits);
   
   // Default tenant info from user context (fallback)
   const defaultTenantInfo = {
@@ -729,15 +730,25 @@ https://outletsusaec.shop/`;
                               </div>
                             )}
                             {(client.floating_deposits || 0) > 0.01 && (
-                              <button
-                                type="button"
-                                onClick={() => openFloatDialog(client)}
-                                className="mt-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition cursor-pointer w-full text-left"
-                                title="Clic para asignar manualmente estas recargas a una factura"
-                                data-testid={`floating-deposits-${client.customer_id}`}
-                              >
-                                Recargas Disponibles: ${Number(client.floating_deposits).toFixed(2)} <span className="opacity-70">→ Asignar</span>
-                              </button>
+                              canAssignDeposits ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openFloatDialog(client)}
+                                  className="mt-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition cursor-pointer w-full text-left"
+                                  title="Clic para asignar manualmente estas recargas a una factura"
+                                  data-testid={`floating-deposits-${client.customer_id}`}
+                                >
+                                  Recargas Disponibles: ${Number(client.floating_deposits).toFixed(2)} <span className="opacity-70">→ Asignar</span>
+                                </button>
+                              ) : (
+                                <div
+                                  className="mt-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200"
+                                  title="Recargas aprobadas sin aplicar a facturas — esperando la próxima factura"
+                                  data-testid={`floating-deposits-${client.customer_id}`}
+                                >
+                                  Recargas Disponibles: ${Number(client.floating_deposits).toFixed(2)}
+                                </div>
+                              )
                             )}
                           </div>
                         </div>

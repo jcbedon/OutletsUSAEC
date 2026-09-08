@@ -23,6 +23,7 @@ const PERMISSION_GROUPS = [
       { key: "manage_purchases", label: "Gestionar Compras", description: "Crear, editar y eliminar compras" },
       { key: "manage_lives", label: "Gestionar Lives", description: "Crear, iniciar y cerrar sesiones live" },
       { key: "approve_recharges", label: "Aprobar Recargas", description: "Aprobar o rechazar solicitudes de recarga" },
+      { key: "assign_deposits", label: "Asignar Recargas a Facturas", description: "Reasignar manualmente recargas disponibles a facturas específicas del cliente" },
       { key: "manage_shipments", label: "Gestionar Envíos", description: "Crear y administrar envíos" },
       { key: "manage_invoices", label: "Gestionar Facturas", description: "Generar y aprobar facturas" },
       { key: "adjust_wallet", label: "Ajustar Saldos", description: "Realizar ajustes de saldo en wallets" },

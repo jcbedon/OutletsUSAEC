@@ -474,6 +474,7 @@ class EmployeePermissions(BaseModel):
     manage_purchases: bool = False     # Crear, editar, eliminar compras
     manage_lives: bool = False         # Crear, iniciar, cerrar lives
     approve_recharges: bool = False    # Aprobar/Rechazar recargas
+    assign_deposits: bool = False      # Asignar manualmente recargas disponibles a facturas
     manage_shipments: bool = False     # Gestionar envíos
     manage_invoices: bool = False      # Generar/Aprobar facturas
     view_reports: bool = False         # Ver reportes
@@ -3194,6 +3195,12 @@ async def assign_deposit_to_invoice(
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
+
+    # Employee permission check (admins always allowed)
+    if current_user["role"] == "employee":
+        employee = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0})
+        if not employee or not employee.get("permissions", {}).get("assign_deposits"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para asignar recargas a facturas")
 
     tx = await db.wallet_transactions.find_one(
         {"id": transaction_id, "tenant_id": tid, "type": "deposit"},
