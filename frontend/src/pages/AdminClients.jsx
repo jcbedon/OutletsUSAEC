@@ -675,7 +675,7 @@ https://outletsusaec.shop/`;
                                 title="Recargas aprobadas que aún no se aplican a ninguna factura (esperando la próxima factura de la semana)"
                                 data-testid={`floating-deposits-${client.customer_id}`}
                               >
-                                Recarga flotante: ${Number(client.floating_deposits).toFixed(2)}
+                                Recargas Disponibles: ${Number(client.floating_deposits).toFixed(2)}
                               </div>
                             )}
                           </div>
