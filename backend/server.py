@@ -2860,10 +2860,46 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
             "created_at": tx.get("created_at")
         })
 
+    # floating_deposits computed via the weekly-cutoff rule directly from
+    # raw timestamps (independent of stored invoice.applied_deposits[],
+    # which may be stale until recalc has run). A deposit is floating if
+    # its Mon-Sun (GYE) week has no non-annulled invoice — matches the
+    # recalc engine semantic and stays correct even for old data.
+    floating_deposits = 0.0
+    if customer_id:
+        deposits_list = await db.wallet_transactions.find(
+            {"tenant_id": tid, "customer_id": customer_id, "type": "deposit",
+             "status": "approved", "is_deleted": {"$ne": True}},
+            {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "target_invoice_id": 1}
+        ).to_list(2000)
+        invoices_list = await db.invoices.find(
+            {"tenant_id": tid, "customer_id": customer_id, "is_annulled": {"$ne": True}},
+            {"_id": 0, "id": 1, "created_at": 1}
+        ).to_list(2000)
+        valid_invoice_ids = {i["id"] for i in invoices_list}
+        invoice_week_starts = set()
+        for inv in invoices_list:
+            ws, _we = _billing_week_bounds(inv.get("created_at", ""))
+            if ws:
+                invoice_week_starts.add(ws)
+        total_floating = 0.0
+        for d in deposits_list:
+            # Manual override attached to a real invoice → not floating
+            mt = d.get("target_invoice_id")
+            if mt and mt in valid_invoice_ids:
+                continue
+            ws, _we = _billing_week_bounds(d.get("created_at", ""))
+            if not ws:
+                continue
+            if ws not in invoice_week_starts:
+                total_floating += float(d.get("amount", 0) or 0)
+        floating_deposits = round(total_floating, 2)
+
     return {**wallet,
             "total_saldo_pendiente": round(saldo_pend, 2),
             "pending_debt": round(last_total_a_pagar, 2),
             "saldo_a_favor": round(last_saldo_a_favor, 2),
+            "floating_deposits": floating_deposits,
             "pending_deposit_total": round(pending_deposit_total, 2),
             "pending_deposits": pending_deposits_info}
 

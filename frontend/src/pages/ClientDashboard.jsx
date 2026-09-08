@@ -429,7 +429,7 @@ export default function ClientDashboard() {
 
               return (
                 <>
-                  <div className="flex justify-between items-start mb-3">
+                  <div className="flex justify-between items-start mb-2">
                     <div>
                       <p className="text-white/70 text-sm font-medium">
                         {netPosition >= 0 ? 'Saldo Neto a Favor' : 'Debes en Total'}
@@ -440,13 +440,11 @@ export default function ClientDashboard() {
                       >
                         {netPosition >= 0 ? '+' : '-'}${Math.abs(netPosition).toFixed(2)}
                       </p>
-                      <p className="text-white/60 text-xs mt-1">
-                        {netPosition > 0
-                          ? '(Disponible tras cubrir tu deuda)'
-                          : netPosition < 0
-                          ? '(Después de aplicar tu saldo disponible)'
-                          : '(Estás al día)'}
-                      </p>
+                      {availableTotal > 0.01 && (
+                        <p className="text-white/70 text-[11px] mt-1" data-testid="wallet-available-inline">
+                          Saldo disponible para compras esta semana: <span className="text-green-300 font-semibold">${availableTotal.toFixed(2)}</span>
+                        </p>
+                      )}
                     </div>
                     <div className="text-right">
                       <Badge className="bg-white/20 text-white border-0 font-bold text-lg px-3 py-1">
@@ -454,32 +452,6 @@ export default function ClientDashboard() {
                       </Badge>
                     </div>
                   </div>
-
-                  {/* Breakdown: what you owe vs what you have available */}
-                  {(pendingDebt > 0 || availableTotal > 0) && (
-                    <div className="grid grid-cols-2 gap-2 mb-3" data-testid="wallet-breakdown">
-                      <div className="rounded-xl bg-red-500/15 border border-red-300/30 p-3">
-                        <p className="text-[10px] uppercase tracking-wide text-red-100 font-semibold">Debes</p>
-                        <p className="text-xl font-extrabold text-red-200 mt-0.5" data-testid="wallet-owes">
-                          ${pendingDebt.toFixed(2)}
-                        </p>
-                        <p className="text-[10px] text-red-100/80 mt-0.5">Última factura</p>
-                      </div>
-                      <div className="rounded-xl bg-green-500/15 border border-green-300/30 p-3">
-                        <p className="text-[10px] uppercase tracking-wide text-green-100 font-semibold">Tienes disponible</p>
-                        <p className="text-xl font-extrabold text-green-200 mt-0.5" data-testid="wallet-available">
-                          ${availableTotal.toFixed(2)}
-                        </p>
-                        <p className="text-[10px] text-green-100/80 mt-0.5">
-                          {floatingDeposits > 0.01 && saldoFavor > 0.01
-                            ? `$${saldoFavor.toFixed(2)} a favor + $${floatingDeposits.toFixed(2)} recargas`
-                            : floatingDeposits > 0.01
-                            ? 'Recargas sin aplicar'
-                            : 'Saldo a favor'}
-                        </p>
-                      </div>
-                    </div>
-                  )}
 
                   {hasPendingDeposit && (
                     <div className="mb-4 rounded-xl bg-amber-400/20 border border-amber-200/40 p-3" data-testid="pending-deposit-note">
