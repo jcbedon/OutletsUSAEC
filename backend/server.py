@@ -2286,6 +2286,20 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}}
     ]).to_list(len(user_ids))
     recharges_dict = {r["_id"]: r["total"] for r in recharges_agg}
+
+    # Aggregate amount ACTUALLY APPLIED to invoices per user (from
+    # invoice.applied_deposits[]). We need this to compute "floating"
+    # recharges = money the client already put in that hasn't been attached
+    # to any invoice yet (typically because it landed in a week that has no
+    # invoice under the weekly cutoff rule).
+    applied_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": {"$in": customer_ids_list},
+                    "is_annulled": {"$ne": True}}},
+        {"$unwind": {"path": "$applied_deposits", "preserveNullAndEmptyArrays": False}},
+        {"$group": {"_id": "$customer_id",
+                    "total_applied": {"$sum": "$applied_deposits.amount_applied"}}}
+    ]).to_list(len(customer_ids_list) or 1)
+    applied_by_customer = {a["_id"]: float(a["total_applied"] or 0) for a in applied_agg}
     
     # Get total_a_pagar from the most recent invoice per customer.
     # We also pull the raw ingredients used by the InvoiceDialog popup so we
@@ -2380,6 +2394,13 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         else:
             pending_balance = 0
         pending_to_invoice = pending_purchases_dict.get(uid, 0)
+        # floating_deposits = approved recharges not yet applied to any invoice.
+        # Under the weekly cutoff rule, deposits made in a week that has no
+        # invoice remain as "floating" wallet balance until the next invoice
+        # for that customer is created.
+        customer_key = user.get("customer_id")
+        applied_to_invoices = applied_by_customer.get(customer_key, 0)
+        floating_deposits = round(max(0, float(total_recharges or 0) - float(applied_to_invoices or 0)), 2)
         result.append({
             **user, 
             "wallet_balance": round(total_recharges, 2),
@@ -2389,7 +2410,8 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "pending_balance": pending_balance,
             "purchase_count": purch["count"],
             "is_active": user.get("is_active", True),
-            "pending_to_invoice": pending_to_invoice
+            "pending_to_invoice": pending_to_invoice,
+            "floating_deposits": floating_deposits,
         })
     return result
 
@@ -2963,10 +2985,35 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
             "created_at": tx.get("created_at")
         })
 
+    # floating_deposits = approved recharges NOT yet applied to any invoice.
+    # This is the money the client already put in their wallet that hasn't
+    # been attached to any invoice yet (typically because it landed in a
+    # week under the weekly cutoff rule that has no invoice, or admin has
+    # not created next week's invoice yet). It always waits for the next
+    # invoice to be created.
+    floating_deposits = 0.0
+    if customer_id:
+        approved_agg = await db.wallet_transactions.aggregate([
+            {"$match": {"tenant_id": tid, "user_id": user_id,
+                        "type": {"$in": ["deposit", "initial_balance", "referral_bonus"]},
+                        "status": "approved", "is_deleted": {"$ne": True}}},
+            {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+        ]).to_list(1)
+        applied_agg = await db.invoices.aggregate([
+            {"$match": {"tenant_id": tid, "customer_id": customer_id,
+                        "is_annulled": {"$ne": True}}},
+            {"$unwind": {"path": "$applied_deposits", "preserveNullAndEmptyArrays": False}},
+            {"$group": {"_id": None, "total": {"$sum": "$applied_deposits.amount_applied"}}}
+        ]).to_list(1)
+        approved_total = float((approved_agg[0]["total"] if approved_agg else 0) or 0)
+        applied_total = float((applied_agg[0]["total"] if applied_agg else 0) or 0)
+        floating_deposits = round(max(0, approved_total - applied_total), 2)
+
     return {**wallet,
             "total_saldo_pendiente": round(saldo_pend, 2),
             "pending_debt": round(last_total_a_pagar, 2),
             "saldo_a_favor": round(last_saldo_a_favor, 2),
+            "floating_deposits": floating_deposits,
             "pending_deposit_total": round(pending_deposit_total, 2),
             "pending_deposits": pending_deposits_info}
 
