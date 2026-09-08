@@ -669,15 +669,6 @@ https://outletsusaec.shop/`;
                                 Por facturar: ${Number(client.pending_to_invoice).toFixed(2)}
                               </div>
                             )}
-                            {(client.floating_deposits || 0) > 0.01 && (
-                              <div
-                                className="mt-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200"
-                                title="Recargas aprobadas que aún no se aplican a ninguna factura (esperando la próxima factura de la semana)"
-                                data-testid={`floating-deposits-${client.customer_id}`}
-                              >
-                                Recargas Disponibles: ${Number(client.floating_deposits).toFixed(2)}
-                              </div>
-                            )}
                           </div>
                         </div>
                         <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">

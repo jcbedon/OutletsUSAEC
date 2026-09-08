@@ -12,47 +12,11 @@ from typing import List, Optional
 import object_store
 import uuid
 from datetime import datetime, timezone, timedelta
-from zoneinfo import ZoneInfo
 import random
 import string
 import hashlib
 import jwt
 import shutil
-
-# ==================== WEEKLY RECHARGE CUTOFF ====================
-# Feature: "Cerrar semana en recargas" (Weekly Recharge Cutoff).
-# Recharges are assigned to the invoice that belongs to the SAME billing week
-# (Monday 00:00 – Sunday 23:59:59.999999 America/Chicago).
-# Applied only to recharges with created_at >= WEEKLY_CUTOFF_EFFECTIVE_FROM.
-# Older recharges keep the legacy "latest invoice before deposit" logic so
-# historical assignments remain untouched.
-WEEKLY_CUTOFF_TZ = ZoneInfo("America/Chicago")
-WEEKLY_CUTOFF_EFFECTIVE_FROM = datetime(2026, 2, 16, 0, 0, 0, tzinfo=WEEKLY_CUTOFF_TZ)
-
-
-def _parse_iso_utc(iso_str):
-    """Parse an ISO datetime string; return timezone-aware UTC datetime or None."""
-    if not iso_str:
-        return None
-    try:
-        s = iso_str.replace("Z", "+00:00") if isinstance(iso_str, str) else iso_str
-        dt = datetime.fromisoformat(s) if isinstance(s, str) else s
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
-    except (ValueError, TypeError, AttributeError):
-        return None
-
-
-def _billing_week_bounds(dt_utc):
-    """Return (week_start_utc, week_end_utc) for the Mon 00:00 – Sun 23:59:59.999999
-    America/Chicago week containing dt_utc."""
-    dt_local = dt_utc.astimezone(WEEKLY_CUTOFF_TZ)
-    monday_local = (dt_local - timedelta(days=dt_local.weekday())).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    sunday_end_local = monday_local + timedelta(days=7) - timedelta(microseconds=1)
-    return monday_local.astimezone(timezone.utc), sunday_end_local.astimezone(timezone.utc)
 
 ROOT_DIR = Path(__file__).parent.parent  # /app instead of /app/backend
 BACKEND_DIR = Path(__file__).parent  # /app/backend
@@ -842,64 +806,23 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     
     if not all_invoices:
         return
-
-    # Pre-parse invoice datetimes once (used by the weekly-cutoff branch).
-    for inv in all_invoices:
-        inv["_created_dt"] = _parse_iso_utc(inv.get("created_at", ""))
-
+    
     # Group deposits by which invoice was the latest at the time of the deposit
     deposits_by_invoice = {inv["id"]: [] for inv in all_invoices}
-
+    
     for dep in all_deposits:
-        dep_date_str = dep.get("created_at", "")
-        dep_date_utc = _parse_iso_utc(dep_date_str)
+        dep_date = dep.get("created_at", "")
+        # Find the latest invoice created BEFORE or AT the deposit date
         target_invoice = None
-
-        # NEW LOGIC (>= WEEKLY_CUTOFF_EFFECTIVE_FROM): assign to the invoice
-        # inside the same Mon–Sun America/Chicago billing week as the deposit.
-        # If no invoice exists in that week, look for the next future invoice.
-        # If none exists at all, the deposit "floats" (still counts in wallet
-        # balance) until a future invoice absorbs it.
-        if dep_date_utc and dep_date_utc >= WEEKLY_CUTOFF_EFFECTIVE_FROM:
-            wk_start, wk_end = _billing_week_bounds(dep_date_utc)
-            week_invoices = [
-                inv for inv in all_invoices
-                if inv.get("_created_dt") and wk_start <= inv["_created_dt"] <= wk_end
-            ]
-            if week_invoices:
-                # Prefer the latest invoice within the week created BEFORE or AT
-                # the deposit. If deposit precedes all invoices of the week, use
-                # the first invoice of the week.
-                for inv in week_invoices:
-                    if inv["_created_dt"] <= dep_date_utc:
-                        target_invoice = inv
-                    else:
-                        break
-                if target_invoice is None:
-                    target_invoice = week_invoices[0]
+        for inv in all_invoices:
+            if inv["created_at"] <= dep_date:
+                target_invoice = inv
             else:
-                # No invoice in this billing week — assign to the earliest FUTURE
-                # invoice (floating deposit gets absorbed by the next invoice).
-                for inv in all_invoices:
-                    if inv.get("_created_dt") and inv["_created_dt"] > wk_end:
-                        target_invoice = inv
-                        break
-                if target_invoice is None:
-                    # Deposit floats: no invoice this week or later yet.
-                    # Wallet balance still reflects it via wallet_transactions.
-                    continue
-        else:
-            # LEGACY LOGIC (deposits before the cutoff date): keep historical
-            # assignments untouched — latest invoice created BEFORE or AT the
-            # deposit, or the first invoice if the deposit precedes all invoices.
-            for inv in all_invoices:
-                if inv["created_at"] <= dep_date_str:
-                    target_invoice = inv
-                else:
-                    break
-            if target_invoice is None:
-                target_invoice = all_invoices[0]
-
+                break
+        # If no invoice existed before the deposit, assign to the first invoice
+        if target_invoice is None:
+            target_invoice = all_invoices[0]
+        
         deposits_by_invoice[target_invoice["id"]].append({
             "deposit_id": dep.get("id", ""),
             "amount_applied": dep["amount"],
@@ -2286,93 +2209,14 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}}
     ]).to_list(len(user_ids))
     recharges_dict = {r["_id"]: r["total"] for r in recharges_agg}
-
-    # Aggregate amount ACTUALLY APPLIED to invoices per user (from
-    # invoice.applied_deposits[]). We need this to compute "floating"
-    # recharges = money the client already put in that hasn't been attached
-    # to any invoice yet (typically because it landed in a week that has no
-    # invoice under the weekly cutoff rule).
-    applied_agg = await db.invoices.aggregate([
-        {"$match": {"tenant_id": tid, "customer_id": {"$in": customer_ids_list},
-                    "is_annulled": {"$ne": True}}},
-        {"$unwind": {"path": "$applied_deposits", "preserveNullAndEmptyArrays": False}},
-        {"$group": {"_id": "$customer_id",
-                    "total_applied": {"$sum": "$applied_deposits.amount_applied"}}}
-    ]).to_list(len(customer_ids_list) or 1)
-    applied_by_customer = {a["_id"]: float(a["total_applied"] or 0) for a in applied_agg}
     
-    # Get total_a_pagar from the most recent invoice per customer.
-    # We also pull the raw ingredients used by the InvoiceDialog popup so we
-    # can recompute saldo_a_favor / total_a_pagar on-the-fly if the stored
-    # aggregate values drifted from the raw fields (this happens after some
-    # recalc engine changes that rewrote assignment logic without touching
-    # historical rows). We also $lookup the linked shipment so we use the
-    # SAME shipping_cost the popup uses (shipment.shipping_cost overrides
-    # invoice.shipping_cost when the shipment exists).
+    # Get total_a_pagar from the most recent invoice per customer
     last_invoice_agg = await db.invoices.aggregate([
         {"$match": {"tenant_id": tid, "customer_id": {"$in": customer_ids_list}, "is_annulled": {"$ne": True}}},
         {"$sort": {"created_at": -1}},
-        {"$group": {
-            "_id": "$customer_id",
-            "invoice_id": {"$first": "$id"},
-            "total_a_pagar": {"$first": "$total_a_pagar"},
-            "saldo_a_favor": {"$first": "$saldo_a_favor"},
-            "subtotal": {"$first": "$subtotal"},
-            "total_commission": {"$first": "$total_commission"},
-            "total_tax": {"$first": "$total_tax"},
-            "shipping_cost": {"$first": "$shipping_cost"},
-            "saldo_pendiente": {"$first": "$saldo_pendiente"},
-            "deposits_applied": {"$first": "$deposits_applied"},
-            "saldo_a_favor_anterior": {"$first": "$saldo_a_favor_anterior"},
-        }},
-        {"$lookup": {
-            "from": "shipments",
-            "let": {"iid": "$invoice_id"},
-            "pipeline": [
-                {"$match": {"$expr": {"$and": [
-                    {"$eq": ["$invoice_id", "$$iid"]},
-                    {"$eq": ["$tenant_id", tid]},
-                ]}}},
-                {"$project": {"_id": 0, "shipping_cost": 1}},
-                {"$limit": 1}
-            ],
-            "as": "shipment_docs"
-        }},
-        {"$addFields": {
-            "shipment_shipping_cost": {"$ifNull": [{"$first": "$shipment_docs.shipping_cost"}, None]}
-        }},
-        {"$project": {"shipment_docs": 0}},
+        {"$group": {"_id": "$customer_id", "total_a_pagar": {"$first": "$total_a_pagar"}, "saldo_a_favor": {"$first": "$saldo_a_favor"}}}
     ]).to_list(len(customer_ids_list) or 1)
-
-    def _reconcile(li):
-        stored_debt = float(li.get("total_a_pagar", 0) or 0)
-        stored_favor = float(li.get("saldo_a_favor", 0) or 0)
-        # Mirror the InvoiceDialog popup formula: prefer shipment.shipping_cost
-        # over invoice.shipping_cost when the linked shipment exists.
-        shipment_ship = li.get("shipment_shipping_cost")
-        if shipment_ship is not None:
-            eff_shipping = float(shipment_ship or 0)
-        else:
-            eff_shipping = float(li.get("shipping_cost", 0) or 0)
-        grand = (
-            float(li.get("subtotal", 0) or 0)
-            + float(li.get("total_commission", 0) or 0)
-            + float(li.get("total_tax", 0) or 0)
-            + eff_shipping
-            + float(li.get("saldo_pendiente", 0) or 0)
-        )
-        credits = float(li.get("deposits_applied", 0) or 0) + float(li.get("saldo_a_favor_anterior", 0) or 0)
-        computed_debt = round(max(0, grand - credits), 2)
-        computed_favor = round(max(0, credits - grand), 2)
-        # Prefer the computed values whenever they differ from the stored
-        # aggregate. This keeps the AdminClients list, the client dashboard
-        # and the invoice popup showing the exact same numbers even if the
-        # stored `saldo_a_favor` on the invoice is stale.
-        if abs(computed_debt - stored_debt) > 0.005 or abs(computed_favor - stored_favor) > 0.005:
-            return {"total_a_pagar": computed_debt, "saldo_a_favor": computed_favor}
-        return {"total_a_pagar": round(stored_debt, 2), "saldo_a_favor": round(stored_favor, 2)}
-
-    last_invoice_dict = {li["_id"]: _reconcile(li) for li in last_invoice_agg}
+    last_invoice_dict = {li["_id"]: {"total_a_pagar": li.get("total_a_pagar", 0) or 0, "saldo_a_favor": li.get("saldo_a_favor", 0) or 0} for li in last_invoice_agg}
     
     result = []
     for user in users:
@@ -2394,13 +2238,6 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         else:
             pending_balance = 0
         pending_to_invoice = pending_purchases_dict.get(uid, 0)
-        # floating_deposits = approved recharges not yet applied to any invoice.
-        # Under the weekly cutoff rule, deposits made in a week that has no
-        # invoice remain as "floating" wallet balance until the next invoice
-        # for that customer is created.
-        customer_key = user.get("customer_id")
-        applied_to_invoices = applied_by_customer.get(customer_key, 0)
-        floating_deposits = round(max(0, float(total_recharges or 0) - float(applied_to_invoices or 0)), 2)
         result.append({
             **user, 
             "wallet_balance": round(total_recharges, 2),
@@ -2410,8 +2247,7 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "pending_balance": pending_balance,
             "purchase_count": purch["count"],
             "is_active": user.get("is_active", True),
-            "pending_to_invoice": pending_to_invoice,
-            "floating_deposits": floating_deposits,
+            "pending_to_invoice": pending_to_invoice
         })
     return result
 
@@ -2914,54 +2750,18 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
         ]).to_list(1)
         saldo_pend = agg[0]["total"] if agg else 0
     
-    # Get total_a_pagar and saldo_a_favor from the last invoice.
-    # Same defensive reconciliation used by /admin/clients: prefer values
-    # recomputed from raw fields (subtotal, commission, tax, shipping,
-    # saldo_pendiente, deposits_applied, saldo_a_favor_anterior) whenever
-    # they diverge from the stored aggregates. This keeps the client
-    # dashboard, admin list and invoice popup showing the same numbers.
-    # We also look up the linked shipment so we use the SAME shipping_cost
-    # the popup uses (shipment.shipping_cost overrides invoice.shipping_cost
-    # when the shipment exists).
+    # Get total_a_pagar and saldo_a_favor from the last invoice
     last_total_a_pagar = 0
     last_saldo_a_favor = 0
     if customer_id:
         last_inv = await db.invoices.find_one(
             {"tenant_id": tid, "customer_id": customer_id, "is_annulled": {"$ne": True}},
-            {"_id": 0, "id": 1, "total_a_pagar": 1, "saldo_a_favor": 1,
-             "subtotal": 1, "total_commission": 1, "total_tax": 1,
-             "shipping_cost": 1, "saldo_pendiente": 1,
-             "deposits_applied": 1, "saldo_a_favor_anterior": 1},
+            {"_id": 0, "total_a_pagar": 1, "saldo_a_favor": 1},
             sort=[("created_at", -1)]
         )
         if last_inv:
-            stored_debt = float(last_inv.get("total_a_pagar", 0) or 0)
-            stored_favor = float(last_inv.get("saldo_a_favor", 0) or 0)
-            # Prefer the linked shipment's shipping_cost (mirror popup)
-            shipment_doc = await db.shipments.find_one(
-                {"invoice_id": last_inv["id"], "tenant_id": tid},
-                {"_id": 0, "shipping_cost": 1}
-            )
-            if shipment_doc is not None:
-                eff_shipping = float(shipment_doc.get("shipping_cost", 0) or 0)
-            else:
-                eff_shipping = float(last_inv.get("shipping_cost", 0) or 0)
-            grand = (
-                float(last_inv.get("subtotal", 0) or 0)
-                + float(last_inv.get("total_commission", 0) or 0)
-                + float(last_inv.get("total_tax", 0) or 0)
-                + eff_shipping
-                + float(last_inv.get("saldo_pendiente", 0) or 0)
-            )
-            credits = float(last_inv.get("deposits_applied", 0) or 0) + float(last_inv.get("saldo_a_favor_anterior", 0) or 0)
-            computed_debt = round(max(0, grand - credits), 2)
-            computed_favor = round(max(0, credits - grand), 2)
-            if abs(computed_debt - stored_debt) > 0.005 or abs(computed_favor - stored_favor) > 0.005:
-                last_total_a_pagar = computed_debt
-                last_saldo_a_favor = computed_favor
-            else:
-                last_total_a_pagar = stored_debt
-                last_saldo_a_favor = stored_favor
+            last_total_a_pagar = last_inv.get("total_a_pagar", 0) or 0
+            last_saldo_a_favor = last_inv.get("saldo_a_favor", 0) or 0
     
     # Sum pending deposit amounts (AI-detected if admin hasn't set amount yet)
     pending_cursor = db.wallet_transactions.find(
@@ -2985,35 +2785,10 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
             "created_at": tx.get("created_at")
         })
 
-    # floating_deposits = approved recharges NOT yet applied to any invoice.
-    # This is the money the client already put in their wallet that hasn't
-    # been attached to any invoice yet (typically because it landed in a
-    # week under the weekly cutoff rule that has no invoice, or admin has
-    # not created next week's invoice yet). It always waits for the next
-    # invoice to be created.
-    floating_deposits = 0.0
-    if customer_id:
-        approved_agg = await db.wallet_transactions.aggregate([
-            {"$match": {"tenant_id": tid, "user_id": user_id,
-                        "type": {"$in": ["deposit", "initial_balance", "referral_bonus"]},
-                        "status": "approved", "is_deleted": {"$ne": True}}},
-            {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
-        ]).to_list(1)
-        applied_agg = await db.invoices.aggregate([
-            {"$match": {"tenant_id": tid, "customer_id": customer_id,
-                        "is_annulled": {"$ne": True}}},
-            {"$unwind": {"path": "$applied_deposits", "preserveNullAndEmptyArrays": False}},
-            {"$group": {"_id": None, "total": {"$sum": "$applied_deposits.amount_applied"}}}
-        ]).to_list(1)
-        approved_total = float((approved_agg[0]["total"] if approved_agg else 0) or 0)
-        applied_total = float((applied_agg[0]["total"] if applied_agg else 0) or 0)
-        floating_deposits = round(max(0, approved_total - applied_total), 2)
-
     return {**wallet,
             "total_saldo_pendiente": round(saldo_pend, 2),
             "pending_debt": round(last_total_a_pagar, 2),
             "saldo_a_favor": round(last_saldo_a_favor, 2),
-            "floating_deposits": floating_deposits,
             "pending_deposit_total": round(pending_deposit_total, 2),
             "pending_deposits": pending_deposits_info}
 

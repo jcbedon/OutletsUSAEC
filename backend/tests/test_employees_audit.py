@@ -56,7 +56,7 @@ class TestEmployeeModule:
                 for emp in employees_response.json():
                     if emp.get("email", "").startswith("test_employee_"):
                         self.session.delete(f"{BASE_URL}/api/admin/employees/{emp['id']}")
-        except Exception:
+        except:
             pass
     
     def test_01_get_employees_empty_or_list(self):
@@ -257,7 +257,7 @@ class TestEmployeeLogin:
         try:
             self.session.headers.update({"Authorization": f"Bearer {self.admin_token}"})
             self.session.delete(f"{BASE_URL}/api/admin/employees/{self.employee_id}")
-        except Exception:
+        except:
             pass
     
     def test_01_employee_login_success(self):
@@ -487,7 +487,7 @@ class TestEmployeePermissionsEnforcement:
         try:
             self.session.headers.update({"Authorization": f"Bearer {self.admin_token}"})
             self.session.delete(f"{BASE_URL}/api/admin/employees/{self.employee_id}")
-        except Exception:
+        except:
             pass
     
     def test_01_employee_cannot_access_employees_module(self):

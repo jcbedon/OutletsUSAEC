@@ -407,7 +407,6 @@ export default function ClientDashboard() {
               const saldoFavor = wallet?.saldo_a_favor || 0;
               const pendingDeposit = wallet?.pending_deposit_total || 0;
               const pendingDepositsList = wallet?.pending_deposits || [];
-              const floatingDeposits = Number(wallet?.floating_deposits || 0);
               const hasDebt = pendingDebt > 0;
               const hasFavor = saldoFavor > 0;
               const hasPendingDeposit = pendingDeposit > 0;
@@ -459,17 +458,6 @@ export default function ClientDashboard() {
                     <div className="mb-4 rounded-xl bg-amber-400/20 border border-amber-200/40 p-3" data-testid="pending-deposit-unread-note">
                       <p className="text-xs text-amber-100 font-medium leading-relaxed">
                         Tu depósito está siendo procesado y verificado por nuestro equipo. Cuando se apruebe, tu nuevo saldo aparecerá aquí.
-                      </p>
-                    </div>
-                  )}
-
-                  {floatingDeposits > 0.01 && (
-                    <div
-                      className="mb-4 rounded-xl bg-sky-400/20 border border-sky-200/40 p-3"
-                      data-testid="floating-deposits-note"
-                    >
-                      <p className="text-xs text-sky-100 font-medium leading-relaxed">
-                        Tienes <span className="font-extrabold text-white">${floatingDeposits.toFixed(2)}</span> en recargas disponibles esperando tu próxima factura. Se aplicarán automáticamente cuando se genere.
                       </p>
                     </div>
                   )}
