@@ -414,6 +414,12 @@ export default function ClientDashboard() {
               const hasPendingDepositRequest = pendingDepositsList.length > 0;
               const hasUnreadDeposit = hasPendingDepositRequest && !hasPendingDeposit;
 
+              // Available = money the client already has that will apply to
+              // their next invoice: saldo_a_favor (excess from last inv) +
+              // floating_deposits (approved but not yet attached).
+              const availableTotal = Math.max(0, saldoFavor) + Math.max(0, floatingDeposits);
+              const netPosition = availableTotal - pendingDebt;
+
               // Projected balance if the pending deposit(s) get approved:
               // - if client has favor: favor + deposit
               // - else: deposit - debt (can be negative = still owing)
@@ -423,14 +429,23 @@ export default function ClientDashboard() {
 
               return (
                 <>
-                  <div className="flex justify-between items-start mb-4">
+                  <div className="flex justify-between items-start mb-3">
                     <div>
-                      <p className="text-white/70 text-sm font-medium">{hasFavor ? 'Saldo a Favor' : 'Saldo Pendiente'}</p>
-                      <p className={`text-4xl font-extrabold mt-1 ${hasFavor ? 'text-green-400' : hasDebt ? 'text-red-400' : 'text-green-400'}`} data-testid="wallet-balance">
-                        {hasFavor ? '+' : hasDebt ? '-' : ''}${hasFavor ? saldoFavor.toFixed(2) : pendingDebt.toFixed(2)}
+                      <p className="text-white/70 text-sm font-medium">
+                        {netPosition >= 0 ? 'Saldo Neto a Favor' : 'Debes en Total'}
+                      </p>
+                      <p
+                        className={`text-4xl font-extrabold mt-1 ${netPosition >= 0 ? 'text-green-400' : 'text-red-400'}`}
+                        data-testid="wallet-balance"
+                      >
+                        {netPosition >= 0 ? '+' : '-'}${Math.abs(netPosition).toFixed(2)}
                       </p>
                       <p className="text-white/60 text-xs mt-1">
-                        {hasFavor ? '(Tienes este saldo a tu favor)' : hasDebt ? '(Debes este monto)' : '(Sin deuda pendiente)'}
+                        {netPosition > 0
+                          ? '(Disponible tras cubrir tu deuda)'
+                          : netPosition < 0
+                          ? '(Después de aplicar tu saldo disponible)'
+                          : '(Estás al día)'}
                       </p>
                     </div>
                     <div className="text-right">
@@ -439,6 +454,32 @@ export default function ClientDashboard() {
                       </Badge>
                     </div>
                   </div>
+
+                  {/* Breakdown: what you owe vs what you have available */}
+                  {(pendingDebt > 0 || availableTotal > 0) && (
+                    <div className="grid grid-cols-2 gap-2 mb-3" data-testid="wallet-breakdown">
+                      <div className="rounded-xl bg-red-500/15 border border-red-300/30 p-3">
+                        <p className="text-[10px] uppercase tracking-wide text-red-100 font-semibold">Debes</p>
+                        <p className="text-xl font-extrabold text-red-200 mt-0.5" data-testid="wallet-owes">
+                          ${pendingDebt.toFixed(2)}
+                        </p>
+                        <p className="text-[10px] text-red-100/80 mt-0.5">Última factura</p>
+                      </div>
+                      <div className="rounded-xl bg-green-500/15 border border-green-300/30 p-3">
+                        <p className="text-[10px] uppercase tracking-wide text-green-100 font-semibold">Tienes disponible</p>
+                        <p className="text-xl font-extrabold text-green-200 mt-0.5" data-testid="wallet-available">
+                          ${availableTotal.toFixed(2)}
+                        </p>
+                        <p className="text-[10px] text-green-100/80 mt-0.5">
+                          {floatingDeposits > 0.01 && saldoFavor > 0.01
+                            ? `$${saldoFavor.toFixed(2)} a favor + $${floatingDeposits.toFixed(2)} recargas`
+                            : floatingDeposits > 0.01
+                            ? 'Recargas sin aplicar'
+                            : 'Saldo a favor'}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {hasPendingDeposit && (
                     <div className="mb-4 rounded-xl bg-amber-400/20 border border-amber-200/40 p-3" data-testid="pending-deposit-note">
