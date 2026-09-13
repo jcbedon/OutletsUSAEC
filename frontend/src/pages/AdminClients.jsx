@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings, getClientPassword, toggleClientReviewed, recalculateClientInvoices, getFloatingDeposits, assignDepositToInvoice, getClientInvoices } from "@/lib/api";
+import { getAllClients, updateClientCommission, createClient, updateClient, getMyTenant, checkClientDuplicate, toggleClientStatus, deleteClient, getTenantSettings, getClientPassword, toggleClientReviewed, recalculateClientInvoices, recalculateAllInvoices, getFloatingDeposits, assignDepositToInvoice, getClientInvoices } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -230,6 +230,23 @@ export default function AdminClients() {
     }
   };
 
+  const [recalcAllLoading, setRecalcAllLoading] = useState(false);
+  const handleRecalcAllClients = async () => {
+    if (!window.confirm("¿Recalcular TODOS los clientes?\n\nReasigna recargas, sincroniza envíos y recomputa saldos en todas las facturas activas. Puede tomar unos segundos.")) {
+      return;
+    }
+    setRecalcAllLoading(true);
+    try {
+      const res = await recalculateAllInvoices();
+      toast.success(res.data?.message || "Todos los clientes recalculados");
+      await loadClients();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "No se pudo recalcular todos");
+    } finally {
+      setRecalcAllLoading(false);
+    }
+  };
+
   const handleShowCurrentPassword = async () => {
     if (!editingClient?.id) return;
     setLoadingCurrentPassword(true);
@@ -417,6 +434,20 @@ https://outletsusaec.shop/`;
             <img src={logoUrl} alt="Logo" className="h-10 object-contain logo-transparent" />
           </div>
           <span className="font-bold text-slate-800 flex-1">Clientes</span>
+          <Button
+            onClick={handleRecalcAllClients}
+            disabled={recalcAllLoading}
+            variant="outline"
+            className="rounded-xl border-slate-300 text-slate-700 hover:bg-slate-50"
+            data-testid="recalc-all-clients-btn"
+            title="Recalcular todos los clientes (reasigna recargas y actualiza saldos)"
+          >
+            {recalcAllLoading ? (
+              <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Recalculando...</>
+            ) : (
+              <><RefreshCw className="h-4 w-4 mr-2" />Recalcular Todos</>
+            )}
+          </Button>
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
             <DialogTrigger asChild>
               <Button className="rounded-xl" data-testid="open-create-client-btn" style={{ background: '#1E3A5F', color: 'white' }}>
