@@ -1278,7 +1278,7 @@ async def seed_superadmin():
 async def list_tenants(current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "superadmin":
         raise HTTPException(status_code=403, detail="No autorizado")
-    tenants = await db.tenants.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    tenants = await db.tenants.find({}, {"_id": 0}).sort("created_at", -1).to_list(20000)
     result = []
     for t in tenants:
         admin_count = await db.users.count_documents({"tenant_id": t["id"], "role": "admin"})
@@ -1825,7 +1825,7 @@ async def list_unassigned_recharges(current_user: dict = Depends(get_current_use
         "_id": 0, "id": 1, "amount": 1, "customer_id": 1, "user_name": 1,
         "reference_number": 1, "approved_at": 1, "created_at": 1, "description": 1,
         "ai_scan": 1, "proof_url": 1, "proof_path": 1
-    }).sort("approved_at", -1).to_list(500)
+    }).sort("approved_at", -1).to_list(20000)
 
     # Include the active accounts so the frontend can render the dropdown.
     tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1})
@@ -2675,7 +2675,7 @@ async def get_pending_deposits(current_user: dict = Depends(get_current_user)):
     transactions = await db.wallet_transactions.find(
         {"type": "deposit", "status": "pending", "tenant_id": tid, "is_deleted": {"$ne": True}},
         {"_id": 0}
-    ).sort("created_at", -1).to_list(100)
+    ).sort("created_at", -1).to_list(20000)
     if not transactions:
         return []
     # Batched user lookup — one query instead of N. Builds an id->user dict so
@@ -2730,7 +2730,7 @@ async def get_deleted_deposits(current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
     transactions = await db.wallet_transactions.find(
         {"type": "deposit", "tenant_id": tid, "is_deleted": True}, {"_id": 0}
-    ).sort("deleted_at", -1).to_list(500)
+    ).sort("deleted_at", -1).to_list(20000)
     result = []
     for t in transactions:
         user = await db.users.find_one({"id": t["user_id"]}, {"_id": 0, "name": 1, "customer_id": 1})
@@ -4126,7 +4126,7 @@ async def get_lives(status: Optional[str] = None, current_user: dict = Depends(g
     query = {"tenant_id": tid}
     if status:
         query["status"] = status
-    lives = await db.lives.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    lives = await db.lives.find(query, {"_id": 0}).sort("created_at", -1).to_list(20000)
     return lives
 
 @api_router.get("/lives/active")
@@ -4299,8 +4299,8 @@ async def get_live_purchases(live_id: str, current_user: dict = Depends(get_curr
 @api_router.get("/purchases/pending-shipment/{user_id}")
 async def get_pending_shipment_purchases(user_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
-    all_purchases = await db.purchases.find({"user_id": user_id, "status": "confirmed", "tenant_id": tid}, {"_id": 0}).to_list(500)
-    shipments = await db.shipments.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0, "purchase_ids": 1}).to_list(500)
+    all_purchases = await db.purchases.find({"user_id": user_id, "status": "confirmed", "tenant_id": tid}, {"_id": 0}).to_list(20000)
+    shipments = await db.shipments.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0, "purchase_ids": 1}).to_list(20000)
     shipped_ids = set()
     for s in shipments:
         shipped_ids.update(s.get("purchase_ids", []))
@@ -5088,7 +5088,7 @@ async def clear_upload_session_files(token: str, current_user: dict = Depends(ge
 @api_router.get("/shipments/user/{user_id}")
 async def get_user_shipments(user_id: str, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
-    shipments = await db.shipments.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    shipments = await db.shipments.find({"user_id": user_id, "tenant_id": tid}, {"_id": 0}).sort("created_at", -1).to_list(20000)
     return shipments
 
 @api_router.get("/shipments")
@@ -5104,7 +5104,7 @@ async def get_all_shipments(status: Optional[str] = None, current_user: dict = D
     query = {"tenant_id": tid}
     if status:
         query["status"] = status
-    shipments = await db.shipments.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    shipments = await db.shipments.find(query, {"_id": 0}).sort("created_at", -1).to_list(20000)
     
     if not shipments:
         return []
@@ -5665,7 +5665,7 @@ async def get_client_invoices(customer_id: str, include_annulled: bool = False, 
     if not include_annulled:
         query["is_annulled"] = {"$ne": True}
     
-    invoices = await db.invoices.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    invoices = await db.invoices.find(query, {"_id": 0}).sort("created_at", -1).to_list(20000)
     
     return invoices
 
@@ -5681,7 +5681,7 @@ async def get_client_invoices_for_shipment(customer_id: str, current_user: dict 
         "customer_id": customer_id.upper(),
         "tenant_id": tid,
         "is_annulled": {"$ne": True}
-    }, {"_id": 0}).sort("created_at", -1).to_list(100)
+    }, {"_id": 0}).sort("created_at", -1).to_list(20000)
     
     # Get all shipment invoice_ids to filter out invoices that already have shipments
     shipments = await db.shipments.find(
@@ -5698,7 +5698,7 @@ async def get_client_invoices_for_shipment(customer_id: str, current_user: dict 
             purchases = await db.purchases.find(
                 {"id": {"$in": inv.get("purchase_ids", [])}},
                 {"_id": 0}
-            ).to_list(100)
+            ).to_list(20000)
             inv["purchases"] = purchases
             inv["purchase_count"] = len(purchases)
             result.append(inv)
@@ -5818,7 +5818,7 @@ async def search_invoices(
                 "is_deleted": {"$ne": True}
             },
             {"_id": 0, "user_id": 1, "amount": 1, "created_at": 1}
-        ).sort("created_at", -1).to_list(500)
+        ).sort("created_at", -1).to_list(20000)
         
         for dep in deposits:
             user_id = dep["user_id"]
@@ -5904,7 +5904,7 @@ async def list_annulled_invoices(current_user: dict = Depends(get_current_user))
     invoices = await db.invoices.find(
         {"tenant_id": tid, "is_annulled": True},
         {"_id": 0}
-    ).sort("annulled_at", -1).to_list(500)
+    ).sort("annulled_at", -1).to_list(20000)
     return invoices
 
 
@@ -6551,7 +6551,7 @@ async def get_client_purchase_history(customer_id: str, current_user: dict = Dep
         "customer_id": customer_id.upper(),
         "tenant_id": tid,
         "status": "paid"
-    }, {"_id": 0}).sort("paid_at", -1).to_list(500)
+    }, {"_id": 0}).sort("paid_at", -1).to_list(20000)
     
     return purchases
 
@@ -6852,7 +6852,7 @@ async def get_live_report(live_id: str, current_user: dict = Depends(get_current
     live = await db.lives.find_one({"id": live_id, "tenant_id": tid}, {"_id": 0})
     if not live:
         raise HTTPException(status_code=404, detail="Live no encontrado")
-    purchases = await db.purchases.find({"live_id": live_id, "tenant_id": tid}, {"_id": 0}).to_list(500)
+    purchases = await db.purchases.find({"live_id": live_id, "tenant_id": tid}, {"_id": 0}).to_list(20000)
     customer_totals = {}
     for p in purchases:
         cid = p["customer_id"]
@@ -7891,7 +7891,7 @@ async def get_store_profits_report(current_user: dict = Depends(get_current_user
     lives = await db.lives.find(
         {"tenant_id": tid, "status": "completed"},
         {"_id": 0}
-    ).sort("ended_at", -1).to_list(500)
+    ).sort("ended_at", -1).to_list(20000)
     
     store_profits = []
     total_sales = 0
@@ -8106,7 +8106,7 @@ async def get_employees(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     
-    employees = await db.employees.find({"tenant_id": tid}, {"_id": 0}).to_list(100)
+    employees = await db.employees.find({"tenant_id": tid}, {"_id": 0}).to_list(20000)
     return employees
 
 @api_router.post("/admin/employees")
@@ -8337,7 +8337,7 @@ async def get_audit_users(current_user: dict = Depends(get_current_user)):
             "user_role": "$_id.user_role"
         }}
     ]
-    users = await db.audit_logs.aggregate(pipeline).to_list(100)
+    users = await db.audit_logs.aggregate(pipeline).to_list(20000)
     return users
 
 @api_router.get("/admin/audit-logs/actions")
@@ -8398,7 +8398,7 @@ async def get_audit_history(days: int = 7, current_user: dict = Depends(get_curr
     audit_deletes_raw = await db.audit_logs.find(
         {"tenant_id": tid, "action": "delete_purchase", "created_at": {"$gte": since}},
         {"_id": 0}
-    ).sort("created_at", -1).to_list(500)
+    ).sort("created_at", -1).to_list(20000)
 
     deleted_purchases = []
     seen_purchase_ids = set()
@@ -8426,7 +8426,7 @@ async def get_audit_history(days: int = 7, current_user: dict = Depends(get_curr
          "description": {"$regex": "^Reembolso:.*eliminado", "$options": "i"},
          "created_at": {"$gte": since}},
         {"_id": 0}
-    ).sort("created_at", -1).to_list(500)
+    ).sort("created_at", -1).to_list(20000)
 
     # Build customer_id -> name lookup once.
     cust_ids = list({tx.get("customer_id") for tx in refund_txs if tx.get("customer_id")})
@@ -8482,7 +8482,7 @@ async def get_audit_history(days: int = 7, current_user: dict = Depends(get_curr
     annulled_logs = await db.audit_logs.find(
         {"tenant_id": tid, "action": "invoice_annulled", "created_at": {"$gte": since}},
         {"_id": 0}
-    ).sort("created_at", -1).to_list(500)
+    ).sort("created_at", -1).to_list(20000)
     annulled_invoices = []
     for log in annulled_logs:
         # Pull invoice for customer info if we still have it
@@ -8516,7 +8516,7 @@ async def get_audit_history(days: int = 7, current_user: dict = Depends(get_curr
          "is_deleted": {"$ne": True},
          "approved_at": {"$gte": since}},
         {"_id": 0}
-    ).sort("approved_at", -1).to_list(500)
+    ).sort("approved_at", -1).to_list(20000)
 
     rc_cust_ids = list({tx.get("customer_id") for tx in approved_recharges_raw if tx.get("customer_id")})
     rc_cust_lookup = {}
@@ -9049,7 +9049,7 @@ async def diagnose_invoice(invoice_id: str, current_user: dict = Depends(get_cur
     extra_deleted = await db.purchases.find(
         {"tenant_id": tid, "is_deleted": True, "customer_id": customer_id},
         {"_id": 0}
-    ).to_list(500)
+    ).to_list(20000)
 
     # Linked shipment
     shipment = await db.shipments.find_one({"invoice_id": invoice_id, "tenant_id": tid}, {"_id": 0})
@@ -9062,7 +9062,7 @@ async def diagnose_invoice(invoice_id: str, current_user: dict = Depends(get_cur
          "shipping_cost": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1,
          "saldo_a_favor": 1, "deposits_applied": 1, "total_a_pagar": 1,
          "applied_deposits": 1, "purchase_ids": 1, "created_at": 1, "approved_at": 1}
-    ).sort("created_at", 1).to_list(500)
+    ).sort("created_at", 1).to_list(20000)
 
     # Audit logs for: this invoice, purchases of this invoice, the shipment.
     related_ids = [invoice_id] + [p["id"] for p in linked_purchases] + [p["id"] for p in extra_deleted]
