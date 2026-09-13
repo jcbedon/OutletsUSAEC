@@ -16,7 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart, QrCode, Smartphone, Loader2, Trash2 } from "lucide-react";
+import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart, QrCode, Smartphone, Loader2, Trash2, AlertTriangle, RefreshCw } from "lucide-react";
 import RechargeReport from "@/components/RechargeReport";
 import QRCode from "qrcode";
 
@@ -82,6 +82,11 @@ export default function AdminWallet() {
   // Deleted tab state
   const [showDeleted, setShowDeleted] = useState(false);
   const [deletedDeposits, setDeletedDeposits] = useState([]);
+
+  // Duplicates tab state
+  const [showDuplicates, setShowDuplicates] = useState(false);
+  const [duplicates, setDuplicates] = useState(null);
+  const [duplicatesLoading, setDuplicatesLoading] = useState(false);
   
   // Delete confirmation state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -157,6 +162,24 @@ export default function AdminWallet() {
       setLoading(false);
     }
   };
+
+  const loadDuplicates = async () => {
+    setDuplicatesLoading(true);
+    try {
+      const API = process.env.REACT_APP_BACKEND_URL;
+      const token = JSON.parse(localStorage.getItem("outletsusa_user"))?.token;
+      const res = await fetch(`${API}/api/wallet/duplicates`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setDuplicates(data);
+    } catch {
+      toast.error("Error al cargar duplicados");
+    } finally {
+      setDuplicatesLoading(false);
+    }
+  };
+
 
   const handleScanProof = async (depositId) => {
     setScanningDeposit(depositId);
@@ -599,11 +622,11 @@ export default function AdminWallet() {
         })()}
 
         {/* Navigation Tabs */}
-        <Tabs value={showDeleted ? "deleted" : showReport ? "report" : (showHistory ? "history" : "pending")} className="mb-6">
-          <TabsList className="grid w-full grid-cols-4 h-12 rounded-xl bg-gray-100">
+        <Tabs value={showDeleted ? "deleted" : showReport ? "report" : (showDuplicates ? "duplicates" : (showHistory ? "history" : "pending"))} className="mb-6">
+          <TabsList className="grid w-full grid-cols-5 h-12 rounded-xl bg-gray-100">
             <TabsTrigger 
               value="pending"
-              onClick={() => { setShowHistory(false); setShowReport(false); setShowDeleted(false); }}
+              onClick={() => { setShowHistory(false); setShowReport(false); setShowDeleted(false); setShowDuplicates(false); }}
               className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
               data-testid="show-pending-btn"
             >
@@ -612,7 +635,7 @@ export default function AdminWallet() {
             </TabsTrigger>
             <TabsTrigger 
               value="history"
-              onClick={() => { setShowHistory(true); setShowReport(false); setShowDeleted(false); }}
+              onClick={() => { setShowHistory(true); setShowReport(false); setShowDeleted(false); setShowDuplicates(false); }}
               className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
               data-testid="show-history-btn"
             >
@@ -620,8 +643,17 @@ export default function AdminWallet() {
               Historial
             </TabsTrigger>
             <TabsTrigger 
+              value="duplicates"
+              onClick={() => { setShowDuplicates(true); setShowHistory(false); setShowReport(false); setShowDeleted(false); if (!duplicates) loadDuplicates(); }}
+              className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
+              data-testid="show-duplicates-btn"
+            >
+              <AlertTriangle className="h-4 w-4 mr-1" />
+              Duplicados{duplicates ? ` (${(duplicates.by_reference?.length||0) + (duplicates.by_client_amount_day?.length||0) + (duplicates.by_same_proof?.length||0)})` : ""}
+            </TabsTrigger>
+            <TabsTrigger 
               value="deleted"
-              onClick={() => { setShowDeleted(true); setShowHistory(false); setShowReport(false); }}
+              onClick={() => { setShowDeleted(true); setShowHistory(false); setShowReport(false); setShowDuplicates(false); }}
               className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
               data-testid="show-deleted-btn"
             >
@@ -630,7 +662,7 @@ export default function AdminWallet() {
             </TabsTrigger>
             <TabsTrigger 
               value="report"
-              onClick={() => { setShowReport(true); setShowHistory(false); setShowDeleted(false); }}
+              onClick={() => { setShowReport(true); setShowHistory(false); setShowDeleted(false); setShowDuplicates(false); }}
               className="rounded-lg data-[state=active]:bg-white data-[state=active]:shadow-sm font-medium"
               data-testid="show-report-btn"
             >
@@ -1059,7 +1091,7 @@ export default function AdminWallet() {
           </div>
         )}
 
-        {!showDeleted && !showReport && (
+        {!showDeleted && !showReport && !showDuplicates && (
         <ScrollArea className="h-[calc(100vh-400px)]">
           {!showHistory ? (
             // Pending Deposits View
@@ -1355,6 +1387,99 @@ export default function AdminWallet() {
           )}
         </ScrollArea>
         )}
+
+        {/* Duplicates Tab */}
+        {showDuplicates && (
+          <ScrollArea className="h-[calc(100vh-400px)]" data-testid="duplicates-tab">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm text-slate-600">
+                Detección de posibles duplicados entre recargas <b>pendientes y aprobadas</b>.
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadDuplicates}
+                disabled={duplicatesLoading}
+                className="rounded-lg"
+                data-testid="rescan-duplicates-btn"
+              >
+                {duplicatesLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Escaneando...</> : <><RefreshCw className="h-4 w-4 mr-2" />Re-escanear</>}
+              </Button>
+            </div>
+
+            {duplicatesLoading && !duplicates ? (
+              <Card className="rounded-2xl border-dashed border-2 border-gray-200">
+                <CardContent className="p-8 text-center">
+                  <Loader2 className="h-8 w-8 text-slate-400 mx-auto mb-3 animate-spin" />
+                  <p className="text-gray-500 font-medium">Escaneando duplicados...</p>
+                </CardContent>
+              </Card>
+            ) : duplicates ? (
+              <div className="space-y-4">
+                {[
+                  { key: "by_reference", title: "Por Número de Comprobante", icon: "📋", sub: "Mismo número de referencia bancaria. Suele ser un error real.", data: duplicates.by_reference || [] },
+                  { key: "by_client_amount_day", title: "Mismo Cliente + Monto + Día", icon: "🎯", sub: "Sospechoso: el cliente subió el mismo depósito 2 veces el mismo día.", data: duplicates.by_client_amount_day || [] },
+                  { key: "by_same_proof", title: "Misma Imagen de Comprobante", icon: "🖼️", sub: "La misma foto se usó en más de una recarga. Casi siempre es error real.", data: duplicates.by_same_proof || [] },
+                ].map(section => (
+                  <Card key={section.key} className="rounded-2xl" data-testid={`dup-section-${section.key}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xl">{section.icon}</span>
+                        <h3 className="font-bold text-slate-800">{section.title}</h3>
+                        <span className={`ml-auto text-xs font-semibold px-2 py-1 rounded-full ${section.data.length > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+                          {section.data.length} grupo{section.data.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mb-3">{section.sub}</p>
+                      {section.data.length === 0 ? (
+                        <p className="text-sm text-slate-400 italic">Sin duplicados en esta categoría.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {section.data.map((g, idx) => (
+                            <div key={idx} className="border border-slate-200 rounded-lg p-3 bg-slate-50">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-xs font-mono text-slate-500">
+                                  {typeof g.key === "string" ? g.key : (g.key?.customer_id ? `${g.key.customer_id} · $${g.key.amount} · ${g.key.day}` : JSON.stringify(g.key))}
+                                </span>
+                                <span className="ml-auto text-xs font-bold text-red-600">
+                                  {g.count} recargas · ${(g.total_amount || 0).toFixed(2)}
+                                </span>
+                              </div>
+                              <div className="space-y-1.5">
+                                {(g.transactions || []).map(t => (
+                                  <div key={t.id} className="flex items-center gap-2 text-xs bg-white p-2 rounded border border-slate-100">
+                                    <span className={`px-1.5 py-0.5 rounded font-semibold ${t.status === "pending" ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"}`}>
+                                      {t.status}
+                                    </span>
+                                    <span className="font-mono text-slate-500">{(t.created_at || "").substring(0, 10)}</span>
+                                    <span className="font-bold text-slate-800">${(t.amount || 0).toFixed(2)}</span>
+                                    <span className="text-slate-600">{t.customer_name || t.customer_id}</span>
+                                    {t.reference_number && <span className="text-slate-400 font-mono">Ref: {t.reference_number}</span>}
+                                    {t.proof_url && (
+                                      <a href={t.proof_url.startsWith("/") ? `${APP_URL}${t.proof_url}` : t.proof_url} target="_blank" rel="noreferrer" className="ml-auto text-blue-600 hover:underline">Ver</a>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card className="rounded-2xl border-dashed border-2 border-gray-200">
+                <CardContent className="p-8 text-center">
+                  <AlertTriangle className="h-12 w-12 text-slate-300 mx-auto mb-3" />
+                  <p className="text-gray-500 font-medium">Click en Re-escanear para detectar duplicados</p>
+                </CardContent>
+              </Card>
+            )}
+          </ScrollArea>
+        )}
+
 
         {/* Deleted Deposits Tab */}
         {showDeleted && (

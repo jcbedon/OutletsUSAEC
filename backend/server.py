@@ -2696,6 +2696,136 @@ async def get_client_info(customer_id: str, current_user: dict = Depends(get_cur
         "pending_purchases_count": pending_count,
     }
 
+
+@api_router.get("/wallet/duplicates")
+async def get_duplicate_deposits(current_user: dict = Depends(get_current_user)):
+    """Detect groups of possibly-duplicated recargas so the admin can review
+    and clean them up. Runs three heuristics side-by-side; each hit lists the
+    conflicting transaction ids so the UI can jump straight to them.
+
+    Heuristics:
+      1) `reference`  — same reference_number (case-insensitive) across
+         non-deleted, non-rejected recargas.
+      2) `client_amount_day` — same client + same amount + same calendar day.
+         Catches the classic "uploaded twice by accident" scenario.
+      3) `same_proof`  — same proof_url (identical image reused).
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    base_match = {
+        "tenant_id": tid,
+        "type": "deposit",
+        "is_deleted": {"$ne": True},
+        "status": {"$in": ["pending", "approved"]},
+    }
+
+    async def _fetch_txs(ids: list):
+        if not ids:
+            return []
+        txs = await db.wallet_transactions.find(
+            {"tenant_id": tid, "id": {"$in": ids}},
+            {"_id": 0, "id": 1, "customer_id": 1, "user_id": 1, "amount": 1,
+             "reference_number": 1, "status": 1, "created_at": 1,
+             "proof_url": 1, "description": 1}
+        ).to_list(len(ids))
+        # Preserve caller-supplied order
+        by_id = {t["id"]: t for t in txs}
+        return [by_id[i] for i in ids if i in by_id]
+
+    # 1) By reference number
+    ref_groups = await db.wallet_transactions.aggregate([
+        {"$match": {**base_match,
+                    "reference_number": {"$nin": [None, ""]}}},
+        {"$group": {
+            "_id": {"$toLower": "$reference_number"},
+            "count": {"$sum": 1},
+            "ids": {"$push": "$id"},
+            "total_amount": {"$sum": "$amount"}
+        }},
+        {"$match": {"count": {"$gt": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 500}
+    ]).to_list(500)
+
+    # 2) Same client + same amount + same day
+    same_group = await db.wallet_transactions.aggregate([
+        {"$match": base_match},
+        {"$group": {
+            "_id": {
+                "customer_id": "$customer_id",
+                "amount": "$amount",
+                "day": {"$substr": ["$created_at", 0, 10]}
+            },
+            "count": {"$sum": 1},
+            "ids": {"$push": "$id"},
+        }},
+        {"$match": {"count": {"$gt": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 500}
+    ]).to_list(500)
+
+    # 3) Same proof URL
+    proof_group = await db.wallet_transactions.aggregate([
+        {"$match": {**base_match, "proof_url": {"$nin": [None, ""]}}},
+        {"$group": {
+            "_id": "$proof_url",
+            "count": {"$sum": 1},
+            "ids": {"$push": "$id"},
+            "total_amount": {"$sum": "$amount"},
+        }},
+        {"$match": {"count": {"$gt": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 500}
+    ]).to_list(500)
+
+    # Collect all involved customer_ids for a single batched user lookup
+    all_ids = set()
+    for g in ref_groups + same_group + proof_group:
+        for tid_ in g.get("ids") or []:
+            all_ids.add(tid_)
+    # Batched customer name lookup
+    all_customer_ids = set()
+    if all_ids:
+        tx_cursor = db.wallet_transactions.find(
+            {"tenant_id": tid, "id": {"$in": list(all_ids)}},
+            {"_id": 0, "id": 1, "customer_id": 1}
+        )
+        async for t in tx_cursor:
+            if t.get("customer_id"):
+                all_customer_ids.add(t["customer_id"])
+    users = []
+    if all_customer_ids:
+        users = await db.users.find(
+            {"tenant_id": tid, "customer_id": {"$in": list(all_customer_ids)}},
+            {"_id": 0, "customer_id": 1, "name": 1}
+        ).to_list(len(all_customer_ids))
+    name_map = {u["customer_id"]: u.get("name") for u in users}
+
+    async def _decorate(groups, key_field):
+        out = []
+        for g in groups:
+            txs = await _fetch_txs(g.get("ids") or [])
+            for t in txs:
+                t["customer_name"] = name_map.get(t.get("customer_id"))
+            group_key = g.get("_id")
+            out.append({
+                "key": group_key,
+                "count": g["count"],
+                "total_amount": round(float(g.get("total_amount") or
+                                            sum((t.get("amount") or 0) for t in txs)), 2),
+                "transactions": txs,
+            })
+        return out
+
+    return {
+        "by_reference": await _decorate(ref_groups, "reference_number"),
+        "by_client_amount_day": await _decorate(same_group, "cad"),
+        "by_same_proof": await _decorate(proof_group, "proof_url"),
+    }
+
+
 # ==================== WALLET ENDPOINTS ====================
 
 @api_router.get("/wallet/pending-deposits")
@@ -3796,12 +3926,14 @@ async def admin_create_recharge(
     # ledger. If the scan fails we still create the recharge — the admin can
     # correct the date manually later.
     detected_deposit_date = None
+    detected_reference_number = None
     try:
         scan = await _scan_proof_image(proof_url, session_id=f"admin-{tx.id}")
         if scan:
             detected_deposit_date = scan.get("detected_deposit_date")
+            detected_reference_number = scan.get("detected_reference_number")
             tx_dict["ai_scan"] = {
-                "detected_reference_number": scan.get("detected_reference_number"),
+                "detected_reference_number": detected_reference_number,
                 "detected_amount": scan.get("detected_amount"),
                 "currency": scan.get("currency"),
                 "confidence": scan.get("confidence"),
@@ -3813,8 +3945,28 @@ async def admin_create_recharge(
             }
             if detected_deposit_date:
                 tx_dict["deposit_date"] = detected_deposit_date
+            if detected_reference_number:
+                tx_dict["reference_number"] = detected_reference_number
+                tx_dict["reference_number_lower"] = detected_reference_number.lower()
     except Exception:
         pass
+
+    # Reject duplicate reference numbers (same rule as client-facing endpoint)
+    if detected_reference_number:
+        dup = await db.wallet_transactions.find_one(
+            {
+                "tenant_id": tid,
+                "reference_number_lower": detected_reference_number.lower(),
+                "status": {"$in": ["pending", "approved"]},
+                "is_deleted": {"$ne": True}
+            },
+            {"_id": 0, "id": 1, "customer_id": 1}
+        )
+        if dup:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Ya existe una recarga con el comprobante {detected_reference_number} (cliente {dup.get('customer_id') or '—'})."
+            )
 
     await db.wallet_transactions.insert_one(tx_dict)
     
