@@ -73,7 +73,7 @@ export default function AdminWallet() {
   const [showHistory, setShowHistory] = useState(false);
   const [historyFilter, setHistoryFilter] = useState("all");
   const [historySearch, setHistorySearch] = useState("");
-  const [historyWeekFilter, setHistoryWeekFilter] = useState("all");
+  const [historyWeekFilter, setHistoryWeekFilter] = useState(() => getCurrentWeekKey());
   
   // Recharge Report state
   const [showReport, setShowReport] = useState(false);

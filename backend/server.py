@@ -2719,7 +2719,7 @@ async def get_all_deposits(include_deleted: bool = False, current_user: dict = D
     query = {"type": "deposit", "tenant_id": tid}
     if not include_deleted:
         query["is_deleted"] = {"$ne": True}
-    transactions = await db.wallet_transactions.find(query, {"_id": 0}).sort("created_at", -1).to_list(2000)
+    transactions = await db.wallet_transactions.find(query, {"_id": 0}).sort("created_at", -1).to_list(20000)
     if not transactions:
         return []
     user_ids = list({t["user_id"] for t in transactions})
