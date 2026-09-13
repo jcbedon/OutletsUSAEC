@@ -744,22 +744,23 @@ https://outletsusaec.shop/`;
                             </div>
                           </div>
                           <div className="text-right">
-                            <div className={`px-3 py-2 rounded-xl ${client.pending_balance > 0 ? 'bg-green-50' : client.pending_balance < 0 ? 'bg-red-50' : 'bg-gray-50'}`}>
-                              <p className="text-xs text-gray-500">{client.pending_balance > 0 ? 'Saldo a Favor' : 'Total a Pagar'}</p>
-                              <p className={`text-xl font-bold ${client.pending_balance > 0 ? 'text-green-600' : client.pending_balance < 0 ? 'text-red-600' : 'text-gray-600'}`}
-                                data-testid={`pending-balance-${client.customer_id}`}>
-                                {client.pending_balance > 0 ? '+' : ''}${Math.abs(client.pending_balance || 0).toFixed(2)}
-                              </p>
-                            </div>
-                            {(client.pending_to_invoice || 0) > 0.01 && (
-                              <div
-                                className="mt-1 px-2 py-1 rounded-md text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200"
-                                title={`${client.pending_purchases_count || 0} compras de esta semana aún no facturadas`}
-                                data-testid={`pending-to-invoice-${client.customer_id}`}
-                              >
-                                Por facturar: ${Number(client.pending_to_invoice).toFixed(2)}
-                              </div>
-                            )}
+                            {(() => {
+                              const debt = Number(client.real_debt || 0);
+                              const isCredit = debt < -0.01;
+                              const isZero = Math.abs(debt) < 0.01;
+                              const bgClass = isCredit ? "bg-green-50" : isZero ? "bg-gray-50" : "bg-red-50";
+                              const textClass = isCredit ? "text-green-600" : isZero ? "text-gray-600" : "text-red-600";
+                              const label = isCredit ? "Saldo a Favor" : "Deuda Real";
+                              return (
+                                <div className={`px-3 py-2 rounded-xl ${bgClass}`}>
+                                  <p className="text-xs text-gray-500">{label}</p>
+                                  <p className={`text-xl font-bold ${textClass}`}
+                                    data-testid={`real-debt-${client.customer_id}`}>
+                                    {isCredit ? "+" : ""}${Math.abs(debt).toFixed(2)}
+                                  </p>
+                                </div>
+                              );
+                            })()}
                             {(client.floating_deposits || 0) > 0.01 && (
                               canAssignDeposits ? (
                                 <button

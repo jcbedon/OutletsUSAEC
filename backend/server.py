@@ -2343,6 +2343,10 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         customer_key = user.get("customer_id")
         applied_total = applied_by_customer.get(customer_key, 0)
         floating_deposits = round(max(0, float(total_recharges or 0) - float(applied_total or 0)), 2)
+        # real_debt = suma de saldos pendientes de TODAS las facturas no
+        # anuladas menos las recargas disponibles (flotantes).
+        # Positivo = deuda real, Negativo = crédito real (saldo a favor).
+        real_debt = round(float(total_saldo_pendiente or 0) - float(floating_deposits or 0), 2)
         result.append({
             **user, 
             "wallet_balance": round(total_recharges, 2),
@@ -2350,6 +2354,7 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "total_shipping": round(total_shipping, 2),
             "total_saldo_pendiente": round(total_saldo_pendiente, 2),
             "pending_balance": pending_balance,
+            "real_debt": real_debt,
             "purchase_count": purch["count"],
             "is_active": user.get("is_active", True),
             "pending_to_invoice": pending_to_invoice,
