@@ -807,8 +807,18 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     
     all_invoices = await db.invoices.find(
         {"customer_id": customer_id, "tenant_id": tenant_id, "is_annulled": {"$ne": True}},
-        {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1, "shipping_cost": 1, "created_at": 1}
+        {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1, "shipping_cost": 1, "created_at": 1, "applied_deposits": 1}
     ).sort("created_at", 1).to_list(1000)
+
+    # Snapshot existing assignments BEFORE we recompute, so historical
+    # deposits (attached under previous logic versions) stay attached even
+    # after the strict Mon-Sun weekly rule was introduced.
+    existing_assignment = {}
+    for inv in all_invoices:
+        for ad in (inv.get("applied_deposits") or []):
+            dep_id = ad.get("deposit_id")
+            if dep_id:
+                existing_assignment[dep_id] = inv["id"]
 
     # Backfill effective shipping_cost from the LINKED SHIPMENT for each invoice.
     # The invoice document's `shipping_cost` field can be stale or zero (e.g. if the
@@ -859,8 +869,17 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
         if manual_target and manual_target in valid_invoice_ids:
             target_invoice = next((i for i in all_invoices if i["id"] == manual_target), None)
 
+        # 2) Preserve existing historical assignment: if this deposit was
+        #    already attached to a still-live invoice, keep it there. Prevents
+        #    the strict weekly rule from unlinking old deposits assigned under
+        #    previous logic versions.
         if target_invoice is None:
-            # 2) Weekly cutoff: a deposit only auto-applies to an invoice
+            prev_inv_id = existing_assignment.get(dep.get("id", ""))
+            if prev_inv_id and prev_inv_id in valid_invoice_ids:
+                target_invoice = next((i for i in all_invoices if i["id"] == prev_inv_id), None)
+
+        if target_invoice is None:
+            # 3) Weekly cutoff: a deposit only auto-applies to an invoice
             #    created in the SAME Mon-Sun week (America/Guayaquil).
             #    If no invoice exists in that week → float (skip).
             wk_start, wk_end = _billing_week_bounds(dep_date)
@@ -2860,40 +2879,28 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
             "created_at": tx.get("created_at")
         })
 
-    # floating_deposits computed via the weekly-cutoff rule directly from
-    # raw timestamps (independent of stored invoice.applied_deposits[],
-    # which may be stale until recalc has run). A deposit is floating if
-    # its Mon-Sun (GYE) week has no non-annulled invoice — matches the
-    # recalc engine semantic and stays correct even for old data.
+    # floating_deposits = approved recharges NOT attached to any non-annulled
+    # invoice's applied_deposits[]. Uses stored assignments as source of
+    # truth so historical recharges (assigned via previous logic versions)
+    # keep showing as attached. Admin can force the current weekly rule
+    # over old data via "Recalcular Todo".
     floating_deposits = 0.0
     if customer_id:
-        deposits_list = await db.wallet_transactions.find(
-            {"tenant_id": tid, "customer_id": customer_id, "type": "deposit",
-             "status": "approved", "is_deleted": {"$ne": True}},
-            {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "target_invoice_id": 1}
-        ).to_list(2000)
-        invoices_list = await db.invoices.find(
-            {"tenant_id": tid, "customer_id": customer_id, "is_annulled": {"$ne": True}},
-            {"_id": 0, "id": 1, "created_at": 1}
-        ).to_list(2000)
-        valid_invoice_ids = {i["id"] for i in invoices_list}
-        invoice_week_starts = set()
-        for inv in invoices_list:
-            ws, _we = _billing_week_bounds(inv.get("created_at", ""))
-            if ws:
-                invoice_week_starts.add(ws)
-        total_floating = 0.0
-        for d in deposits_list:
-            # Manual override attached to a real invoice → not floating
-            mt = d.get("target_invoice_id")
-            if mt and mt in valid_invoice_ids:
-                continue
-            ws, _we = _billing_week_bounds(d.get("created_at", ""))
-            if not ws:
-                continue
-            if ws not in invoice_week_starts:
-                total_floating += float(d.get("amount", 0) or 0)
-        floating_deposits = round(total_floating, 2)
+        approved_agg = await db.wallet_transactions.aggregate([
+            {"$match": {"tenant_id": tid, "user_id": user_id,
+                        "type": {"$in": ["deposit", "initial_balance", "referral_bonus"]},
+                        "status": "approved", "is_deleted": {"$ne": True}}},
+            {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+        ]).to_list(1)
+        applied_agg = await db.invoices.aggregate([
+            {"$match": {"tenant_id": tid, "customer_id": customer_id,
+                        "is_annulled": {"$ne": True}}},
+            {"$unwind": {"path": "$applied_deposits", "preserveNullAndEmptyArrays": False}},
+            {"$group": {"_id": None, "total": {"$sum": "$applied_deposits.amount_applied"}}}
+        ]).to_list(1)
+        approved_total = float((approved_agg[0]["total"] if approved_agg else 0) or 0)
+        applied_total = float((applied_agg[0]["total"] if applied_agg else 0) or 0)
+        floating_deposits = round(max(0, approved_total - applied_total), 2)
 
     return {**wallet,
             "total_saldo_pendiente": round(saldo_pend, 2),
