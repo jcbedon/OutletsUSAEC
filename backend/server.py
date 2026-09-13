@@ -881,25 +881,36 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
         if target_invoice is None:
             # 3) Weekly cutoff: a deposit only auto-applies to an invoice
             #    created in the SAME Mon-Sun week (America/Guayaquil).
-            #    If no invoice exists in that week → float (skip).
+            #    If no invoice exists in that week → try legacy fallback.
             wk_start, wk_end = _billing_week_bounds(dep_date)
-            if not wk_start:
-                continue
-            same_week = [i for i in all_invoices
-                         if wk_start <= i["created_at"] < wk_end]
-            if not same_week:
-                continue  # float: waiting for a new-week invoice
-            # Latest same-week invoice created before OR at the deposit time
-            for inv in same_week:
-                if inv["created_at"] <= dep_date:
-                    target_invoice = inv
-                else:
-                    break
-            # If deposit is before any same-week invoice, pick the earliest
-            # of the same week (edge case: deposit early Monday, invoice
-            # later Monday).
-            if target_invoice is None:
-                target_invoice = same_week[0]
+            same_week = []
+            if wk_start:
+                same_week = [i for i in all_invoices
+                             if wk_start <= i["created_at"] < wk_end]
+            if same_week:
+                # Latest same-week invoice created before OR at the deposit time
+                for inv in same_week:
+                    if inv["created_at"] <= dep_date:
+                        target_invoice = inv
+                    else:
+                        break
+                # If deposit is before any same-week invoice, pick the earliest
+                # of the same week (edge case: deposit early Monday, invoice
+                # later Monday).
+                if target_invoice is None:
+                    target_invoice = same_week[0]
+            else:
+                # 4) Legacy fallback: no invoice in this deposit's week →
+                #    attach to the earliest non-annulled invoice created AFTER
+                #    the deposit date. Restores pre-weekly-cutoff behavior for
+                #    historical data (recargas made before any facturación).
+                #    Only truly future-facing deposits (newer than every
+                #    invoice) remain floating, awaiting a new-week invoice.
+                future_invoices = [i for i in all_invoices
+                                   if i["created_at"] > dep_date]
+                if not future_invoices:
+                    continue  # float: no invoice exists yet to attach to
+                target_invoice = future_invoices[0]  # already sorted asc
 
         deposits_by_invoice[target_invoice["id"]].append({
             "deposit_id": dep.get("id", ""),
