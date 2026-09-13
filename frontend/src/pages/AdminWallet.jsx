@@ -74,6 +74,7 @@ export default function AdminWallet() {
   const [historyFilter, setHistoryFilter] = useState("all");
   const [historySearch, setHistorySearch] = useState("");
   const [historyWeekFilter, setHistoryWeekFilter] = useState(() => getCurrentWeekKey());
+  const [dashboardWeekFilter, setDashboardWeekFilter] = useState(() => getCurrentWeekKey());
   
   // Recharge Report state
   const [showReport, setShowReport] = useState(false);
@@ -517,42 +518,85 @@ export default function AdminWallet() {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-6">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          <Card className="rounded-xl">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-yellow-100 rounded-xl flex items-center justify-center">
-                <Clock className="h-5 w-5 text-yellow-600" />
+        {/* Dashboard week filter + Stats Cards */}
+        {(() => {
+          // Build week list from ALL deposits (any status)
+          const weeks = {};
+          allDeposits.forEach(d => {
+            const k = getWeekKey(d.created_at);
+            if (!k) return;
+            if (!weeks[k]) weeks[k] = { key: k, label: getWeekLabel(d.created_at) };
+          });
+          const weekList = Object.values(weeks).sort((a, b) => b.key.localeCompare(a.key));
+
+          // Filter helper by dashboardWeekFilter (or "all")
+          const inSelectedWeek = (d) => {
+            if (dashboardWeekFilter === "all") return true;
+            return getWeekKey(d.created_at) === dashboardWeekFilter;
+          };
+
+          const pendingFiltered = allDeposits.filter(d => d.status === "pending" && inSelectedWeek(d));
+          const approvedFiltered = allDeposits.filter(d => d.status === "approved" && inSelectedWeek(d));
+          const rejectedFiltered = allDeposits.filter(d => d.status === "rejected" && inSelectedWeek(d));
+          const sumAmt = (arr) => arr.reduce((acc, d) => acc + (Number(d.amount) || 0), 0);
+
+          return (
+            <>
+              <div className="flex items-center gap-2 mb-4" data-testid="dashboard-week-filter-wrap">
+                <span className="text-xs text-gray-500 font-medium">Filtrar por semana:</span>
+                <Select value={dashboardWeekFilter} onValueChange={setDashboardWeekFilter}>
+                  <SelectTrigger className="rounded-lg h-9 w-64 bg-white" data-testid="dashboard-week-filter">
+                    <SelectValue placeholder="Semana" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas las semanas</SelectItem>
+                    {weekList.map(w => (
+                      <SelectItem key={w.key} value={w.key}>{w.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-              <div>
-                <p className="text-2xl font-extrabold text-slate-800">{pendingDeposits.length}</p>
-                <p className="text-xs text-gray-500">Pendientes</p>
+              <div className="grid grid-cols-3 gap-3 mb-6">
+                <Card className="rounded-xl" data-testid="stat-pending-card">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-yellow-100 rounded-xl flex items-center justify-center shrink-0">
+                      <Clock className="h-5 w-5 text-yellow-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-2xl font-extrabold text-slate-800 leading-tight" data-testid="stat-pending-count">{pendingFiltered.length}</p>
+                      <p className="text-xs text-gray-500">Pendientes</p>
+                      <p className="text-sm font-semibold text-yellow-700 mt-0.5" data-testid="stat-pending-sum">${sumAmt(pendingFiltered).toFixed(2)}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl" data-testid="stat-approved-card">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center shrink-0">
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-2xl font-extrabold text-slate-800 leading-tight" data-testid="stat-approved-count">{approvedFiltered.length}</p>
+                      <p className="text-xs text-gray-500">Aprobados</p>
+                      <p className="text-sm font-semibold text-green-700 mt-0.5" data-testid="stat-approved-sum">${sumAmt(approvedFiltered).toFixed(2)}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl" data-testid="stat-rejected-card">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center shrink-0">
+                      <XCircle className="h-5 w-5 text-red-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-2xl font-extrabold text-slate-800 leading-tight" data-testid="stat-rejected-count">{rejectedFiltered.length}</p>
+                      <p className="text-xs text-gray-500">Rechazados</p>
+                      <p className="text-sm font-semibold text-red-700 mt-0.5" data-testid="stat-rejected-sum">${sumAmt(rejectedFiltered).toFixed(2)}</p>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-xl">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
-                <CheckCircle className="h-5 w-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-extrabold text-slate-800">{allDeposits.filter(d => d.status === "approved").length}</p>
-                <p className="text-xs text-gray-500">Aprobados</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="rounded-xl">
-            <CardContent className="p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
-                <XCircle className="h-5 w-5 text-red-600" />
-              </div>
-              <div>
-                <p className="text-2xl font-extrabold text-slate-800">{allDeposits.filter(d => d.status === "rejected").length}</p>
-                <p className="text-xs text-gray-500">Rechazados</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            </>
+          );
+        })()}
 
         {/* Navigation Tabs */}
         <Tabs value={showDeleted ? "deleted" : showReport ? "report" : (showHistory ? "history" : "pending")} className="mb-6">
