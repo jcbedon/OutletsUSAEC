@@ -3165,6 +3165,32 @@ async def scan_deposit_proof(transaction_id: str, current_user: dict = Depends(g
     result = await _scan_proof_image(proof_url, session_id=f"ocr-{transaction_id}")
     if not result:
         raise HTTPException(status_code=502, detail="No se pudo leer el comprobante")
+
+    # Persist scan result to the wallet transaction so the deposit_date read
+    # from the screenshot is available for later approve_deposit + bank ledger.
+    update_fields = {
+        "ai_scan": {
+            "detected_reference_number": result.get("detected_reference_number"),
+            "detected_amount": result.get("detected_amount"),
+            "currency": result.get("currency"),
+            "confidence": result.get("confidence"),
+            "detected_destination_account": result.get("detected_destination_account"),
+            "detected_beneficiary_name": result.get("detected_beneficiary_name"),
+            "detected_deposit_date": result.get("detected_deposit_date"),
+            "raw_text": result.get("raw"),
+            "scanned_at": datetime.now(timezone.utc).isoformat()
+        }
+    }
+    if result.get("detected_deposit_date"):
+        update_fields["deposit_date"] = result.get("detected_deposit_date")
+    try:
+        await db.wallet_transactions.update_one(
+            {"id": transaction_id, "tenant_id": tid},
+            {"$set": update_fields}
+        )
+    except Exception:
+        pass
+
     client_ref = (tx.get("reference_number") or "").strip()
     detected_ref = result.get("detected_reference_number")
     matches_reference = None
@@ -3764,6 +3790,32 @@ async def admin_create_recharge(
     tx_dict["created_by_admin"] = True
     if resolved_bank_account_id:
         tx_dict["bank_account_id"] = resolved_bank_account_id
+
+    # Run OCR on the proof BEFORE inserting so the deposit_date read from the
+    # screenshot is persisted with the transaction and reused by the bank
+    # ledger. If the scan fails we still create the recharge — the admin can
+    # correct the date manually later.
+    detected_deposit_date = None
+    try:
+        scan = await _scan_proof_image(proof_url, session_id=f"admin-{tx.id}")
+        if scan:
+            detected_deposit_date = scan.get("detected_deposit_date")
+            tx_dict["ai_scan"] = {
+                "detected_reference_number": scan.get("detected_reference_number"),
+                "detected_amount": scan.get("detected_amount"),
+                "currency": scan.get("currency"),
+                "confidence": scan.get("confidence"),
+                "detected_destination_account": scan.get("detected_destination_account"),
+                "detected_beneficiary_name": scan.get("detected_beneficiary_name"),
+                "detected_deposit_date": detected_deposit_date,
+                "raw_text": scan.get("raw"),
+                "scanned_at": datetime.now(timezone.utc).isoformat()
+            }
+            if detected_deposit_date:
+                tx_dict["deposit_date"] = detected_deposit_date
+    except Exception:
+        pass
+
     await db.wallet_transactions.insert_one(tx_dict)
     
     # Create notification for client
@@ -3805,6 +3857,13 @@ async def admin_create_recharge(
     # appears in /admin/bank-accounts. `resolved_bank_account_id` is now
     # guaranteed to be set thanks to the validations above.
     try:
+        # Use the deposit_date read from the OCR (or manually set) so this
+        # bank-ledger row aligns with the actual bank deposit date, not the
+        # moment the admin registered it.
+        if detected_deposit_date:
+            _ledger_created_at = f"{detected_deposit_date}T00:00:00+00:00"
+        else:
+            _ledger_created_at = datetime.now(timezone.utc).isoformat()
         await db.bank_transactions.insert_one({
             "id": str(uuid.uuid4()),
             "tenant_id": tid,
@@ -3818,7 +3877,9 @@ async def admin_create_recharge(
             "reference_number": None,
             "created_by": current_user["user_id"],
             "created_by_name": actor_name,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": _ledger_created_at,
+            "approved_at": datetime.now(timezone.utc).isoformat(),
+            "deposit_date": detected_deposit_date,
         })
     except Exception as _bank_err:
         logger.warning(f"[bank_ledger] failed to attribute admin-recharge {tx.id}: {_bank_err}")
