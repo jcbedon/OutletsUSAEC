@@ -1,0 +1,35 @@
+{
+  "summary": "Backend regression tests for recalculate_client_invoices historical-assignment preservation bugfix. Created /app/backend/tests/test_recalc_preserves_historic.py with 11 tests covering: admin login, protected route auth, wallet response shape, recalc preserving J2934 assignments (INV-000001 $55 / J2934-015 $259), recalc preserving A4582 assignments (INV-1053 3 deps / INV-1075 1 dep), floating_deposits=0 for J2934 after recalc, new approved deposit with no same-week invoice floats correctly (synthetic $42.42 deposit inserted+cleaned up), manual assignment endpoint (/api/wallet/deposit/{tx}/assign-invoice) validation + reassignment survives recalc, and saldo_a_favor field visible on /api/admin/clients. All 11/11 tests PASSED. State verified intact after test run (no leftover TEST_ data, historic assignments still $55/$259). Also created /app/backend/tests/conftest.py to auto-load env vars from frontend/.env + backend/.env for CI-agnostic execution.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_recalc_preserves_historic.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/recalc_preserves.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 9171 lines — should be split into modules (auth, wallet, invoices, shipments, admin). Flagged in previous iterations as well.",
+    "recalculate_client_invoices (lines 754-960, ~200 lines) does 5 responsibilities: shipment backfill, orphan shipping cleanup, annulled-invoice cleanup, deposit assignment (3-priority), and carry propagation. Consider extracting each into named async helpers for readability and unit-testability.",
+    "The 3-tier priority (manual target_invoice_id > existing_assignment snapshot > weekly cutoff) is correct and well-commented. Fix is sound.",
+    "Potential edge case not covered by fix: if an admin manually annuls the invoice that a deposit was historically attached to, the deposit will fall through to the weekly-cutoff rule. If no same-week invoice exists, the deposit becomes floating (correct behavior)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_recalc_preserves_historic.py (new)",
+    "/app/backend/tests/conftest.py (new — env loader for tests)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "N/A (not requested)"},
+  "test_credentials": "admin@outletsusaec.com / 123456 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None persisted. Test 'test_new_deposit_no_current_week_invoice_floats' inserts one synthetic TEST_dep_* wallet_transaction and deletes it in the same test's finally block. Verified 0 leftover after run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bugfix (commit 6a53481) verified: recalculate_client_invoices now preserves historical deposit assignments (invoice.applied_deposits[]) before applying the strict Mon-Sun weekly cutoff to new deposits. Test suite at /app/backend/tests/test_recalc_preserves_historic.py can be run as regression. Prior iteration file iteration_24.json mentioned in review request did not exist — latest was iteration_13.json, so this report is iteration_14.json.",
+  "rca of the issue": "Before fix: recalculate_client_invoices unconditionally reassigned every approved deposit using the Mon-Sun weekly cutoff. Historical deposits made under previous logic versions (that did not enforce weekly cutoff, e.g. J2934's 9 deposits attached to INV-000001 and J2934-015 spanning multiple weeks) got unlinked because none of them fell in the same week as their attached invoice. Fix (lines 813-821 + 872-879): snapshot existing applied_deposits[] into existing_assignment dict BEFORE clearing, then during reassignment loop honor priority order: (1) manual target_invoice_id, (2) existing_assignment mapping if invoice still non-annulled, (3) weekly cutoff. Verified by both direct DB inspection and via /api/admin/recalculate-invoices/{J2934|A4582} + /api/wallet endpoints."
+}
