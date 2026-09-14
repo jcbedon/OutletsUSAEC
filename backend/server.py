@@ -7993,12 +7993,18 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         pending_to_invoice = round(float(pi.get("pending_to_invoice", 0) or 0), 2)
         pending_count = int(pi.get("pending_count", 0) or 0)
 
-        # Deuda Real = Σ facturas pendientes − Σ recargas disponibles.
-        # Positivo = deuda real; Negativo = saldo a favor real.
+        # Deuda Real = deuda pendiente de la ÚLTIMA factura menos las
+        # recargas disponibles (flotantes). NO usamos Σ saldo_pendiente
+        # porque ese valor es un snapshot histórico que se hereda a la
+        # siguiente factura vía saldo_a_favor_anterior — sumarlo duplicaría
+        # la misma deuda varias veces (bug N25).
+        # Positivo → deuda real; Negativo → saldo a favor real.
         approved_dep = approved_dep_by_uid.get(uid, 0)
         applied_dep = applied_by_customer.get(client.get("customer_id"), 0)
         floating_deposits = round(max(0.0, approved_dep - applied_dep), 2)
-        real_debt = round(float(saldo_ant or 0) - float(floating_deposits or 0), 2)
+        real_debt = round(float(last_total_a_pagar or 0)
+                          - float(last_saldo_a_favor or 0)
+                          - float(floating_deposits or 0), 2)
         if real_debt > 0.01:
             total_real_debt += real_debt
 
