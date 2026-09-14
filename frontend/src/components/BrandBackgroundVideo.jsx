@@ -21,10 +21,9 @@ export const BrandBackgroundVideo = () => {
   const tenantName = user?.tenant_name || "";
   const isAstrid = ASTRID_TENANT_MATCH.test(tenantName);
 
-  if (process.env.NODE_ENV !== "production") {
-    // eslint-disable-next-line no-console
-    console.log("[BrandBackgroundVideo]", { tenantName, role: user?.role, isAstrid });
-  }
+  // Always log so users can diagnose visibility issues on production.
+  // eslint-disable-next-line no-console
+  console.log("[BrandBackgroundVideo]", { tenantName, role: user?.role, isAstrid });
 
   if (!isAstrid) return null;
 
