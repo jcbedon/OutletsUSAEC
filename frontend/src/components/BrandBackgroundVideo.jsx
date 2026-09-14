@@ -29,12 +29,16 @@ export const BrandBackgroundVideo = () => {
   if (!isAstrid) return null;
 
   return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none fixed inset-0 overflow-hidden"
-      style={{ zIndex: 0 }}
-      data-testid="astrid-brand-video-bg"
-    >
+    <>
+      {/* Force-hide the .app-bg::before white overlay for Astrid users so the
+          video isn't washed out by the platform wallpaper layer. */}
+      <style>{`.app-bg::before { display: none !important; }`}</style>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 overflow-hidden"
+        style={{ zIndex: 0 }}
+        data-testid="astrid-brand-video-bg"
+      >
       {/* Solid gradient fallback — always painted, keeps screen from ever going white */}
       <div
         className="absolute inset-0"
@@ -58,9 +62,10 @@ export const BrandBackgroundVideo = () => {
       {/* Subtle overlay to keep foreground text readable on any frame */}
       <div
         className="absolute inset-0"
-        style={{ background: "rgba(255, 255, 255, 0.55)" }}
+        style={{ background: "rgba(255, 255, 255, 0.35)" }}
       />
-    </div>
+      </div>
+    </>
   );
 };
 
