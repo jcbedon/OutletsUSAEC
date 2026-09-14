@@ -1027,7 +1027,8 @@ async def register_user(data: UserRegister):
         "role": "client",
         "tenant_id": tenant_id,
         "tenant_name": tenant["business_name"],
-        "tenant_logo": tenant.get("logo_url")
+        "tenant_logo": tenant.get("logo_url"),
+        "tenant_slug": tenant.get("slug"),
     }
 
 @api_router.get("/auth/me")
@@ -1051,11 +1052,13 @@ async def auth_me(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     tenant_name = None
     tenant_logo = None
+    tenant_slug = None
     if profile.get("tenant_id"):
-        tenant = await db.tenants.find_one({"id": profile["tenant_id"]}, {"_id": 0, "business_name": 1, "logo_url": 1})
+        tenant = await db.tenants.find_one({"id": profile["tenant_id"]}, {"_id": 0, "business_name": 1, "logo_url": 1, "slug": 1})
         if tenant:
             tenant_name = tenant.get("business_name")
             tenant_logo = tenant.get("logo_url")
+            tenant_slug = tenant.get("slug")
     return {
         "user_id": profile["id"],
         "name": profile.get("name"),
@@ -1063,6 +1066,7 @@ async def auth_me(current_user: dict = Depends(get_current_user)):
         "tenant_id": profile.get("tenant_id"),
         "tenant_name": tenant_name,
         "tenant_logo": tenant_logo,
+        "tenant_slug": tenant_slug,
         "permissions": profile.get("permissions") or {},
         "customer_id": profile.get("customer_id"),
         "email": profile.get("email"),
@@ -1089,6 +1093,7 @@ async def login_user(login_data: UserLogin):
             tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
             tenant_name = tenant["business_name"] if tenant else None
             tenant_logo = tenant.get("logo_url") if tenant else None
+            tenant_slug = tenant.get("slug") if tenant else None
             
             if tenant and tenant.get("status") != "active":
                 raise HTTPException(status_code=403, detail="Tu negocio está suspendido. Contacta al administrador.")
@@ -1115,6 +1120,7 @@ async def login_user(login_data: UserLogin):
                 "tenant_id": tenant_id,
                 "tenant_name": tenant_name,
                 "tenant_logo": tenant_logo,
+                "tenant_slug": tenant_slug,
                 "email": admin_from_slug.get("email")
             }
     
@@ -1154,6 +1160,7 @@ async def login_user(login_data: UserLogin):
         tenant_id = admin_user.get("tenant_id")
         tenant_name = None
         tenant_logo = None
+        tenant_slug = None
         if tenant_id:
             tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
             if tenant:
@@ -1161,6 +1168,7 @@ async def login_user(login_data: UserLogin):
                     raise HTTPException(status_code=403, detail="Tu negocio está suspendido. Contacta al administrador.")
                 tenant_name = tenant["business_name"]
                 tenant_logo = tenant.get("logo_url")
+                tenant_slug = tenant.get("slug")
         
         # Log admin login for audit
         if admin_user["role"] == "admin":
@@ -1185,6 +1193,7 @@ async def login_user(login_data: UserLogin):
             "tenant_id": tenant_id,
             "tenant_name": tenant_name,
             "tenant_logo": tenant_logo,
+            "tenant_slug": tenant_slug,
             "email": admin_user.get("email")
         }
     
@@ -1221,6 +1230,7 @@ async def login_user(login_data: UserLogin):
                 "tenant_id": tenant_id,
                 "tenant_name": tenant["business_name"],
                 "tenant_logo": tenant.get("logo_url"),
+                "tenant_slug": tenant.get("slug"),
                 "permissions": employee.get("permissions", {})
             }
     
@@ -1229,6 +1239,7 @@ async def login_user(login_data: UserLogin):
         tenant_id = user.get("tenant_id")
         tenant_name = None
         tenant_logo = None
+        tenant_slug = None
         if tenant_id:
             tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0})
             if tenant:
@@ -1236,6 +1247,7 @@ async def login_user(login_data: UserLogin):
                     raise HTTPException(status_code=403, detail="Tu negocio está suspendido. Contacta al administrador.")
                 tenant_name = tenant["business_name"]
                 tenant_logo = tenant.get("logo_url")
+                tenant_slug = tenant.get("slug")
         
         token = create_token(user["id"], user["role"], tenant_id)
         return {
@@ -1247,7 +1259,8 @@ async def login_user(login_data: UserLogin):
             "role": user["role"],
             "tenant_id": tenant_id,
             "tenant_name": tenant_name,
-            "tenant_logo": tenant_logo
+            "tenant_logo": tenant_logo,
+            "tenant_slug": tenant_slug,
         }
     
     # No valid credentials found

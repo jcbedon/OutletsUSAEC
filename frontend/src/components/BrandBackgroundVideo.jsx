@@ -19,11 +19,13 @@ export const BrandBackgroundVideo = () => {
   const [ready, setReady] = useState(false);
 
   const tenantName = user?.tenant_name || "";
-  const isAstrid = ASTRID_TENANT_MATCH.test(tenantName);
+  const tenantSlug = user?.tenant_slug || "";
+  const isAstrid =
+    ASTRID_TENANT_MATCH.test(tenantName) || ASTRID_TENANT_MATCH.test(tenantSlug);
 
   // Always log so users can diagnose visibility issues on production.
   // eslint-disable-next-line no-console
-  console.log("[BrandBackgroundVideo]", { tenantName, role: user?.role, isAstrid });
+  console.log("[BrandBackgroundVideo]", { tenantName, tenantSlug, role: user?.role, isAstrid });
 
   if (!isAstrid) return null;
 
