@@ -135,9 +135,9 @@ export default function AdminStats() {
     
     // Filtro de estado
     if (statusFilter === "with_debt") {
-      result = result.filter(c => c.pending_balance < 0);
+      result = result.filter(c => (c.real_debt || 0) > 0.01);
     } else if (statusFilter === "no_debt") {
-      result = result.filter(c => c.pending_balance >= 0);
+      result = result.filter(c => (c.real_debt || 0) <= 0.01);
     } else if (statusFilter === "with_pending") {
       // Clientes con compras pendientes de facturar (acumulado mid-semana).
       result = result.filter(c => (c.pending_to_invoice || 0) > 0.01);
@@ -148,8 +148,8 @@ export default function AdminStats() {
       let comparison = 0;
       switch (sortBy) {
         case "debt":
-          // Highest debt first: use last_invoice_amount fallback to debt_amount
-          comparison = (b.last_invoice_amount || b.debt_amount || 0) - (a.last_invoice_amount || a.debt_amount || 0);
+          // Highest real debt first
+          comparison = (b.real_debt || 0) - (a.real_debt || 0);
           break;
         case "name":
           comparison = a.name.localeCompare(b.name);
@@ -171,7 +171,7 @@ export default function AdminStats() {
           break;
         }
         default:
-          comparison = b.debt_amount - a.debt_amount;
+          comparison = (b.real_debt || 0) - (a.real_debt || 0);
       }
       return sortAsc ? -comparison : comparison;
     });
@@ -182,11 +182,11 @@ export default function AdminStats() {
   // Resumen filtrado
   const filteredSummary = useMemo(() => {
     const clients = filteredClients;
-    const withDebt = clients.filter(c => c.pending_balance < 0);
-    const withCredit = clients.filter(c => c.pending_balance > 0);
+    const withDebt = clients.filter(c => (c.real_debt || 0) > 0.01);
+    const withCredit = clients.filter(c => (c.real_debt || 0) < -0.01);
     const withPending = clients.filter(c => (c.pending_to_invoice || 0) > 0.01);
-    const totalDebt = withDebt.reduce((sum, c) => sum + c.debt_amount, 0);
-    const totalCredit = withCredit.reduce((sum, c) => sum + c.pending_balance, 0);
+    const totalDebt = withDebt.reduce((sum, c) => sum + (c.real_debt || 0), 0);
+    const totalCredit = withCredit.reduce((sum, c) => sum + Math.abs(c.real_debt || 0), 0);
     const totalPending = withPending.reduce((sum, c) => sum + (c.pending_to_invoice || 0), 0);
 
     return {
@@ -728,24 +728,30 @@ export default function AdminStats() {
                         <tr className="border-b bg-gray-50">
                           <th className="text-left p-2 font-medium">Cliente</th>
                           <th className="text-left p-2 font-medium">ID</th>
-                          <th className="text-right p-2 font-medium">Última Factura</th>
-                          <th className="text-right p-2 font-medium" title="Compras de esta semana aún no facturadas">Por Facturar</th>
+                          <th className="text-right p-2 font-medium" title="Suma de facturas pendientes menos recargas disponibles">Deuda Real</th>
                           <th className="text-right p-2 font-medium">Fecha</th>
                           <th className="text-right p-2 font-medium">Estado</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredClients.slice(0, tableLimit).map((client) => {
-                          // "Última factura" amount — what the user wants displayed:
-                          // total_a_pagar of just the last non-annulled invoice.
-                          const lastAmount = Number(client.last_invoice_amount || 0);
+                          const realDebt = Number(client.real_debt || 0);
+                          const isCredit = realDebt < -0.01;
+                          const isZero = Math.abs(realDebt) < 0.01;
+                          const debtClass = isCredit ? 'text-green-600' : isZero ? 'text-gray-600' : 'text-red-600';
                           const lastDateStr = client.last_invoice_date;
                           const daysUnpaid = lastDateStr
                             ? Math.floor((Date.now() - new Date(lastDateStr)) / 86400000)
                             : null;
                           let statusLabel = "Sin factura";
                           let statusClass = "text-slate-400";
-                          if (daysUnpaid !== null && lastAmount > 0) {
+                          if (isCredit) {
+                            statusLabel = "Saldo a favor";
+                            statusClass = "text-green-600 font-semibold";
+                          } else if (isZero) {
+                            statusLabel = "Al día";
+                            statusClass = "text-green-600 font-semibold";
+                          } else if (daysUnpaid !== null) {
                             if (daysUnpaid > 5) {
                               statusLabel = `Más de 5 días sin pagar — LIQUIDAR (${daysUnpaid}d)`;
                               statusClass = "text-red-600 font-bold";
@@ -756,12 +762,9 @@ export default function AdminStats() {
                               statusLabel = `Menos de 2 días sin pagar (${daysUnpaid}d)`;
                               statusClass = "text-green-600 font-semibold";
                             }
-                          } else if (daysUnpaid !== null && lastAmount === 0) {
-                            statusLabel = "Al día";
-                            statusClass = "text-green-600 font-semibold";
                           }
                           return (
-                            <tr key={client.id} className={`border-b hover:bg-gray-50 ${lastAmount > 0 && daysUnpaid !== null && daysUnpaid > 5 ? 'bg-red-50/50' : ''}`} data-testid={`debts-row-${client.customer_id}`}>
+                            <tr key={client.id} className={`border-b hover:bg-gray-50 ${realDebt > 0.01 && daysUnpaid !== null && daysUnpaid > 5 ? 'bg-red-50/50' : ''}`} data-testid={`debts-row-${client.customer_id}`}>
                               <td className="p-2">
                                 <div className="font-medium text-slate-800">{client.name}</div>
                                 <div className="text-xs text-gray-500">{client.whatsapp}</div>
@@ -769,26 +772,14 @@ export default function AdminStats() {
                               <td className="p-2">
                                 <Badge variant="outline" className="text-xs">{client.customer_id}</Badge>
                               </td>
-                              <td className="p-2 text-right">
-                                <span className={`font-bold ${lastAmount > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                                  {formatMoney(lastAmount)}
+                              <td className="p-2 text-right" data-testid={`debts-real-debt-${client.customer_id}`}>
+                                <span className={`font-bold ${debtClass}`}>
+                                  {isCredit ? '+' : ''}{formatMoney(Math.abs(realDebt))}
                                 </span>
-                                {client.last_invoice_number && (
-                                  <div className="text-[10px] text-gray-400">{client.last_invoice_number}</div>
-                                )}
-                              </td>
-                              <td className="p-2 text-right" data-testid={`debts-pending-${client.customer_id}`}>
-                                {(client.pending_to_invoice || 0) > 0.01 ? (
-                                  <>
-                                    <span className="font-bold text-amber-700">
-                                      {formatMoney(client.pending_to_invoice)}
-                                    </span>
-                                    <div className="text-[10px] text-amber-600">
-                                      {client.pending_purchases_count || 0} compras
-                                    </div>
-                                  </>
-                                ) : (
-                                  <span className="text-gray-300 text-xs">—</span>
+                                {(client.floating_deposits || 0) > 0.01 && (
+                                  <div className="text-[10px] text-sky-600" title="Recargas aprobadas sin aplicar a ninguna factura">
+                                    Rec. disp.: {formatMoney(client.floating_deposits)}
+                                  </div>
                                 )}
                               </td>
                               <td className="p-2 text-right text-gray-600">

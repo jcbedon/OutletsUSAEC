@@ -2343,10 +2343,6 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         customer_key = user.get("customer_id")
         applied_total = applied_by_customer.get(customer_key, 0)
         floating_deposits = round(max(0, float(total_recharges or 0) - float(applied_total or 0)), 2)
-        # real_debt = suma de saldos pendientes de TODAS las facturas no
-        # anuladas menos las recargas disponibles (flotantes).
-        # Positivo = deuda real, Negativo = crédito real (saldo a favor).
-        real_debt = round(float(total_saldo_pendiente or 0) - float(floating_deposits or 0), 2)
         result.append({
             **user, 
             "wallet_balance": round(total_recharges, 2),
@@ -2354,7 +2350,6 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
             "total_shipping": round(total_shipping, 2),
             "total_saldo_pendiente": round(total_saldo_pendiente, 2),
             "pending_balance": pending_balance,
-            "real_debt": real_debt,
             "purchase_count": purch["count"],
             "is_active": user.get("is_active", True),
             "pending_to_invoice": pending_to_invoice,
@@ -7810,9 +7805,20 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
     ]).to_list(len(user_ids))
     shipments_dict = {s["_id"]: s for s in shipments_agg}
     
+    # Batch fetch: approved deposits total per user (for the "Deuda Real"
+    # column = pending invoices − available recargas floating).
+    approved_deposits_agg = await db.wallet_transactions.aggregate([
+        {"$match": {"tenant_id": tid, "type": "deposit",
+                    "status": "approved", "is_deleted": {"$ne": True},
+                    "user_id": {"$in": user_ids}}},
+        {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}}
+    ]).to_list(len(user_ids))
+    approved_dep_by_uid = {a["_id"]: float(a["total"] or 0) for a in approved_deposits_agg}
+
     result = []
     total_debt = 0
     clients_with_debt = 0
+    total_real_debt = 0.0
     
     # Get saldo_pendiente per customer from invoices
     cust_ids = [c.get("customer_id") for c in clients if c.get("customer_id")]
@@ -7821,6 +7827,16 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         {"$group": {"_id": "$customer_id", "total_saldo": {"$sum": "$saldo_pendiente"}}}
     ]).to_list(len(cust_ids) or 1)
     saldo_pend_dict = {s["_id"]: s["total_saldo"] for s in saldo_pend_agg}
+
+    # Total applied deposits per customer (from invoice.applied_deposits[])
+    applied_deposits_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": {"$in": cust_ids},
+                    "is_annulled": {"$ne": True}}},
+        {"$unwind": {"path": "$applied_deposits", "preserveNullAndEmptyArrays": False}},
+        {"$group": {"_id": "$customer_id",
+                    "total": {"$sum": "$applied_deposits.amount_applied"}}}
+    ]).to_list(len(cust_ids) or 1)
+    applied_by_customer = {a["_id"]: float(a["total"] or 0) for a in applied_deposits_agg}
 
     # Latest non-annulled invoice per customer (date + total_a_pagar + saldo_a_favor).
     # Per the chained-invoice architecture (`recalculate_client_invoices`), the
@@ -7884,6 +7900,15 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         pending_to_invoice = round(float(pi.get("pending_to_invoice", 0) or 0), 2)
         pending_count = int(pi.get("pending_count", 0) or 0)
 
+        # Deuda Real = Σ facturas pendientes − Σ recargas disponibles.
+        # Positivo = deuda real; Negativo = saldo a favor real.
+        approved_dep = approved_dep_by_uid.get(uid, 0)
+        applied_dep = applied_by_customer.get(client.get("customer_id"), 0)
+        floating_deposits = round(max(0.0, approved_dep - applied_dep), 2)
+        real_debt = round(float(saldo_ant or 0) - float(floating_deposits or 0), 2)
+        if real_debt > 0.01:
+            total_real_debt += real_debt
+
         result.append({
             "id": client["id"],
             "customer_id": client["customer_id"],
@@ -7900,6 +7925,8 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
             # Compras de esta semana aún no facturadas (cobrable antes de viernes).
             "pending_to_invoice": pending_to_invoice,
             "pending_purchases_count": pending_count,
+            "floating_deposits": floating_deposits,
+            "real_debt": real_debt,
             "purchase_count": purch["purchase_count"],
             "shipment_count": ship["shipment_count"],
             # Per-customer latest invoice info — used by the debts table
@@ -7924,6 +7951,8 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
             "clients_positive_balance": len(clients) - clients_with_debt,
             "total_pending_to_invoice": total_pending_to_invoice,
             "clients_with_pending_to_invoice": clients_with_pending,
+            "total_real_debt": round(total_real_debt, 2),
+            "clients_with_real_debt": sum(1 for r in result if r.get("real_debt", 0) > 0.01),
         }
     }
 
