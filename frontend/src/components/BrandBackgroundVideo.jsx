@@ -13,7 +13,6 @@ const ASTRID_VIDEO_URL =
   "https://customer-assets-wrfwihn1.emergentagent.net/job_eee13a51-72d6-415d-84fa-eb1814606fb6/artifacts/mor2u6cb_astrid-shop-hero-loop.mp4";
 
 const ASTRID_TENANT_MATCH = /astrid/i;
-const ALLOWED_ROLES = ["client", "employee"];
 
 export const BrandBackgroundVideo = () => {
   const { user } = useAuth();
@@ -21,15 +20,13 @@ export const BrandBackgroundVideo = () => {
 
   const tenantName = user?.tenant_name || "";
   const isAstrid = ASTRID_TENANT_MATCH.test(tenantName);
-  const roleOk = ALLOWED_ROLES.includes(user?.role);
 
   if (process.env.NODE_ENV !== "production") {
-    // Debug hint so the user can confirm the tenant string flowing through.
     // eslint-disable-next-line no-console
-    console.log("[BrandBackgroundVideo]", { tenantName, role: user?.role, isAstrid, roleOk });
+    console.log("[BrandBackgroundVideo]", { tenantName, role: user?.role, isAstrid });
   }
 
-  if (!isAstrid || !roleOk) return null;
+  if (!isAstrid) return null;
 
   return (
     <div
