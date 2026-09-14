@@ -2709,6 +2709,11 @@ async def get_duplicate_deposits(current_user: dict = Depends(get_current_user))
       2) `client_amount_day` — same client + same amount + same calendar day.
          Catches the classic "uploaded twice by accident" scenario.
       3) `same_proof`  — same proof_url (identical image reused).
+
+    Groups that the admin has already reviewed and marked as "Aceptado"
+    (i.e. verified NOT to be a real duplicate) are moved to the `accepted`
+    section instead of the main lists, so the noise stays down but nothing
+    is lost.
     """
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
@@ -2720,6 +2725,21 @@ async def get_duplicate_deposits(current_user: dict = Depends(get_current_user))
         "is_deleted": {"$ne": True},
         "status": {"$in": ["pending", "approved"]},
     }
+
+    # Signature helper — must match _sig() used in accept endpoint.
+    def _sig(kind: str, key):
+        if kind == "by_reference":
+            return f"ref:{str(key).lower()}"
+        if kind == "by_same_proof":
+            return f"proof:{key}"
+        # by_client_amount_day
+        return f"cad:{key.get('customer_id')}|{key.get('amount')}|{key.get('day')}"
+
+    # Preload accepted signatures for this tenant.
+    accepted_docs = await db.accepted_duplicates.find(
+        {"tenant_id": tid}, {"_id": 0}
+    ).to_list(20000)
+    accepted_by_sig = {d["signature"]: d for d in accepted_docs}
 
     async def _fetch_txs(ids: list):
         if not ids:
@@ -2803,27 +2823,100 @@ async def get_duplicate_deposits(current_user: dict = Depends(get_current_user))
         ).to_list(len(all_customer_ids))
     name_map = {u["customer_id"]: u.get("name") for u in users}
 
-    async def _decorate(groups, key_field):
+    async def _decorate(groups, kind):
         out = []
+        accepted_out = []
         for g in groups:
             txs = await _fetch_txs(g.get("ids") or [])
             for t in txs:
                 t["customer_name"] = name_map.get(t.get("customer_id"))
             group_key = g.get("_id")
-            out.append({
+            item = {
                 "key": group_key,
+                "signature": _sig(kind, group_key),
                 "count": g["count"],
                 "total_amount": round(float(g.get("total_amount") or
                                             sum((t.get("amount") or 0) for t in txs)), 2),
                 "transactions": txs,
-            })
-        return out
+            }
+            acc = accepted_by_sig.get(item["signature"])
+            if acc:
+                item["accepted_at"] = acc.get("accepted_at")
+                item["accepted_by_name"] = acc.get("accepted_by_name")
+                item["type"] = kind
+                accepted_out.append(item)
+            else:
+                out.append(item)
+        return out, accepted_out
+
+    ref_active, ref_accepted = await _decorate(ref_groups, "by_reference")
+    cad_active, cad_accepted = await _decorate(same_group, "by_client_amount_day")
+    proof_active, proof_accepted = await _decorate(proof_group, "by_same_proof")
 
     return {
-        "by_reference": await _decorate(ref_groups, "reference_number"),
-        "by_client_amount_day": await _decorate(same_group, "cad"),
-        "by_same_proof": await _decorate(proof_group, "proof_url"),
+        "by_reference": ref_active,
+        "by_client_amount_day": cad_active,
+        "by_same_proof": proof_active,
+        "accepted": ref_accepted + cad_accepted + proof_accepted,
     }
+
+
+@api_router.post("/wallet/duplicates/accept")
+async def accept_duplicate_group(data: dict, current_user: dict = Depends(get_current_user)):
+    """Mark a duplicate group as reviewed & OK (not a real duplicate).
+    Body: { type: "by_reference"|"by_client_amount_day"|"by_same_proof", key: <group key>, tx_ids: [...] }
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    kind = data.get("type")
+    key = data.get("key")
+    tx_ids = data.get("tx_ids") or []
+    if kind not in ("by_reference", "by_client_amount_day", "by_same_proof") or key is None:
+        raise HTTPException(status_code=400, detail="type/key inválidos")
+
+    if kind == "by_reference":
+        signature = f"ref:{str(key).lower()}"
+    elif kind == "by_same_proof":
+        signature = f"proof:{key}"
+    else:
+        if not isinstance(key, dict):
+            raise HTTPException(status_code=400, detail="key debe ser objeto con customer_id/amount/day")
+        signature = f"cad:{key.get('customer_id')}|{key.get('amount')}|{key.get('day')}"
+
+    actor = await db.users.find_one({"id": current_user["user_id"]}, {"_id": 0, "name": 1}) \
+        or await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0, "name": 1}) \
+        or {}
+    doc = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "type": kind,
+        "signature": signature,
+        "key": key,
+        "tx_ids": tx_ids,
+        "accepted_by": current_user["user_id"],
+        "accepted_by_name": actor.get("name") or "Admin",
+        "accepted_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.accepted_duplicates.update_one(
+        {"tenant_id": tid, "signature": signature},
+        {"$set": doc},
+        upsert=True
+    )
+    return {"message": "Grupo marcado como aceptado", "signature": signature}
+
+
+@api_router.post("/wallet/duplicates/unaccept")
+async def unaccept_duplicate_group(data: dict, current_user: dict = Depends(get_current_user)):
+    """Undo the accept action so the group is flagged again next scan."""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    signature = data.get("signature")
+    if not signature:
+        raise HTTPException(status_code=400, detail="signature es obligatorio")
+    r = await db.accepted_duplicates.delete_one({"tenant_id": tid, "signature": signature})
+    return {"message": "Reactivado" if r.deleted_count else "No estaba marcado", "removed": r.deleted_count}
 
 
 # ==================== WALLET ENDPOINTS ====================

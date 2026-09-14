@@ -87,6 +87,8 @@ export default function AdminWallet() {
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [duplicates, setDuplicates] = useState(null);
   const [duplicatesLoading, setDuplicatesLoading] = useState(false);
+  const [dupClientSearch, setDupClientSearch] = useState("");
+  const [dupShowAccepted, setDupShowAccepted] = useState(false);
   
   // Delete confirmation state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -177,6 +179,42 @@ export default function AdminWallet() {
       toast.error("Error al cargar duplicados");
     } finally {
       setDuplicatesLoading(false);
+    }
+  };
+
+  const acceptDuplicateGroup = async (kind, group) => {
+    try {
+      const API = process.env.REACT_APP_BACKEND_URL;
+      const token = JSON.parse(localStorage.getItem("outletsusa_user"))?.token;
+      await fetch(`${API}/api/wallet/duplicates/accept`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: kind,
+          key: group.key,
+          tx_ids: (group.transactions || []).map(t => t.id),
+        }),
+      });
+      toast.success("Grupo marcado como aceptado");
+      await loadDuplicates();
+    } catch {
+      toast.error("Error al aceptar");
+    }
+  };
+
+  const unacceptDuplicateGroup = async (group) => {
+    try {
+      const API = process.env.REACT_APP_BACKEND_URL;
+      const token = JSON.parse(localStorage.getItem("outletsusa_user"))?.token;
+      await fetch(`${API}/api/wallet/duplicates/unaccept`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ signature: group.signature }),
+      });
+      toast.success("Grupo reactivado");
+      await loadDuplicates();
+    } catch {
+      toast.error("Error al reactivar");
     }
   };
 
@@ -1415,60 +1453,154 @@ export default function AdminWallet() {
                 </CardContent>
               </Card>
             ) : duplicates ? (
-              <div className="space-y-4">
-                {[
-                  { key: "by_reference", title: "Por Número de Comprobante", icon: "📋", sub: "Mismo número de referencia bancaria. Suele ser un error real.", data: duplicates.by_reference || [] },
-                  { key: "by_client_amount_day", title: "Mismo Cliente + Monto + Día", icon: "🎯", sub: "Sospechoso: el cliente subió el mismo depósito 2 veces el mismo día.", data: duplicates.by_client_amount_day || [] },
-                  { key: "by_same_proof", title: "Misma Imagen de Comprobante", icon: "🖼️", sub: "La misma foto se usó en más de una recarga. Casi siempre es error real.", data: duplicates.by_same_proof || [] },
-                ].map(section => (
-                  <Card key={section.key} className="rounded-2xl" data-testid={`dup-section-${section.key}`}>
-                    <CardContent className="p-4">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-xl">{section.icon}</span>
-                        <h3 className="font-bold text-slate-800">{section.title}</h3>
-                        <span className={`ml-auto text-xs font-semibold px-2 py-1 rounded-full ${section.data.length > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
-                          {section.data.length} grupo{section.data.length === 1 ? "" : "s"}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mb-3">{section.sub}</p>
-                      {section.data.length === 0 ? (
-                        <p className="text-sm text-slate-400 italic">Sin duplicados en esta categoría.</p>
-                      ) : (
-                        <div className="space-y-3">
-                          {section.data.map((g, idx) => (
-                            <div key={idx} className="border border-slate-200 rounded-lg p-3 bg-slate-50">
-                              <div className="flex items-center gap-2 mb-2">
-                                <span className="text-xs font-mono text-slate-500">
-                                  {typeof g.key === "string" ? g.key : (g.key?.customer_id ? `${g.key.customer_id} · $${g.key.amount} · ${g.key.day}` : JSON.stringify(g.key))}
-                                </span>
-                                <span className="ml-auto text-xs font-bold text-red-600">
-                                  {g.count} recargas · ${(g.total_amount || 0).toFixed(2)}
-                                </span>
-                              </div>
-                              <div className="space-y-1.5">
-                                {(g.transactions || []).map(t => (
-                                  <div key={t.id} className="flex items-center gap-2 text-xs bg-white p-2 rounded border border-slate-100">
-                                    <span className={`px-1.5 py-0.5 rounded font-semibold ${t.status === "pending" ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"}`}>
-                                      {t.status}
-                                    </span>
-                                    <span className="font-mono text-slate-500">{(t.created_at || "").substring(0, 10)}</span>
-                                    <span className="font-bold text-slate-800">${(t.amount || 0).toFixed(2)}</span>
-                                    <span className="text-slate-600">{t.customer_name || t.customer_id}</span>
-                                    {t.reference_number && <span className="text-slate-400 font-mono">Ref: {t.reference_number}</span>}
-                                    {t.proof_url && (
-                                      <a href={t.proof_url.startsWith("/") ? `${APP_URL}${t.proof_url}` : t.proof_url} target="_blank" rel="noreferrer" className="ml-auto text-blue-600 hover:underline">Ver</a>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
+              (() => {
+                // Filter group's transactions by client search
+                const filterGroup = (g) => {
+                  if (!dupClientSearch.trim()) return g;
+                  const q = dupClientSearch.trim().toLowerCase();
+                  const txs = (g.transactions || []).filter(t =>
+                    (t.customer_id || "").toLowerCase().includes(q) ||
+                    (t.customer_name || "").toLowerCase().includes(q)
+                  );
+                  if (!txs.length) return null;
+                  return { ...g, transactions: txs, count: txs.length };
+                };
+                const filterSection = (arr) => (arr || []).map(filterGroup).filter(Boolean);
+
+                const sections = [
+                  { key: "by_reference", title: "Por Número de Comprobante", icon: "📋", sub: "Mismo número de referencia bancaria. Suele ser un error real.", data: filterSection(duplicates.by_reference) },
+                  { key: "by_client_amount_day", title: "Mismo Cliente + Monto + Día", icon: "🎯", sub: "Sospechoso: el cliente subió el mismo depósito 2 veces el mismo día.", data: filterSection(duplicates.by_client_amount_day) },
+                  { key: "by_same_proof", title: "Misma Imagen de Comprobante", icon: "🖼️", sub: "La misma foto se usó en más de una recarga. Casi siempre es error real.", data: filterSection(duplicates.by_same_proof) },
+                ];
+                const acceptedList = filterSection(duplicates.accepted);
+
+                const renderGroup = (kind, g, idx, opts = {}) => (
+                  <div key={idx} className={`border rounded-lg p-3 ${opts.accepted ? "border-green-200 bg-green-50/40" : "border-slate-200 bg-slate-50"}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-xs font-mono text-slate-500">
+                        {typeof g.key === "string" ? g.key : (g.key?.customer_id ? `${g.key.customer_id} · $${g.key.amount} · ${g.key.day}` : JSON.stringify(g.key))}
+                      </span>
+                      <span className={`ml-auto text-xs font-bold ${opts.accepted ? "text-green-700" : "text-red-600"}`}>
+                        {g.count} recargas · ${(g.total_amount || 0).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="space-y-1.5 mb-2">
+                      {(g.transactions || []).map(t => (
+                        <div key={t.id} className="flex items-center gap-2 text-xs bg-white p-2 rounded border border-slate-100">
+                          <span className={`px-1.5 py-0.5 rounded font-semibold ${t.status === "pending" ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700"}`}>
+                            {t.status}
+                          </span>
+                          <span className="font-mono text-slate-500">{(t.created_at || "").substring(0, 10)}</span>
+                          <span className="font-bold text-slate-800">${(t.amount || 0).toFixed(2)}</span>
+                          <span className="text-slate-600">{t.customer_name || t.customer_id}</span>
+                          {t.reference_number && <span className="text-slate-400 font-mono">Ref: {t.reference_number}</span>}
+                          {t.proof_url && (
+                            <a href={t.proof_url.startsWith("/") ? `${APP_URL}${t.proof_url}` : t.proof_url} target="_blank" rel="noreferrer" className="ml-auto text-blue-600 hover:underline">Ver</a>
+                          )}
                         </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                      ))}
+                    </div>
+                    {opts.accepted ? (
+                      <div className="flex items-center justify-between text-[11px] text-green-700">
+                        <span>
+                          Aceptado{g.accepted_by_name ? ` por ${g.accepted_by_name}` : ""}{g.accepted_at ? ` · ${g.accepted_at.substring(0, 10)}` : ""}
+                        </span>
+                        <button
+                          onClick={() => unacceptDuplicateGroup(g)}
+                          className="px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 transition"
+                          data-testid={`dup-unaccept-${g.signature}`}
+                        >
+                          Reactivar
+                        </button>
+                      </div>
+                    ) : (
+                      <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none" data-testid={`dup-accept-label-${g.signature}`}>
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded accent-green-600 cursor-pointer"
+                          checked={false}
+                          onChange={() => acceptDuplicateGroup(kind, g)}
+                          data-testid={`dup-accept-checkbox-${g.signature}`}
+                        />
+                        <span>Aceptado (no es duplicado real) — mover a la sección Aceptados</span>
+                      </label>
+                    )}
+                  </div>
+                );
+
+                return (
+                  <>
+                    {/* Filter by client + toggle Aceptados */}
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
+                      <div className="relative flex-1 min-w-[220px]">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <input
+                          type="text"
+                          value={dupClientSearch}
+                          onChange={(e) => setDupClientSearch(e.target.value)}
+                          placeholder="Buscar por cliente (ID o nombre)..."
+                          className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:border-slate-400"
+                          data-testid="dup-client-search"
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 text-sm cursor-pointer select-none px-3 py-2 rounded-lg border border-slate-200 bg-white" data-testid="dup-show-accepted-toggle">
+                        <input
+                          type="checkbox"
+                          checked={dupShowAccepted}
+                          onChange={(e) => setDupShowAccepted(e.target.checked)}
+                          className="h-4 w-4 rounded accent-green-600 cursor-pointer"
+                        />
+                        <span>Ver aceptados ({acceptedList.length})</span>
+                      </label>
+                    </div>
+
+                    {dupShowAccepted ? (
+                      <Card className="rounded-2xl">
+                        <CardContent className="p-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <CheckCircle className="h-5 w-5 text-green-600" />
+                            <h3 className="font-bold text-slate-800">Grupos Aceptados</h3>
+                            <span className="ml-auto text-xs font-semibold px-2 py-1 rounded-full bg-green-100 text-green-700">
+                              {acceptedList.length}
+                            </span>
+                          </div>
+                          {acceptedList.length === 0 ? (
+                            <p className="text-sm text-slate-400 italic">Aún no has marcado ningún grupo como aceptado.</p>
+                          ) : (
+                            <div className="space-y-3">
+                              {acceptedList.map((g, idx) => renderGroup(g.type, g, idx, { accepted: true }))}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      <div className="space-y-4">
+                        {sections.map(section => (
+                          <Card key={section.key} className="rounded-2xl" data-testid={`dup-section-${section.key}`}>
+                            <CardContent className="p-4">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-xl">{section.icon}</span>
+                                <h3 className="font-bold text-slate-800">{section.title}</h3>
+                                <span className={`ml-auto text-xs font-semibold px-2 py-1 rounded-full ${section.data.length > 0 ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+                                  {section.data.length} grupo{section.data.length === 1 ? "" : "s"}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500 mb-3">{section.sub}</p>
+                              {section.data.length === 0 ? (
+                                <p className="text-sm text-slate-400 italic">{dupClientSearch.trim() ? "Sin coincidencias con el filtro." : "Sin duplicados en esta categoría."}</p>
+                              ) : (
+                                <div className="space-y-3">
+                                  {section.data.map((g, idx) => renderGroup(section.key, g, idx))}
+                                </div>
+                              )}
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()
             ) : (
               <Card className="rounded-2xl border-dashed border-2 border-gray-200">
                 <CardContent className="p-8 text-center">
