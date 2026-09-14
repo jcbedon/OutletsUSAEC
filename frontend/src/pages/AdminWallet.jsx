@@ -867,6 +867,7 @@ export default function AdminWallet() {
                           <CommandEmpty>No se encontró cliente</CommandEmpty>
                           <CommandGroup>
                             {clients
+                              .filter(c => c.is_active !== false)
                               .filter(c => 
                                 rechargeClientSearch.length === 0 ||
                                 c.name.toLowerCase().includes(rechargeClientSearch.toLowerCase()) ||

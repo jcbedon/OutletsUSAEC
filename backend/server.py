@@ -3148,6 +3148,13 @@ async def get_wallet(user_id: str, current_user: dict = Depends(get_current_user
 @api_router.post("/wallet/deposit-request")
 async def request_deposit(deposit: WalletDepositRequest, current_user: dict = Depends(get_current_user)):
     tid = current_user["tenant_id"]
+    # Block inactive users — no more recargas until admin re-enables them.
+    target_user = await db.users.find_one(
+        {"id": deposit.user_id, "tenant_id": tid},
+        {"_id": 0, "is_active": 1, "name": 1}
+    )
+    if target_user and target_user.get("is_active", True) is False:
+        raise HTTPException(status_code=403, detail=f"El cliente {target_user.get('name') or deposit.user_id} está inhabilitado. Actívalo antes de subir recargas.")
     wallet = await db.wallets.find_one({"user_id": deposit.user_id, "tenant_id": tid}, {"_id": 0})
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
@@ -3167,6 +3174,13 @@ async def request_deposit_with_proof(
     current_user: dict = Depends(get_current_user)
 ):
     tid = current_user["tenant_id"]
+    # Block inactive users — no more recargas until admin re-enables them.
+    target_user = await db.users.find_one(
+        {"id": user_id, "tenant_id": tid},
+        {"_id": 0, "is_active": 1, "name": 1}
+    )
+    if target_user and target_user.get("is_active", True) is False:
+        raise HTTPException(status_code=403, detail=f"El cliente {target_user.get('name') or user_id} está inhabilitado. Actívalo antes de subir recargas.")
     wallet = await db.wallets.find_one({"user_id": user_id, "tenant_id": tid}, {"_id": 0})
     if not wallet:
         raise HTTPException(status_code=404, detail="Wallet no encontrada")
@@ -3951,6 +3965,8 @@ async def admin_create_recharge(
     user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    if user.get("is_active", True) is False:
+        raise HTTPException(status_code=403, detail=f"El cliente {user.get('name') or user_id} está inhabilitado. Actívalo antes de subir recargas.")
     
     wallet = await db.wallets.find_one({"user_id": user_id, "tenant_id": tid}, {"_id": 0})
     if not wallet:
@@ -4148,9 +4164,11 @@ async def generate_recharge_upload_qr(user_id: str, current_user: dict = Depends
     tid = current_user["tenant_id"]
     
     # Verify user exists
-    user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0, "id": 1, "customer_id": 1})
+    user = await db.users.find_one({"id": user_id, "tenant_id": tid}, {"_id": 0, "id": 1, "customer_id": 1, "name": 1, "is_active": 1})
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if user.get("is_active", True) is False:
+        raise HTTPException(status_code=403, detail=f"El cliente {user.get('name') or user_id} está inhabilitado. Actívalo antes de subir recargas.")
     
     # Create a temporary upload token (expires in 10 minutes)
     upload_token = str(uuid.uuid4())
@@ -4187,6 +4205,14 @@ async def mobile_upload_recharge_proof(upload_token: str, file: UploadFile = Fil
     expires_at = datetime.fromisoformat(token_doc["expires_at"].replace("Z", "+00:00"))
     if datetime.now(timezone.utc) > expires_at:
         raise HTTPException(status_code=400, detail="Token expirado")
+
+    # Block inactive users even if the token was generated earlier.
+    target_user = await db.users.find_one(
+        {"id": token_doc.get("user_id"), "tenant_id": token_doc.get("tenant_id")},
+        {"_id": 0, "is_active": 1, "name": 1}
+    )
+    if target_user and target_user.get("is_active", True) is False:
+        raise HTTPException(status_code=403, detail=f"El cliente {target_user.get('name') or token_doc.get('user_id')} está inhabilitado.")
     
     # Save file
     ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
