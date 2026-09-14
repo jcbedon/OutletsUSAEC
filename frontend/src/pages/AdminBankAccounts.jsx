@@ -22,6 +22,7 @@ import {
   ReceiptText,
   HelpCircle,
   Sparkles,
+  RotateCcw,
 } from "lucide-react";
 import {
   getBankAccountsSummary,
@@ -31,6 +32,7 @@ import {
   backfillBankAccountRecharges,
   listUnassignedRecharges,
   assignBankAccountToRecharge,
+  zeroOutBankAccount,
 } from "@/lib/api";
 import { generateBankStatementPDF } from "@/lib/bankStatementPDF";
 
@@ -50,6 +52,8 @@ const kindMeta = {
   recharge: { label: "Recarga cliente", color: "text-emerald-700 bg-emerald-50 border-emerald-200", sign: "+" },
   manual_deposit: { label: "Depósito manual", color: "text-blue-700 bg-blue-50 border-blue-200", sign: "+" },
   withdrawal: { label: "Retiro", color: "text-red-700 bg-red-50 border-red-200", sign: "−" },
+  adjustment_deposit: { label: "Ajuste (crédito)", color: "text-amber-700 bg-amber-50 border-amber-200", sign: "+" },
+  adjustment_withdrawal: { label: "Ajuste (débito)", color: "text-amber-700 bg-amber-50 border-amber-200", sign: "−" },
 };
 
 export default function AdminBankAccounts() {
@@ -61,6 +65,9 @@ export default function AdminBankAccounts() {
   const [ledgerLoading, setLedgerLoading] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [withdrawalOpen, setWithdrawalOpen] = useState(false);
+  const [zeroOutOpen, setZeroOutOpen] = useState(false);
+  const [zeroOutForm, setZeroOutForm] = useState({ password: "", reason: "" });
+  const [zeroOutSubmitting, setZeroOutSubmitting] = useState(false);
   const [form, setForm] = useState({ amount: "", description: "", reference_number: "" });
   const [submitting, setSubmitting] = useState(false);
   // ── Unassigned recharges (depósitos sin cuenta identificada) ──
@@ -111,6 +118,32 @@ export default function AdminBankAccounts() {
   const openWithdrawal = () => {
     setForm({ amount: "", description: "", reference_number: "" });
     setWithdrawalOpen(true);
+  };
+
+  const openZeroOut = () => {
+    setZeroOutForm({ password: "", reason: "" });
+    setZeroOutOpen(true);
+  };
+
+  const submitZeroOut = async () => {
+    if (!zeroOutForm.password) {
+      toast.error("Ingresa la contraseña de administrador");
+      return;
+    }
+    setZeroOutSubmitting(true);
+    try {
+      const res = await zeroOutBankAccount(selected.id, {
+        password: zeroOutForm.password,
+        reason: zeroOutForm.reason,
+      });
+      toast.success(res.data?.message || "Cuenta reseteada a $0.00");
+      setZeroOutOpen(false);
+      await Promise.all([loadSummary(), loadLedger(selected.id)]);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Error al resetear la cuenta");
+    } finally {
+      setZeroOutSubmitting(false);
+    }
   };
 
   const submitDeposit = async () => {
@@ -423,6 +456,16 @@ export default function AdminBankAccounts() {
                       <Button
                         size="sm"
                         variant="outline"
+                        onClick={openZeroOut}
+                        className="rounded-lg border-amber-300 text-amber-700 hover:bg-amber-50 gap-1"
+                        data-testid="open-zero-out-btn"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        Poner en $0
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={exportPDF}
                         className="rounded-lg border-indigo-200 text-indigo-700 hover:bg-indigo-50 gap-1"
                         data-testid="export-pdf-btn"
@@ -659,6 +702,61 @@ export default function AdminBankAccounts() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Zero-Out Balance Dialog ──
+          Records a single "adjustment" transaction so history is preserved
+          and the running balance drops to $0. Requires admin password. */}
+      <Dialog open={zeroOutOpen} onOpenChange={setZeroOutOpen}>
+        <DialogContent className="rounded-2xl max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <RotateCcw className="h-5 w-5" />
+              Poner cuenta en $0.00
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-1">
+            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-900">
+              <p className="font-semibold mb-1">⚠️ Ajuste financiero irreversible</p>
+              <p className="text-xs">Se creará un asiento de ajuste con signo opuesto al saldo actual para llevar la cuenta a <b>$0.00</b>. Todo el historial anterior (recargas, retiros, depósitos) queda intacto y visible en el ledger.</p>
+              <p className="text-xs mt-1">Saldo actual: <b>{fmtMoney(ledger.balance)}</b></p>
+            </div>
+            <div>
+              <Label className="text-xs uppercase font-semibold text-slate-600">Motivo del ajuste</Label>
+              <Input
+                value={zeroOutForm.reason}
+                onChange={(e) => setZeroOutForm({ ...zeroOutForm, reason: e.target.value })}
+                placeholder="Ej: cierre contable de mes, transferencia externa, etc."
+                className="rounded-lg"
+                data-testid="zero-out-reason-input"
+              />
+            </div>
+            <div>
+              <Label className="text-xs uppercase font-semibold text-slate-600">Contraseña de administrador</Label>
+              <Input
+                type="password"
+                value={zeroOutForm.password}
+                onChange={(e) => setZeroOutForm({ ...zeroOutForm, password: e.target.value })}
+                placeholder="Tu contraseña"
+                className="rounded-lg"
+                autoComplete="off"
+                data-testid="zero-out-password-input"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setZeroOutOpen(false)}>Cancelar</Button>
+              <Button
+                onClick={submitZeroOut}
+                disabled={zeroOutSubmitting || !zeroOutForm.password}
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+                data-testid="submit-zero-out-btn"
+              >
+                {zeroOutSubmitting ? "Procesando…" : "Confirmar reset a $0"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
 
       {/* ── Unassigned Recharges Dialog ──
           Shows every approved deposit that the AI couldn't match to one of the

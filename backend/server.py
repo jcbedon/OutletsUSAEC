@@ -1683,15 +1683,17 @@ async def _compute_account_balance(tenant_id: str, account_id: str) -> dict:
         }}
     ]
     cur = db.bank_transactions.aggregate(pipeline)
-    sums = {"recharge": 0.0, "manual_deposit": 0.0, "withdrawal": 0.0}
-    counts = {"recharge": 0, "manual_deposit": 0, "withdrawal": 0}
+    sums = {"recharge": 0.0, "manual_deposit": 0.0, "withdrawal": 0.0,
+            "adjustment_deposit": 0.0, "adjustment_withdrawal": 0.0}
+    counts = {"recharge": 0, "manual_deposit": 0, "withdrawal": 0,
+              "adjustment_deposit": 0, "adjustment_withdrawal": 0}
     async for row in cur:
         k = row.get("_id")
         if k in sums:
             sums[k] = float(row.get("total", 0) or 0)
             counts[k] = int(row.get("count", 0) or 0)
-    credits = sums["recharge"] + sums["manual_deposit"]
-    debits = sums["withdrawal"]
+    credits = sums["recharge"] + sums["manual_deposit"] + sums["adjustment_deposit"]
+    debits = sums["withdrawal"] + sums["adjustment_withdrawal"]
     return {
         "balance": round(credits - debits, 2),
         "total_recharges": round(sums["recharge"], 2),
@@ -1835,6 +1837,85 @@ async def manual_withdrawal_account(account_id: str, data: dict, current_user: d
         pass
     tx.pop("_id", None)
     return {"message": "Retiro registrado", "transaction": tx}
+
+
+@api_router.post("/admin/bank-accounts/{account_id}/zero-out")
+async def zero_out_bank_account(account_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Reset a bank account balance to $0 by inserting a single adjustment
+    transaction of the opposite sign. Nothing in the historic ledger is
+    deleted — the full trail stays intact for auditing.
+
+    Requires re-entering the admin password (data.password) because this is
+    a sensitive financial action.
+    """
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo admin puede resetear cuentas")
+    if not data or not data.get("password"):
+        raise HTTPException(status_code=400, detail="Contraseña de administrador requerida")
+    tid = current_user["tenant_id"]
+    admin = await db.users.find_one({"id": current_user["user_id"], "tenant_id": tid})
+    if not admin or not verify_password(data["password"], admin["password_hash"]):
+        raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "bank_accounts": 1})
+    accs = [a for a in (tenant or {}).get("bank_accounts", []) if a.get("id") == account_id]
+    if not accs:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+
+    stats = await _compute_account_balance(tid, account_id)
+    current_balance = round(float(stats.get("balance", 0) or 0), 2)
+    if abs(current_balance) < 0.01:
+        return {"message": "La cuenta ya está en \$0.00", "adjusted": 0, "previous_balance": current_balance}
+
+    reason = str(data.get("reason", "")).strip() or "Ajuste manual a cero"
+    actor_name = await get_actor_name(current_user["user_id"])
+
+    # If balance is positive, we book a withdrawal adjustment; if negative,
+    # a deposit adjustment. Kind stays "adjustment" so it's easy to filter
+    # in reports.
+    if current_balance > 0:
+        adj_kind = "adjustment_withdrawal"
+        adj_amount = current_balance
+    else:
+        adj_kind = "adjustment_deposit"
+        adj_amount = abs(current_balance)
+
+    tx = {
+        "id": str(uuid.uuid4()),
+        "tenant_id": tid,
+        "bank_account_id": account_id,
+        "kind": adj_kind,
+        "amount": round(adj_amount, 2),
+        "description": f"[AJUSTE A CERO] {reason} — saldo previo ${current_balance:.2f}",
+        "source_transaction_id": None,
+        "customer_id": None,
+        "customer_name": None,
+        "reference_number": None,
+        "created_by": current_user["user_id"],
+        "created_by_name": actor_name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "is_zero_out_adjustment": True,
+        "previous_balance": current_balance,
+    }
+    await db.bank_transactions.insert_one(tx)
+    try:
+        await log_audit_action(
+            tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+            user_role=current_user["role"], action="bank_zero_out",
+            entity_type="bank_transaction", entity_id=tx["id"],
+            entity_name=f"{accs[0].get('bank_name')} #{accs[0].get('account_number')}",
+            details={"previous_balance": current_balance, "adjustment_amount": tx["amount"],
+                     "adjustment_kind": adj_kind, "reason": reason, "account_id": account_id}
+        )
+    except Exception:
+        pass
+    tx.pop("_id", None)
+    return {
+        "message": "Cuenta reseteada a \$0.00. Todo el historial se conserva.",
+        "adjustment_transaction": tx,
+        "previous_balance": current_balance,
+    }
+
 
 
 @api_router.get("/admin/bank-accounts/unassigned-recharges")

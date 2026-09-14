@@ -43,6 +43,7 @@ export const getBankAccountsSummary = () => api.get("/admin/bank-accounts/summar
 export const getBankAccountTransactions = (accountId, params = {}) => api.get(`/admin/bank-accounts/${accountId}/transactions`, { params });
 export const manualBankDeposit = (accountId, data) => api.post(`/admin/bank-accounts/${accountId}/deposit`, data);
 export const manualBankWithdrawal = (accountId, data) => api.post(`/admin/bank-accounts/${accountId}/withdrawal`, data);
+export const zeroOutBankAccount = (accountId, data) => api.post(`/admin/bank-accounts/${accountId}/zero-out`, data);
 export const assignBankAccountToRecharge = (txId, bankAccountId) => api.put(`/admin/wallet-transactions/${txId}/assign-bank-account`, { bank_account_id: bankAccountId });
 export const listUnassignedRecharges = () => api.get("/admin/bank-accounts/unassigned-recharges");
 export const backfillBankAccountRecharges = (bankAccountId) => api.post("/admin/bank-accounts/backfill-recharges", { bank_account_id: bankAccountId });
