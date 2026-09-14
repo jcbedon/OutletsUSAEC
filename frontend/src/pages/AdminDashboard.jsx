@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { uploadTenantLogo } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
+import { BrandBackgroundVideo } from "@/components/BrandBackgroundVideo";
 
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
@@ -223,6 +224,7 @@ export default function AdminDashboard() {
 
   return (
     <div className="app-bg min-h-screen">
+      <BrandBackgroundVideo />
       {/* Header */}
       <div className="bg-white/90 backdrop-blur-sm border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">

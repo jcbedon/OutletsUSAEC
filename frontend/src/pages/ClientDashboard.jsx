@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { generateInvoicePDF } from "@/lib/invoicePDF";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
+import { BrandBackgroundVideo } from "@/components/BrandBackgroundVideo";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -380,6 +381,7 @@ export default function ClientDashboard() {
 
   return (
     <div className="app-bg pb-20">
+      <BrandBackgroundVideo />
       {/* Header */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
