@@ -88,6 +88,8 @@ export default function AdminWallet() {
   const [duplicates, setDuplicates] = useState(null);
   const [duplicatesLoading, setDuplicatesLoading] = useState(false);
   const [dupClientSearch, setDupClientSearch] = useState("");
+  const [dupRefSearch, setDupRefSearch] = useState("");
+  const [dupAmountSearch, setDupAmountSearch] = useState("");
   const [dupShowAccepted, setDupShowAccepted] = useState(false);
   
   // Delete confirmation state
@@ -1455,14 +1457,23 @@ export default function AdminWallet() {
               </Card>
             ) : duplicates ? (
               (() => {
-                // Filter group's transactions by client search
+                // Filter group's transactions by client + reference + amount
                 const filterGroup = (g) => {
-                  if (!dupClientSearch.trim()) return g;
-                  const q = dupClientSearch.trim().toLowerCase();
-                  const txs = (g.transactions || []).filter(t =>
-                    (t.customer_id || "").toLowerCase().includes(q) ||
-                    (t.customer_name || "").toLowerCase().includes(q)
-                  );
+                  const clientQ = dupClientSearch.trim().toLowerCase();
+                  const refQ = dupRefSearch.trim().toLowerCase();
+                  const amountQ = parseFloat(dupAmountSearch);
+                  const hasAmountFilter = !Number.isNaN(amountQ);
+                  if (!clientQ && !refQ && !hasAmountFilter) return g;
+                  const txs = (g.transactions || []).filter(t => {
+                    const cMatch = !clientQ ||
+                      (t.customer_id || "").toLowerCase().includes(clientQ) ||
+                      (t.customer_name || "").toLowerCase().includes(clientQ);
+                    const rMatch = !refQ ||
+                      (t.reference_number || "").toLowerCase().includes(refQ);
+                    const aMatch = !hasAmountFilter ||
+                      Math.abs((Number(t.amount) || 0) - amountQ) < 0.01;
+                    return cMatch && rMatch && aMatch;
+                  });
                   if (!txs.length) return null;
                   return { ...g, transactions: txs, count: txs.length };
                 };
@@ -1531,19 +1542,53 @@ export default function AdminWallet() {
 
                 return (
                   <>
-                    {/* Filter by client + toggle Aceptados */}
+                    {/* Filter by client + ref + amount + toggle Aceptados */}
                     <div className="flex flex-wrap items-center gap-2 mb-3">
-                      <div className="relative flex-1 min-w-[220px]">
+                      <div className="relative flex-1 min-w-[200px]">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                         <input
                           type="text"
                           value={dupClientSearch}
                           onChange={(e) => setDupClientSearch(e.target.value)}
-                          placeholder="Buscar por cliente (ID o nombre)..."
+                          placeholder="Cliente (ID o nombre)..."
                           className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:border-slate-400"
                           data-testid="dup-client-search"
                         />
                       </div>
+                      <div className="relative flex-1 min-w-[180px]">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <input
+                          type="text"
+                          value={dupRefSearch}
+                          onChange={(e) => setDupRefSearch(e.target.value)}
+                          placeholder="Nº comprobante..."
+                          className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:border-slate-400"
+                          data-testid="dup-ref-search"
+                        />
+                      </div>
+                      <div className="relative w-[140px]">
+                        <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={dupAmountSearch}
+                          onChange={(e) => setDupAmountSearch(e.target.value)}
+                          placeholder="Monto..."
+                          className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none focus:border-slate-400"
+                          data-testid="dup-amount-search"
+                        />
+                      </div>
+                      {(dupClientSearch || dupRefSearch || dupAmountSearch) && (
+                        <button
+                          type="button"
+                          onClick={() => { setDupClientSearch(""); setDupRefSearch(""); setDupAmountSearch(""); }}
+                          className="px-3 py-2 rounded-lg text-xs text-slate-600 hover:bg-slate-100 border border-slate-200"
+                          data-testid="dup-clear-filters"
+                        >
+                          Limpiar
+                        </button>
+                      )}
                       <label className="flex items-center gap-2 text-sm cursor-pointer select-none px-3 py-2 rounded-lg border border-slate-200 bg-white" data-testid="dup-show-accepted-toggle">
                         <input
                           type="checkbox"
@@ -1588,7 +1633,7 @@ export default function AdminWallet() {
                               </div>
                               <p className="text-xs text-slate-500 mb-3">{section.sub}</p>
                               {section.data.length === 0 ? (
-                                <p className="text-sm text-slate-400 italic">{dupClientSearch.trim() ? "Sin coincidencias con el filtro." : "Sin duplicados en esta categoría."}</p>
+                                <p className="text-sm text-slate-400 italic">{(dupClientSearch || dupRefSearch || dupAmountSearch) ? "Sin coincidencias con el filtro." : "Sin duplicados en esta categoría."}</p>
                               ) : (
                                 <div className="space-y-3">
                                   {section.data.map((g, idx) => renderGroup(section.key, g, idx))}
