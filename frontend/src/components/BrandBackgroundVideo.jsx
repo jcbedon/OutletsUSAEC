@@ -55,6 +55,14 @@ export const BrandBackgroundVideo = () => {
         playsInline
         preload="metadata"
         onCanPlay={() => setReady(true)}
+        onError={(e) => {
+          // eslint-disable-next-line no-console
+          console.error("[BrandBackgroundVideo] video failed to load", e?.target?.error);
+        }}
+        onLoadedData={() => {
+          // eslint-disable-next-line no-console
+          console.log("[BrandBackgroundVideo] video loaded, playing");
+        }}
         className="absolute inset-0 h-full w-full object-cover transition-opacity duration-700"
         style={{ opacity: ready ? 1 : 0 }}
       >
