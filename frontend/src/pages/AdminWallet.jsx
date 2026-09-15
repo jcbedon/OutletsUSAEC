@@ -28,10 +28,11 @@ const getWeekKey = (dateStr) => {
   if (!dateStr) return null;
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return null;
-  const day = d.getDay();
-  const daysSinceMonday = (day - 1 + 7) % 7;
+  // Weekly cycle: SUNDAY 00:00 → next SUNDAY 00:00 (exclusive).
+  // day: 0=Sunday, 1=Monday, ..., 6=Saturday.
+  const daysSinceSunday = d.getDay();
   const candidate = new Date(d);
-  candidate.setDate(d.getDate() - daysSinceMonday);
+  candidate.setDate(d.getDate() - daysSinceSunday);
   candidate.setHours(12, 0, 0, 0);
   if (candidate > d) candidate.setDate(candidate.getDate() - 7);
   return candidate.toISOString().slice(0, 10);
@@ -41,16 +42,16 @@ const getWeekLabel = (dateStr) => {
   const key = getWeekKey(dateStr);
   if (!key) return "—";
   const [y, m, d] = key.split("-").map(Number);
-  const startMonday = new Date(y, m - 1, d, 12, 0, 0);
-  const endMonday = new Date(startMonday);
-  endMonday.setDate(startMonday.getDate() + 7);
+  const startSunday = new Date(y, m - 1, d, 12, 0, 0);
+  const endSunday = new Date(startSunday);
+  endSunday.setDate(startSunday.getDate() + 7);
   const fmt = (dt) => {
     const day = dt.getDate();
     const monthRaw = dt.toLocaleDateString('es-ES', { month: 'short' });
     const month = monthRaw.charAt(0).toUpperCase() + monthRaw.slice(1).replace('.', '');
     return `${day} ${month}`;
   };
-  return `${fmt(startMonday)} - ${fmt(endMonday)}`;
+  return `${fmt(startSunday)} - ${fmt(endSunday)}`;
 };
 
 const getCurrentWeekKey = () => getWeekKey(new Date().toISOString());
