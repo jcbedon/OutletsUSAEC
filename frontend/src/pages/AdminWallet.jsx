@@ -30,28 +30,32 @@ const getWeekKey = (dateStr) => {
   if (isNaN(d.getTime())) return null;
   // Weekly cycle: SUNDAY 00:00 → next SUNDAY 00:00 (exclusive).
   // day: 0=Sunday, 1=Monday, ..., 6=Saturday.
-  const daysSinceSunday = d.getDay();
-  const candidate = new Date(d);
-  candidate.setDate(d.getDate() - daysSinceSunday);
-  candidate.setHours(12, 0, 0, 0);
-  if (candidate > d) candidate.setDate(candidate.getDate() - 7);
-  return candidate.toISOString().slice(0, 10);
+  // Snap to local midnight first so we bucket by calendar day, not by hour.
+  const local = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const daysSinceSunday = local.getDay();
+  local.setDate(local.getDate() - daysSinceSunday);
+  // Encode key as local YYYY-MM-DD (avoid toISOString which drifts by TZ).
+  const y = local.getFullYear();
+  const m = String(local.getMonth() + 1).padStart(2, "0");
+  const day = String(local.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 };
 
 const getWeekLabel = (dateStr) => {
   const key = getWeekKey(dateStr);
   if (!key) return "—";
   const [y, m, d] = key.split("-").map(Number);
-  const startSunday = new Date(y, m - 1, d, 12, 0, 0);
-  const endSunday = new Date(startSunday);
-  endSunday.setDate(startSunday.getDate() + 7);
+  const startSunday = new Date(y, m - 1, d);
+  // Inclusive endpoints: Sunday → Saturday of the same 7-day window.
+  const endSaturday = new Date(startSunday);
+  endSaturday.setDate(startSunday.getDate() + 6);
   const fmt = (dt) => {
     const day = dt.getDate();
     const monthRaw = dt.toLocaleDateString('es-ES', { month: 'short' });
     const month = monthRaw.charAt(0).toUpperCase() + monthRaw.slice(1).replace('.', '');
     return `${day} ${month}`;
   };
-  return `${fmt(startSunday)} - ${fmt(endSunday)}`;
+  return `${fmt(startSunday)} - ${fmt(endSaturday)}`;
 };
 
 const getCurrentWeekKey = () => getWeekKey(new Date().toISOString());
