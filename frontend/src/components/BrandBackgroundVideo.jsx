@@ -1,27 +1,14 @@
-import { useAuth } from "@/App";
-
 /**
- * Fixed-position background video for the "Astrid Shop" tenant. Sits at
- * z-index:-1 behind the main page content and never blocks interaction.
- * The video loads eagerly, autoplays muted+looped, and is visible from
- * mount so there's no fade-in gap. A warm gradient fallback stays painted
- * beneath it so the screen never flashes white during buffering.
+ * Fixed-position background video. Sits at z-index:-1 behind the main page
+ * content and never blocks interaction. The video loads eagerly, autoplays
+ * muted+looped, and is visible from mount so there's no fade-in gap. A warm
+ * gradient fallback stays painted beneath it so the screen never flashes
+ * white during buffering.
  */
 const ASTRID_VIDEO_URL =
   "https://customer-assets-wrfwihn1.emergentagent.net/job_eee13a51-72d6-415d-84fa-eb1814606fb6/artifacts/mor2u6cb_astrid-shop-hero-loop.mp4";
 
-const ASTRID_TENANT_MATCH = /astrid/i;
-
 export const BrandBackgroundVideo = () => {
-  const { user } = useAuth();
-
-  const tenantName = user?.tenant_name || "";
-  const tenantSlug = user?.tenant_slug || "";
-  const isAstrid =
-    ASTRID_TENANT_MATCH.test(tenantName) || ASTRID_TENANT_MATCH.test(tenantSlug);
-
-  if (!isAstrid) return null;
-
   return (
     <>
       {/* Force-hide the .app-bg::before white overlay for Astrid users so the
