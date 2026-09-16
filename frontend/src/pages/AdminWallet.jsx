@@ -607,6 +607,7 @@ export default function AdminWallet() {
           const pendingFiltered = allDeposits.filter(d => d.status === "pending" && inSelectedWeek(d));
           const approvedFiltered = allDeposits.filter(d => d.status === "approved" && inSelectedWeek(d));
           const rejectedFiltered = allDeposits.filter(d => d.status === "rejected" && inSelectedWeek(d));
+          const manualFiltered = allDeposits.filter(d => d.created_by_admin === true && d.status !== "rejected" && inSelectedWeek(d));
           const sumAmt = (arr) => arr.reduce((acc, d) => acc + (Number(d.amount) || 0), 0);
 
           return (
@@ -625,7 +626,7 @@ export default function AdminWallet() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                 <Card className="rounded-xl" data-testid="stat-pending-card">
                   <CardContent className="p-4 flex items-center gap-3">
                     <div className="w-10 h-10 bg-yellow-100 rounded-xl flex items-center justify-center shrink-0">
@@ -659,6 +660,18 @@ export default function AdminWallet() {
                       <p className="text-2xl font-extrabold text-slate-800 leading-tight" data-testid="stat-rejected-count">{rejectedFiltered.length}</p>
                       <p className="text-xs text-gray-500">Rechazados</p>
                       <p className="text-sm font-semibold text-red-700 mt-0.5" data-testid="stat-rejected-sum">${sumAmt(rejectedFiltered).toFixed(2)}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl" data-testid="stat-manual-card">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0">
+                      <Plus className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-2xl font-extrabold text-slate-800 leading-tight" data-testid="stat-manual-count">{manualFiltered.length}</p>
+                      <p className="text-xs text-gray-500">Manuales (Admin)</p>
+                      <p className="text-sm font-semibold text-blue-700 mt-0.5" data-testid="stat-manual-sum">${sumAmt(manualFiltered).toFixed(2)}</p>
                     </div>
                   </CardContent>
                 </Card>
