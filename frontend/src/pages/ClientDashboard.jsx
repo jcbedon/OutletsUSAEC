@@ -416,6 +416,16 @@ export default function ClientDashboard() {
               const hasPendingDepositRequest = pendingDepositsList.length > 0;
               const hasUnreadDeposit = hasPendingDepositRequest && !hasPendingDeposit;
 
+              // Purchases the client already made but haven't been billed yet
+              // (no invoice_id). Sum price + commission so they see the full
+              // amount that will land on their next factura.
+              const pendingPurchasesList = purchases.filter(p => !p.invoice_id);
+              const pendingInvoiceTotal = pendingPurchasesList.reduce(
+                (acc, p) => acc + (Number(p.price) || 0) + (Number(p.commission) || 0),
+                0
+              );
+              const hasPendingInvoice = pendingInvoiceTotal > 0.01;
+
               // Available = money the client already has that will apply to
               // their next invoice: saldo_a_favor (excess from last inv) +
               // floating_deposits (approved but not yet attached).
@@ -445,6 +455,14 @@ export default function ClientDashboard() {
                       {availableTotal > 0.01 && (
                         <p className="text-white/70 text-[11px] mt-1" data-testid="wallet-available-inline">
                           Saldo disponible para compras esta semana: <span className="text-green-300 font-semibold">${availableTotal.toFixed(2)}</span>
+                        </p>
+                      )}
+                      {hasPendingInvoice && (
+                        <p className="text-white/70 text-[11px] mt-1" data-testid="wallet-pending-invoice-inline">
+                          Pendiente de facturar ({pendingPurchasesList.length}):{' '}
+                          <span className="text-orange-300 font-semibold">
+                            ${pendingInvoiceTotal.toFixed(2)}
+                          </span>
                         </p>
                       )}
                     </div>
