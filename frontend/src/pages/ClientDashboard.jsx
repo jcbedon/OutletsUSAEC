@@ -405,7 +405,10 @@ export default function ClientDashboard() {
         <Card className="text-white rounded-3xl shadow-2xl overflow-hidden" data-testid="wallet-card" style={{ background: 'linear-gradient(135deg, #1E3A5F, #2a4f7f)' }}>
           <CardContent className="p-6">
             {(() => {
-              const pendingDebt = wallet?.pending_debt || 0;
+              const pendingDebt = Math.max(
+                Number(wallet?.pending_debt || 0),
+                Number(wallet?.total_saldo_pendiente || 0)
+              );
               const saldoFavor = wallet?.saldo_a_favor || 0;
               const pendingDeposit = wallet?.pending_deposit_total || 0;
               const pendingDepositsList = wallet?.pending_deposits || [];
