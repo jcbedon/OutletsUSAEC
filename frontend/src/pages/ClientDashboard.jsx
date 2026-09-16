@@ -405,10 +405,7 @@ export default function ClientDashboard() {
         <Card className="text-white rounded-3xl shadow-2xl overflow-hidden" data-testid="wallet-card" style={{ background: 'linear-gradient(135deg, #1E3A5F, #2a4f7f)' }}>
           <CardContent className="p-6">
             {(() => {
-              const pendingDebt = Math.max(
-                Number(wallet?.pending_debt || 0),
-                Number(wallet?.total_saldo_pendiente || 0)
-              );
+              const pendingDebt = wallet?.pending_debt || 0;
               const saldoFavor = wallet?.saldo_a_favor || 0;
               const pendingDeposit = wallet?.pending_deposit_total || 0;
               const pendingDepositsList = wallet?.pending_deposits || [];
@@ -447,20 +444,19 @@ export default function ClientDashboard() {
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <p className="text-white/70 text-sm font-medium">
-                        {hasDebt ? 'Adeudas' : 'Sin deuda'}
+                        {netPosition >= 0 ? 'Saldo Neto a Favor' : 'Debes en Total'}
                       </p>
                       <p
-                        className={`text-4xl font-extrabold mt-1 ${hasDebt ? 'text-red-400' : 'text-green-400'}`}
+                        className={`text-4xl font-extrabold mt-1 ${netPosition >= 0 ? 'text-green-400' : 'text-red-400'}`}
                         data-testid="wallet-balance"
                       >
-                        {hasDebt ? '-' : ''}${pendingDebt.toFixed(2)}
+                        {netPosition >= 0 ? '+' : '-'}${Math.abs(netPosition).toFixed(2)}
                       </p>
-                      <p className="text-white/70 text-[11px] mt-2" data-testid="wallet-available-inline">
-                        Depósito disponible:{' '}
-                        <span className={`font-semibold ${availableTotal > 0.01 ? 'text-green-300' : 'text-white/60'}`}>
-                          ${availableTotal.toFixed(2)}
-                        </span>
-                      </p>
+                      {availableTotal > 0.01 && (
+                        <p className="text-white/70 text-[11px] mt-1" data-testid="wallet-available-inline">
+                          Saldo disponible para compras esta semana: <span className="text-green-300 font-semibold">${availableTotal.toFixed(2)}</span>
+                        </p>
+                      )}
                       {hasPendingInvoice && (
                         <p className="text-white/70 text-[11px] mt-1" data-testid="wallet-pending-invoice-inline">
                           Pendiente de facturar ({pendingPurchasesList.length}):{' '}
