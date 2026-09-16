@@ -444,19 +444,20 @@ export default function ClientDashboard() {
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <p className="text-white/70 text-sm font-medium">
-                        {netPosition >= 0 ? 'Saldo Neto a Favor' : 'Debes en Total'}
+                        {hasDebt ? 'Adeudas' : 'Sin deuda'}
                       </p>
                       <p
-                        className={`text-4xl font-extrabold mt-1 ${netPosition >= 0 ? 'text-green-400' : 'text-red-400'}`}
+                        className={`text-4xl font-extrabold mt-1 ${hasDebt ? 'text-red-400' : 'text-green-400'}`}
                         data-testid="wallet-balance"
                       >
-                        {netPosition >= 0 ? '+' : '-'}${Math.abs(netPosition).toFixed(2)}
+                        {hasDebt ? '-' : ''}${pendingDebt.toFixed(2)}
                       </p>
-                      {availableTotal > 0.01 && (
-                        <p className="text-white/70 text-[11px] mt-1" data-testid="wallet-available-inline">
-                          Saldo disponible para compras esta semana: <span className="text-green-300 font-semibold">${availableTotal.toFixed(2)}</span>
-                        </p>
-                      )}
+                      <p className="text-white/70 text-[11px] mt-2" data-testid="wallet-available-inline">
+                        Depósito disponible:{' '}
+                        <span className={`font-semibold ${availableTotal > 0.01 ? 'text-green-300' : 'text-white/60'}`}>
+                          ${availableTotal.toFixed(2)}
+                        </span>
+                      </p>
                       {hasPendingInvoice && (
                         <p className="text-white/70 text-[11px] mt-1" data-testid="wallet-pending-invoice-inline">
                           Pendiente de facturar ({pendingPurchasesList.length}):{' '}
