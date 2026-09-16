@@ -2031,14 +2031,10 @@ async def backfill_recharges(data: dict = None, current_user: dict = Depends(get
             {"$set": {"bank_account_id": target_id, "bank_account_assigned_via": "backfill"}}
         )
         if not existing:
-            # Honor deposit_date read from the OCR (or manually set) so the
-            # backfilled ledger row shows the real deposit date rather than
-            # the approval/creation moment.
-            _dep_date = tx.get("deposit_date") or (tx.get("ai_scan") or {}).get("detected_deposit_date")
-            if _dep_date:
-                _ledger_at = f"{_dep_date}T00:00:00+00:00"
-            else:
-                _ledger_at = tx.get("approved_at") or tx.get("created_at") or datetime.now(timezone.utc).isoformat()
+            # Backfill uses the wallet_transaction's approval/creation moment
+            # as the ledger date — matches the "system entry date" rule for
+            # normal recharges.
+            _ledger_at = tx.get("approved_at") or tx.get("created_at") or datetime.now(timezone.utc).isoformat()
             await db.bank_transactions.insert_one({
                 "id": str(uuid.uuid4()),
                 "tenant_id": tid,
@@ -2053,7 +2049,6 @@ async def backfill_recharges(data: dict = None, current_user: dict = Depends(get
                 "created_by": current_user["user_id"],
                 "created_by_name": actor_name,
                 "created_at": _ledger_at,
-                "deposit_date": _dep_date,
             })
         assigned += 1
     try:
@@ -2100,12 +2095,9 @@ async def assign_bank_account_to_recharge(tx_id: str, data: dict, current_user: 
     await db.bank_transactions.delete_many({"tenant_id": tid, "source_transaction_id": tx_id, "kind": "recharge"})
     if new_account_id and wtx.get("status") == "approved" and not wtx.get("is_deleted"):
         actor_name = await get_actor_name(current_user["user_id"])
-        # Same rule as approve_deposit: honor deposit_date when known.
-        _dep_date = wtx.get("deposit_date") or (wtx.get("ai_scan") or {}).get("detected_deposit_date")
-        if _dep_date:
-            _ledger_at = f"{_dep_date}T00:00:00+00:00"
-        else:
-            _ledger_at = wtx.get("approved_at") or wtx.get("created_at") or datetime.now(timezone.utc).isoformat()
+        # Use the original approval/creation timestamp of the wallet_transaction
+        # (matches system-entry date rule).
+        _ledger_at = wtx.get("approved_at") or wtx.get("created_at") or datetime.now(timezone.utc).isoformat()
         await db.bank_transactions.insert_one({
             "id": str(uuid.uuid4()),
             "tenant_id": tid,
@@ -2120,7 +2112,6 @@ async def assign_bank_account_to_recharge(tx_id: str, data: dict, current_user: 
             "created_by": current_user["user_id"],
             "created_by_name": actor_name,
             "created_at": _ledger_at,
-            "deposit_date": _dep_date,
         })
     return {"message": "Cuenta reasignada", "old": old_account_id, "new": new_account_id}
 
@@ -3731,23 +3722,10 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
             await db.bank_transactions.delete_many({
                 "tenant_id": tid, "source_transaction_id": transaction_id, "kind": "recharge"
             })
-            # Prefer the deposit_date read from the OCR (or manually set on the
-            # wallet_transaction) so the bank ledger reflects the date the
-            # client actually made the deposit, NOT when the admin approved it.
-            # If neither is available, fall back to now().
-            deposit_date_val = (
-                transaction.get("deposit_date")
-                or (transaction.get("ai_scan") or {}).get("detected_deposit_date")
-            )
-            if deposit_date_val:
-                # OCR gives us just a date (YYYY-MM-DD); render as start-of-day
-                # UTC so ordering + PDF exports stay sane.
-                try:
-                    ledger_created_at = f"{deposit_date_val}T00:00:00+00:00"
-                except Exception:
-                    ledger_created_at = datetime.now(timezone.utc).isoformat()
-            else:
-                ledger_created_at = datetime.now(timezone.utc).isoformat()
+            # Ledger row uses the SYSTEM approval timestamp (not the screenshot
+            # date) — the admin explicitly requested this so the accounts
+            # module reflects when the money was booked into the system.
+            ledger_created_at = datetime.now(timezone.utc).isoformat()
             await db.bank_transactions.insert_one({
                 "id": str(uuid.uuid4()),
                 "tenant_id": tid,
@@ -3762,9 +3740,7 @@ async def approve_deposit(transaction_id: str, current_user: dict = Depends(get_
                 "created_by": current_user["user_id"],
                 "created_by_name": user_name,
                 "created_at": ledger_created_at,
-                # Keep the approval timestamp separately for audit purposes.
-                "approved_at": datetime.now(timezone.utc).isoformat(),
-                "deposit_date": deposit_date_val,
+                "approved_at": ledger_created_at,
             })
     except Exception as _bank_err:
         logger.warning(f"[bank_ledger] failed to attribute recharge {transaction_id}: {_bank_err}")
@@ -4212,13 +4188,10 @@ async def admin_create_recharge(
     # appears in /admin/bank-accounts. `resolved_bank_account_id` is now
     # guaranteed to be set thanks to the validations above.
     try:
-        # Use the deposit_date read from the OCR (or manually set) so this
-        # bank-ledger row aligns with the actual bank deposit date, not the
-        # moment the admin registered it.
-        if detected_deposit_date:
-            _ledger_created_at = f"{detected_deposit_date}T00:00:00+00:00"
-        else:
-            _ledger_created_at = datetime.now(timezone.utc).isoformat()
+        # Ledger row uses the SYSTEM entry timestamp (not the screenshot date)
+        # per admin request — the accounts module reflects when the money
+        # was booked into the system, not when the physical deposit happened.
+        _ledger_created_at = datetime.now(timezone.utc).isoformat()
         await db.bank_transactions.insert_one({
             "id": str(uuid.uuid4()),
             "tenant_id": tid,
@@ -4233,8 +4206,7 @@ async def admin_create_recharge(
             "created_by": current_user["user_id"],
             "created_by_name": actor_name,
             "created_at": _ledger_created_at,
-            "approved_at": datetime.now(timezone.utc).isoformat(),
-            "deposit_date": detected_deposit_date,
+            "approved_at": _ledger_created_at,
         })
     except Exception as _bank_err:
         logger.warning(f"[bank_ledger] failed to attribute admin-recharge {tx.id}: {_bank_err}")
