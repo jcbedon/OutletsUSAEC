@@ -1282,7 +1282,12 @@ export default function AdminShipments() {
           let sentCount = 0;
           let fallbackUsedCount = 0;
           filtered.forEach(s => {
-            if (s.marked_sent) sentCount += 1;
+            // "Enviado" = the shipment already left the warehouse. Either the
+            // admin manually flipped the marked_sent checkbox OR the shipment
+            // is already in_transit / delivered.
+            if (s.marked_sent || s.status === "in_transit" || s.status === "delivered") {
+              sentCount += 1;
+            }
             const cat = catMap[String(s.shipping_category || "").toUpperCase()];
             const mode = s.shipping_mode || tenantShippingMode || "packages";
             const qty = mode === "pounds" ? Number(s.weight_pounds || 0) : Number(s.package_count || 0);
