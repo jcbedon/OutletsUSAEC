@@ -1419,30 +1419,6 @@ export default function AdminShipments() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => navigate('/admin/pending-shipments')}
-                        className="h-9 rounded-lg text-xs gap-1.5 bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100"
-                        data-testid="open-pending-shipments-btn"
-                        title="Ver facturas con envío pendiente filtradas por semana"
-                      >
-                        <AlertCircle className="h-3.5 w-3.5" />
-                        Facturas pendientes
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleRunDiagnostic}
-                        className="h-9 rounded-lg text-xs gap-1.5 bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100"
-                        data-testid="open-diagnostic-btn"
-                        title="Diagnosticar envíos de la semana seleccionada"
-                      >
-                        <Stethoscope className="h-3.5 w-3.5" />
-                        Diagnóstico
-                      </Button>
                       <Select value={weekFilter} onValueChange={setWeekFilter}>
                         <SelectTrigger className="w-48 h-9 rounded-lg text-xs bg-white" data-testid="week-filter">
                           <SelectValue placeholder="Filtrar por semana" />
