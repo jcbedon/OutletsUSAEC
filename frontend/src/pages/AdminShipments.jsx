@@ -555,10 +555,10 @@ export default function AdminShipments() {
     const filtered = (weekFilter === "all"
       ? shipments
       : shipments.filter(s => getWeekKey(s.created_at) === weekFilter)
-    ).filter(s => s.marked_sent);
+    );
 
     if (filtered.length === 0) {
-      toast.error("No hay envíos marcados como enviados en el período seleccionado");
+      toast.error("No hay envíos en el período seleccionado");
       return;
     }
     const periodLabel = (() => {
@@ -1269,19 +1269,20 @@ export default function AdminShipments() {
           const totalShipping = filtered.reduce((sum, s) => sum + (s.shipping_cost || 0), 0);
           const totalPackages = filtered.reduce((sum, s) => sum + (s.package_count || 0), 0);
 
-          // Live courier payment: only shipments marked_sent contribute, priced
-          // from the tenant's per-category courier costs. When a shipment has no
-          // matching category or the category has $0 courier rates, we fall
-          // back to its shipping_cost so the total is never $0 while the admin
-          // is still configuring rates.
+          // Live courier payment: ALL shipments in the current week filter
+          // contribute (not only marked_sent), priced from the tenant's
+          // per-category courier costs. When a shipment has no matching
+          // category or the category has $0 courier rates, we fall back to
+          // its shipping_cost so the total is never $0 while the admin is
+          // still configuring rates. The `sentCount` breakdown still shows
+          // how many are already dispatched vs pending.
           const catMap = {};
           (courierCats || []).forEach(c => { catMap[String(c.key || "").toUpperCase()] = c; });
           let courierPaymentTotal = 0;
           let sentCount = 0;
           let fallbackUsedCount = 0;
           filtered.forEach(s => {
-            if (!s.marked_sent) return;
-            sentCount += 1;
+            if (s.marked_sent) sentCount += 1;
             const cat = catMap[String(s.shipping_category || "").toUpperCase()];
             const mode = s.shipping_mode || tenantShippingMode || "packages";
             const qty = mode === "pounds" ? Number(s.weight_pounds || 0) : Number(s.package_count || 0);
@@ -1298,6 +1299,7 @@ export default function AdminShipments() {
               fallbackUsedCount += 1;
             }
           });
+          const totalCountedShipments = filtered.length;
 
           return (
             <>
@@ -1332,7 +1334,9 @@ export default function AdminShipments() {
                         ${courierPaymentTotal.toFixed(2)}
                       </p>
                       <p className="text-[10px] text-purple-700/80 mt-0.5">
-                        {sentCount} envío{sentCount === 1 ? '' : 's'} marcados como enviados
+                        {totalCountedShipments} envío{totalCountedShipments === 1 ? '' : 's'} en la semana
+                        {' · '}
+                        <span className="text-green-700">{sentCount} enviado{sentCount === 1 ? '' : 's'}</span>
                         {fallbackUsedCount > 0 && (
                           <span className="ml-1 text-amber-700" title="Estos envíos no tienen tarifa courier definida por categoría; se suma su shipping_cost.">
                             · {fallbackUsedCount} sin tarifa courier
@@ -1341,9 +1345,9 @@ export default function AdminShipments() {
                       </p>
                     </div>
                   </div>
-                  {/* PDF button — always available when there are sent shipments,
-                      even if tenant hasn't configured category rates. */}
-                  {sentCount > 0 && (
+                  {/* PDF button — available whenever there are shipments in
+                      the current week filter, regardless of marked_sent flag. */}
+                  {totalCountedShipments > 0 && (
                     <div className="flex items-end gap-3">
                       {courierCats && courierCats.length > 0 && (
                         <div className="text-right" data-testid="courier-prices-legend">
