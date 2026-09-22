@@ -577,8 +577,8 @@ export default function AdminShipments() {
       });
       toast.success("Manifiesto PDF generado");
     } catch (e) {
-      console.error(e);
-      toast.error("Error al generar PDF");
+      console.error("PDF manifest error:", e);
+      toast.error(`Error al generar PDF: ${e?.message || e}`);
     }
   };
 
