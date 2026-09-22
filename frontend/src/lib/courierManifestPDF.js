@@ -315,5 +315,22 @@ export async function generateCourierManifestPDF({
   }
 
   const safeName = String(periodLabel || "todos").replace(/[^a-z0-9]+/gi, "_").toLowerCase();
-  doc.save(`manifiesto_paqueteria_${safeName}_${Date.now()}.pdf`);
+  const filename = `manifiesto_paqueteria_${safeName}_${Date.now()}.pdf`;
+  // Explicit blob download — more compatible across browsers/CSPs than doc.save()
+  // which relies on FileSaver internals that can fail silently in production.
+  try {
+    const blob = doc.output("blob");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) {
+    // Fallback to jsPDF's built-in save if blob approach fails
+    doc.save(filename);
+  }
 }
