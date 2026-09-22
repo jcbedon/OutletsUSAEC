@@ -1270,21 +1270,33 @@ export default function AdminShipments() {
           const totalPackages = filtered.reduce((sum, s) => sum + (s.package_count || 0), 0);
 
           // Live courier payment: only shipments marked_sent contribute, priced
-          // from the tenant's per-category courier costs. Computed client-side
-          // so it animates instantly when the admin flips a checkbox.
+          // from the tenant's per-category courier costs. When a shipment has no
+          // matching category or the category has $0 courier rates, we fall
+          // back to its shipping_cost so the total is never $0 while the admin
+          // is still configuring rates.
           const catMap = {};
           (courierCats || []).forEach(c => { catMap[String(c.key || "").toUpperCase()] = c; });
           let courierPaymentTotal = 0;
           let sentCount = 0;
+          let fallbackUsedCount = 0;
           filtered.forEach(s => {
             if (!s.marked_sent) return;
             sentCount += 1;
             const cat = catMap[String(s.shipping_category || "").toUpperCase()];
-            if (!cat) return;
             const mode = s.shipping_mode || tenantShippingMode || "packages";
             const qty = mode === "pounds" ? Number(s.weight_pounds || 0) : Number(s.package_count || 0);
-            const rate = mode === "pounds" ? Number(cat.courier_cost_pounds || 0) : Number(cat.courier_cost_packages || 0);
-            courierPaymentTotal += qty * rate;
+            const rate = cat
+              ? (mode === "pounds" ? Number(cat.courier_cost_pounds || 0) : Number(cat.courier_cost_packages || 0))
+              : 0;
+            const computed = qty * rate;
+            if (computed > 0) {
+              courierPaymentTotal += computed;
+            } else {
+              // Fallback to what the shipment actually cost when no courier
+              // rate is defined for its category.
+              courierPaymentTotal += Number(s.shipping_cost || 0);
+              fallbackUsedCount += 1;
+            }
           });
 
           return (
@@ -1321,21 +1333,30 @@ export default function AdminShipments() {
                       </p>
                       <p className="text-[10px] text-purple-700/80 mt-0.5">
                         {sentCount} envío{sentCount === 1 ? '' : 's'} marcados como enviados
+                        {fallbackUsedCount > 0 && (
+                          <span className="ml-1 text-amber-700" title="Estos envíos no tienen tarifa courier definida por categoría; se suma su shipping_cost.">
+                            · {fallbackUsedCount} sin tarifa courier
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
-                  {courierCats && courierCats.length > 0 && (
-                    <div className="flex items-end gap-3" data-testid="courier-prices-legend">
-                      <div className="text-right">
-                        <p className="text-[9px] uppercase tracking-wider font-semibold text-purple-600/80 mb-0.5">Tarifas actuales</p>
-                        <div className="flex flex-col gap-0.5 items-end">
-                          {courierCats.map((p) => (
-                            <span key={p.key} className="text-[10px] text-purple-700">
-                              <strong>{p.key}:</strong> ${Number(p.courier_cost_packages || 0).toFixed(2)}/pkg · ${Number(p.courier_cost_pounds || 0).toFixed(2)}/lb
-                            </span>
-                          ))}
+                  {/* PDF button — always available when there are sent shipments,
+                      even if tenant hasn't configured category rates. */}
+                  {sentCount > 0 && (
+                    <div className="flex items-end gap-3">
+                      {courierCats && courierCats.length > 0 && (
+                        <div className="text-right" data-testid="courier-prices-legend">
+                          <p className="text-[9px] uppercase tracking-wider font-semibold text-purple-600/80 mb-0.5">Tarifas actuales</p>
+                          <div className="flex flex-col gap-0.5 items-end">
+                            {courierCats.map((p) => (
+                              <span key={p.key} className="text-[10px] text-purple-700">
+                                <strong>{p.key}:</strong> ${Number(p.courier_cost_packages || 0).toFixed(2)}/pkg · ${Number(p.courier_cost_pounds || 0).toFixed(2)}/lb
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
+                      )}
                       <Button
                         type="button"
                         onClick={handleExportCourierManifest}

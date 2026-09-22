@@ -122,14 +122,17 @@ export async function generateCourierManifestPDF({
     const mode = s.shipping_mode || tenantMode || "packages";
     const qty = mode === "pounds" ? Number(s.weight_pounds || 0) : Number(s.package_count || 0);
     const rate = !cat ? 0 : mode === "pounds" ? Number(cat.courier_cost_pounds || 0) : Number(cat.courier_cost_packages || 0);
-    const amount = qty * rate;
+    const computed = qty * rate;
+    // Fallback: if no courier rate configured, use shipping_cost so the
+    // manifest reflects real money movement instead of zeros.
+    const amount = computed > 0 ? computed : Number(s.shipping_cost || 0);
     const key = String(s.shipping_category || "—").toUpperCase();
     if (!catTotals[key]) catTotals[key] = { qty: 0, amount: 0, mode };
     catTotals[key].qty += qty;
     catTotals[key].amount += amount;
     grandQty += qty;
     grandTotal += amount;
-    return { ...s, _qty: qty, _rate: rate, _amount: amount, _mode: mode };
+    return { ...s, _qty: qty, _rate: rate, _amount: amount, _mode: mode, _isFallback: computed <= 0 };
   });
 
   // ── Category summary cards ──────────────────────────────────────────
