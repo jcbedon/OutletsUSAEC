@@ -316,21 +316,41 @@ export async function generateCourierManifestPDF({
 
   const safeName = String(periodLabel || "todos").replace(/[^a-z0-9]+/gi, "_").toLowerCase();
   const filename = `manifiesto_paqueteria_${safeName}_${Date.now()}.pdf`;
-  // Explicit blob download — more compatible across browsers/CSPs than doc.save()
-  // which relies on FileSaver internals that can fail silently in production.
+  // Robust cross-browser + CSP-safe download. jsPDF's doc.save() sometimes
+  // fails silently in production builds (minified/CSP), so we build the blob
+  // ourselves with application/octet-stream to force the download dialog and
+  // keep the anchor alive long enough for slow network conditions.
   try {
-    const blob = doc.output("blob");
+    const rawBlob = doc.output("blob");
+    const blob = new Blob([rawBlob], { type: "application/octet-stream" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;
     a.rel = "noopener";
+    a.style.display = "none";
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    setTimeout(() => {
+      try { document.body.removeChild(a); } catch {}
+      URL.revokeObjectURL(url);
+    }, 10000);
+    return;
   } catch (e) {
-    // Fallback to jsPDF's built-in save if blob approach fails
+    console.error("Blob download failed, trying doc.save:", e);
+  }
+  try {
     doc.save(filename);
+    return;
+  } catch (e) {
+    console.error("doc.save failed, opening in new tab:", e);
+  }
+  // Last resort: open the PDF in a new tab so the user can save it manually
+  // via the browser's built-in PDF viewer toolbar.
+  try {
+    doc.output("dataurlnewwindow");
+  } catch (e) {
+    console.error("dataurlnewwindow also failed:", e);
+    throw new Error("El navegador bloqueó la descarga del PDF. Intenta con otro navegador o desactiva bloqueadores.");
   }
 }
