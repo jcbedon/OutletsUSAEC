@@ -26,9 +26,10 @@ export const BrandBackgroundVideo = () => {
 
   return (
     <>
-      {/* Force-hide the .app-bg::before white overlay for Astrid users so the
-          image isn't washed out by the platform wallpaper layer. */}
+      {/* Force-hide the platform's wallpaper (.app-bg background-image + its
+          white ::before overlay) for Astrid users so our images are visible. */}
       <style>{`
+        .app-bg { background-image: none !important; background-color: transparent !important; }
         .app-bg::before { display: none !important; }
         .astrid-brand-bg-desktop { display: block; }
         .astrid-brand-bg-mobile { display: none; }
