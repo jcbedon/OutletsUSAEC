@@ -41,7 +41,7 @@ export const BrandBackgroundVideo = () => {
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 overflow-hidden"
         style={{ zIndex: -1 }}
-        data-testid="astrid-brand-video-bg"
+        data-testid="astrid-brand-bg"
       >
         {/* Solid gradient fallback — always painted, keeps screen from ever going white */}
         <div
