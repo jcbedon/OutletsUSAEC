@@ -20,8 +20,6 @@ import {
   LogOut,
 } from "lucide-react";
 
-const ASTRID_TENANT_MATCH = /astrid/i;
-
 // Ordered nav for admins/employees. Client dashboards use their own tabbed UI
 // so they don't get the sidebar.
 const ADMIN_NAV = [
@@ -45,9 +43,9 @@ const ROUTE_TITLES = ADMIN_NAV.reduce((acc, n) => {
 }, {});
 
 /**
- * Fixed left sidebar (desktop) + compact back-button header (mobile) for the
- * Astrid Shop tenant. Only renders on /admin/* routes. Client dashboards and
- * public routes are untouched. Non-Astrid tenants never see this component.
+ * Fixed left sidebar (desktop) + compact back-button header (mobile) shown on
+ * every admin/employee route for every tenant. Client dashboards and public
+ * routes are untouched.
  */
 export const AstridSidebar = () => {
   const { user, logout } = useAuth();
@@ -55,23 +53,19 @@ export const AstridSidebar = () => {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const tenantName = user?.tenant_name || "";
-  const tenantSlug = user?.tenant_slug || "";
-  const isAstrid =
-    ASTRID_TENANT_MATCH.test(tenantName) || ASTRID_TENANT_MATCH.test(tenantSlug);
-
   // Only for admin/employee routes. Skip login, register, client dashboard, etc.
   const isAdminRoute = location.pathname.startsWith("/admin");
+  const isAdminUser = user && (user.role === "admin" || user.role === "employee");
 
   // Tag the body while the sidebar is mounted so global CSS can shift the
   // content sideways and hide the legacy in-page top header on admin pages.
   useEffect(() => {
-    if (!isAstrid || !isAdminRoute || !user) return undefined;
+    if (!isAdminRoute || !isAdminUser) return undefined;
     document.body.classList.add("astrid-admin-shell");
     return () => document.body.classList.remove("astrid-admin-shell");
-  }, [isAstrid, isAdminRoute, user]);
+  }, [isAdminRoute, isAdminUser]);
 
-  if (!isAstrid || !isAdminRoute || !user) return null;
+  if (!isAdminRoute || !isAdminUser) return null;
 
   const isDashboardHome = location.pathname === "/admin";
   const currentTitle = ROUTE_TITLES[location.pathname] || "Astrid Shop";
@@ -115,8 +109,8 @@ export const AstridSidebar = () => {
         data-testid="astrid-sidebar"
       >
         <div className="px-5 py-5 border-b border-slate-100">
-          <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Astrid Shop</p>
-          <p className="text-sm font-bold text-slate-800 truncate">{user?.tenant_name || "Astrid Shop"}</p>
+          <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Admin</p>
+          <p className="text-sm font-bold text-slate-800 truncate">{user?.tenant_name || "Panel"}</p>
           <p className="text-xs text-slate-500 truncate">{user?.name || user?.email}</p>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
@@ -197,7 +191,7 @@ export const AstridSidebar = () => {
           <div className="relative bg-white w-72 h-full flex flex-col shadow-xl">
             <div className="flex items-center justify-between px-4 py-4 border-b border-slate-100">
               <div className="min-w-0">
-                <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Astrid Shop</p>
+                <p className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">{user?.tenant_name || "Panel"}</p>
                 <p className="text-sm font-bold text-slate-800 truncate">{user?.name || user?.email}</p>
               </div>
               <button

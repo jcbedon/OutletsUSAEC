@@ -1,26 +1,25 @@
 import { useAuth } from "@/App";
 
 /**
- * Global CSS reset for the "Astrid Shop" tenant. Replaces the platform
- * wallpaper with a clean solid page background so internal modules can
- * render on a professional, readable surface. The actual hero banner is
- * a separate component (AstridHeroBanner) and only appears on the main
- * dashboards. This component is rendered once at the App root.
+ * Global visual reset applied to every authenticated tenant. Replaces the
+ * legacy platform wallpaper with a clean solid page background so internal
+ * modules render on a professional, readable surface. Also reserves layout
+ * space for the persistent sidebar (desktop) / top bar (mobile) when the
+ * admin shell is mounted, and hides the legacy in-page sticky header so the
+ * sidebar becomes the single source of navigation.
+ * The actual hero banner is a separate component (AstridHeroBanner) and only
+ * appears on the main dashboards for tenants that uploaded one.
  */
-const ASTRID_TENANT_MATCH = /astrid/i;
-
 export const BrandBackgroundVideo = () => {
   const { user } = useAuth();
-  const tenantName = user?.tenant_name || "";
-  const tenantSlug = user?.tenant_slug || "";
-  const isAstrid =
-    ASTRID_TENANT_MATCH.test(tenantName) || ASTRID_TENANT_MATCH.test(tenantSlug);
 
-  if (!isAstrid) return null;
+  // Only apply once the user is authenticated. Public routes (login/register)
+  // keep the existing look.
+  if (!user) return null;
 
   return (
-    <style data-testid="astrid-brand-style">{`
-      /* Clean, professional surface for Astrid Shop users on every page. */
+    <style data-testid="tenant-brand-style">{`
+      /* Clean, professional surface for every authenticated tenant. */
       body { background-color: #F7F8FA !important; }
       .app-bg {
         background-image: none !important;
@@ -34,8 +33,8 @@ export const BrandBackgroundVideo = () => {
       @media (max-width: 1023px) {
         body.astrid-admin-shell .app-bg { padding-left: 0; padding-top: 56px; }
       }
-      /* Hide the legacy in-page sticky top header on admin routes for Astrid
-         so the sidebar is the single source of navigation. */
+      /* Hide the legacy in-page sticky top header on admin routes so the
+         sidebar is the single source of navigation. */
       body.astrid-admin-shell .app-bg > .bg-white.sticky { display: none !important; }
 
       /* Mobile-cards helper: on <768px, force wide row layouts inside admin

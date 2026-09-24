@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Percent, X, Link, Truck, Key, Eye, EyeOff, FileText, Package, DollarSign, Landmark, Trash2 } from "lucide-react";
+import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Percent, X, Link, Truck, Key, Eye, EyeOff, FileText, Package, DollarSign, Landmark, Trash2, Image as ImageIcon, Upload } from "lucide-react";
 
 export default function SuperadminDashboard() {
   const { user, logout } = useAuth();
@@ -43,6 +43,10 @@ export default function SuperadminDashboard() {
   const [savingBankAccounts, setSavingBankAccounts] = useState(false);
   const [shippingCategories, setShippingCategories] = useState([]);
   const [shippingMode, setShippingMode] = useState("packages");
+
+  // Banner dialog state
+  const [bannerDialogOpen, setBannerDialogOpen] = useState(false);
+  const [bannerUploading, setBannerUploading] = useState(false);
   
   // Password reset state
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -293,8 +297,7 @@ export default function SuperadminDashboard() {
         bank_name: String(a.bank_name || "").trim(),
         currency: String(a.currency || "USD").trim().toUpperCase(),
       }))
-      .filter((a) => a.owner_name && a.account_number && a.bank_name);
-    setSavingBankAccounts(true);
+      .filter((a) => a.owner_name && a.account_number && a.bank_name);    setSavingBankAccounts(true);
     try {
       await updateTenantBankAccounts(selectedTenant.id, cleaned);
       toast.success("Cuentas bancarias actualizadas");
@@ -303,6 +306,60 @@ export default function SuperadminDashboard() {
       toast.error(e.response?.data?.detail || "Error al guardar");
     } finally {
       setSavingBankAccounts(false);
+    }
+  };
+
+  const openBannerDialog = (tenant) => {
+    setSelectedTenant(tenant);
+    setBannerDialogOpen(true);
+  };
+
+  const handleBannerUpload = async (file) => {
+    if (!selectedTenant || !file) return;
+    setBannerUploading(true);
+    try {
+      const backend = process.env.REACT_APP_BACKEND_URL;
+      const token = JSON.parse(localStorage.getItem("outletsusa_user") || "{}").token;
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`${backend}/api/superadmin/tenants/${selectedTenant.id}/banner`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      // Update local tenant list so preview refreshes immediately
+      setTenants((prev) => prev.map((t) => (t.id === selectedTenant.id ? { ...t, dashboard_banner_url: data.dashboard_banner_url } : t)));
+      setSelectedTenant((prev) => (prev ? { ...prev, dashboard_banner_url: data.dashboard_banner_url } : prev));
+      toast.success("Banner actualizado");
+    } catch (e) {
+      console.error(e);
+      toast.error("Error al subir banner");
+    } finally {
+      setBannerUploading(false);
+    }
+  };
+
+  const handleBannerRemove = async () => {
+    if (!selectedTenant) return;
+    setBannerUploading(true);
+    try {
+      const backend = process.env.REACT_APP_BACKEND_URL;
+      const token = JSON.parse(localStorage.getItem("outletsusa_user") || "{}").token;
+      const res = await fetch(`${backend}/api/superadmin/tenants/${selectedTenant.id}/banner`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setTenants((prev) => prev.map((t) => (t.id === selectedTenant.id ? { ...t, dashboard_banner_url: null } : t)));
+      setSelectedTenant((prev) => (prev ? { ...prev, dashboard_banner_url: null } : prev));
+      toast.success("Banner eliminado");
+    } catch (e) {
+      console.error(e);
+      toast.error("Error al eliminar banner");
+    } finally {
+      setBannerUploading(false);
     }
   };
 
@@ -574,6 +631,15 @@ export default function SuperadminDashboard() {
                         >
                           <Landmark className="h-4 w-4 mr-1" />
                           Cuentas
+                        </Button>
+                        <Button
+                          variant="outline" size="sm"
+                          className="rounded-lg border-pink-200 text-pink-700 hover:bg-pink-50"
+                          onClick={() => openBannerDialog(tenant)}
+                          data-testid={`config-banner-${tenant.id}`}
+                        >
+                          <ImageIcon className="h-4 w-4 mr-1" />
+                          Banner
                         </Button>
                         <Button
                           variant="outline" size="sm"
@@ -1263,6 +1329,81 @@ export default function SuperadminDashboard() {
                 Guardar Configuración
               </Button>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Banner Upload Dialog */}
+        <Dialog open={bannerDialogOpen} onOpenChange={setBannerDialogOpen}>
+          <DialogContent className="rounded-2xl max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ImageIcon className="h-5 w-5 text-pink-600" />
+                Banner del Dashboard
+              </DialogTitle>
+            </DialogHeader>
+            {selectedTenant && (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm text-slate-600">
+                    <span className="font-semibold">{selectedTenant.business_name}</span>
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Se muestra al tope del dashboard principal (mismo image en escritorio y móvil). Se recomienda una imagen horizontal 2000×760 o similar; se ajusta con object-fit: cover.
+                  </p>
+                </div>
+
+                {selectedTenant.dashboard_banner_url ? (
+                  <div className="rounded-xl overflow-hidden border border-slate-200">
+                    <img
+                      src={
+                        selectedTenant.dashboard_banner_url.startsWith("http")
+                          ? selectedTenant.dashboard_banner_url
+                          : `${process.env.REACT_APP_BACKEND_URL}${selectedTenant.dashboard_banner_url}`
+                      }
+                      alt="Banner actual"
+                      className="w-full h-40 object-cover bg-slate-50"
+                    />
+                  </div>
+                ) : (
+                  <div className="rounded-xl border-2 border-dashed border-slate-200 h-40 flex items-center justify-center text-sm text-slate-400">
+                    Sin banner configurado
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-2">
+                  <label className="cursor-pointer">
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      className="hidden"
+                      data-testid="banner-upload-input"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleBannerUpload(f);
+                        e.target.value = "";
+                      }}
+                      disabled={bannerUploading}
+                    />
+                    <div className="w-full h-11 rounded-xl bg-pink-600 hover:bg-pink-700 text-white flex items-center justify-center gap-2 text-sm font-semibold transition">
+                      <Upload className="h-4 w-4" />
+                      {bannerUploading ? "Subiendo..." : selectedTenant.dashboard_banner_url ? "Cambiar imagen" : "Subir imagen"}
+                    </div>
+                  </label>
+                  {selectedTenant.dashboard_banner_url && (
+                    <Button
+                      variant="outline"
+                      className="w-full h-11 rounded-xl border-red-200 text-red-600 hover:bg-red-50"
+                      onClick={handleBannerRemove}
+                      disabled={bannerUploading}
+                      data-testid="banner-remove-btn"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Quitar banner
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>

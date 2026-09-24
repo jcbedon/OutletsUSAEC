@@ -230,6 +230,7 @@ class Tenant(BaseModel):
     owner_name: str
     email: str
     logo_url: Optional[str] = None
+    dashboard_banner_url: Optional[str] = None  # Hero banner shown at the top of the tenant's dashboard (desktop + mobile)
     status: str = "active"
     tax_options: List[dict] = Field(default_factory=lambda: [
         {"value": "8.25", "label": "8.25%"},
@@ -1054,7 +1055,7 @@ async def auth_me(current_user: dict = Depends(get_current_user)):
     tenant_logo = None
     tenant_slug = None
     if profile.get("tenant_id"):
-        tenant = await db.tenants.find_one({"id": profile["tenant_id"]}, {"_id": 0, "business_name": 1, "logo_url": 1, "slug": 1})
+        tenant = await db.tenants.find_one({"id": profile["tenant_id"]}, {"_id": 0, "business_name": 1, "logo_url": 1, "slug": 1, "dashboard_banner_url": 1})
         if tenant:
             tenant_name = tenant.get("business_name")
             tenant_logo = tenant.get("logo_url")
@@ -1067,6 +1068,7 @@ async def auth_me(current_user: dict = Depends(get_current_user)):
         "tenant_name": tenant_name,
         "tenant_logo": tenant_logo,
         "tenant_slug": tenant_slug,
+        "tenant_banner": (tenant or {}).get("dashboard_banner_url") if profile.get("tenant_id") else None,
         "permissions": profile.get("permissions") or {},
         "customer_id": profile.get("customer_id"),
         "email": profile.get("email"),
@@ -2314,6 +2316,42 @@ async def upload_tenant_logo(file: UploadFile = File(...), current_user: dict = 
     logo_url = f"/api/uploads/{obj_path}"
     await db.tenants.update_one({"id": tenant_id}, {"$set": {"logo_url": logo_url}})
     return {"logo_url": logo_url}
+
+
+@api_router.post("/superadmin/tenants/{tenant_id}/banner")
+async def upload_tenant_banner(
+    tenant_id: str,
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+):
+    """Upload the tenant's dashboard hero banner (used at the top of the main
+    dashboard on both desktop and mobile). Superadmin only."""
+    if current_user.get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tenant = await db.tenants.find_one({"id": tenant_id}, {"_id": 0, "id": 1})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else "webp"
+    if ext not in {"png", "jpg", "jpeg", "webp", "gif"}:
+        raise HTTPException(status_code=400, detail="Formato de imagen no soportado")
+    filename = f"{tenant_id}_banner.{ext}"
+    file_data = await file.read()
+    obj_path = object_store.upload_file(file_data, filename, "banners")
+    banner_url = f"/api/uploads/{obj_path}"
+    await db.tenants.update_one({"id": tenant_id}, {"$set": {"dashboard_banner_url": banner_url}})
+    return {"dashboard_banner_url": banner_url}
+
+
+@api_router.delete("/superadmin/tenants/{tenant_id}/banner")
+async def delete_tenant_banner(tenant_id: str, current_user: dict = Depends(get_current_user)):
+    """Clear the dashboard hero banner for a tenant. Superadmin only."""
+    if current_user.get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="No autorizado")
+    result = await db.tenants.update_one({"id": tenant_id}, {"$set": {"dashboard_banner_url": None}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    return {"success": True}
+
 
 # ==================== ADMIN CLIENT ENDPOINTS ====================
 
