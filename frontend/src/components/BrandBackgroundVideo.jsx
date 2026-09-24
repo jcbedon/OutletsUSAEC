@@ -27,6 +27,32 @@ export const BrandBackgroundVideo = () => {
         background-color: #F7F8FA !important;
       }
       .app-bg::before { display: none !important; }
+      /* Reserve space for the persistent left sidebar on desktop and the
+         compact top bar on mobile — only on admin routes where the sidebar
+         actually mounts (body carries .astrid-admin-shell then). */
+      body.astrid-admin-shell .app-bg { padding-left: 240px; }
+      @media (max-width: 1023px) {
+        body.astrid-admin-shell .app-bg { padding-left: 0; padding-top: 56px; }
+      }
+      /* Hide the legacy in-page sticky top header on admin routes for Astrid
+         so the sidebar is the single source of navigation. */
+      body.astrid-admin-shell .app-bg > .bg-white.sticky { display: none !important; }
+
+      /* Mobile-cards helper: on <768px, force wide row layouts inside admin
+         pages to wrap so content never overflows horizontally. Non-destructive
+         — desktop layout is untouched. */
+      @media (max-width: 767px) {
+        body.astrid-admin-shell .app-bg { overflow-x: hidden; }
+        body.astrid-admin-shell .app-bg [class*="flex items-center justify-between"] {
+          flex-wrap: wrap;
+          row-gap: 8px;
+        }
+        body.astrid-admin-shell .app-bg table {
+          display: block;
+          overflow-x: auto;
+          white-space: nowrap;
+        }
+      }
     `}</style>
   );
 };

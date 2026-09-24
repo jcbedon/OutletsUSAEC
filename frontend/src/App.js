@@ -25,6 +25,7 @@ import AdminPendingShipments from "@/pages/AdminPendingShipments";
 import AdminBankAccounts from "@/pages/AdminBankAccounts";
 import SuperadminDashboard from "@/pages/SuperadminDashboard";
 import { BrandBackgroundVideo } from "@/components/BrandBackgroundVideo";
+import AstridSidebar from "@/components/AstridSidebar";
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -161,6 +162,7 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <BrandBackgroundVideo />
+        <AstridSidebar />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
