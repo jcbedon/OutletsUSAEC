@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { uploadTenantLogo } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
+import AstridHeroBanner from "@/components/AstridHeroBanner";
 const DEFAULT_LOGO = "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
 
 // Week boundary: Monday 12:00 local → next Monday 11:59:59 local.
@@ -264,6 +265,8 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      <AstridHeroBanner />
 
       <div className="max-w-4xl mx-auto px-4 py-6">
         {/* Active Live Banner */}

@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { generateInvoicePDF } from "@/lib/invoicePDF";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
+import AstridHeroBanner from "@/components/AstridHeroBanner";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -397,6 +398,8 @@ export default function ClientDashboard() {
           </Button>
         </div>
       </div>
+
+      <AstridHeroBanner />
 
       {/* Wallet Card */}
       <div className="max-w-lg mx-auto px-4 pt-4">
