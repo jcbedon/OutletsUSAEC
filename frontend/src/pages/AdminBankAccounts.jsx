@@ -23,6 +23,9 @@ import {
   HelpCircle,
   Sparkles,
   RotateCcw,
+  Plus,
+  Trash2,
+  Settings2,
 } from "lucide-react";
 import {
   getBankAccountsSummary,
@@ -33,6 +36,8 @@ import {
   listUnassignedRecharges,
   assignBankAccountToRecharge,
   zeroOutBankAccount,
+  listBankAccounts,
+  updateBankAccounts,
 } from "@/lib/api";
 import { generateBankStatementPDF } from "@/lib/bankStatementPDF";
 
@@ -76,6 +81,11 @@ export default function AdminBankAccounts() {
   const [unassignedLoading, setUnassignedLoading] = useState(false);
   // Per-row pending choice {tx_id: accountId} before pressing "Asignar"
   const [pendingAssign, setPendingAssign] = useState({});
+  // ── Manage accounts (add/edit/remove bank accounts) ──
+  const [manageOpen, setManageOpen] = useState(false);
+  const [editAccounts, setEditAccounts] = useState([]);
+  const [savingAccounts, setSavingAccounts] = useState(false);
+  const [manageLoading, setManageLoading] = useState(false);
 
   const loadSummary = async () => {
     setLoading(true);
@@ -110,6 +120,57 @@ export default function AdminBankAccounts() {
 
   useEffect(() => { loadSummary(); }, []);
   useEffect(() => { if (selected?.id) loadLedger(selected.id); }, [selected?.id]);
+
+  // ── Manage accounts ──
+  const openManage = async () => {
+    setManageOpen(true);
+    setManageLoading(true);
+    try {
+      const res = await listBankAccounts();
+      setEditAccounts(res.data.bank_accounts || []);
+    } catch (e) {
+      toast.error("Error al cargar cuentas");
+    } finally {
+      setManageLoading(false);
+    }
+  };
+
+  const updateAccountField = (idx, key, val) => {
+    setEditAccounts((prev) => prev.map((a, i) => (i === idx ? { ...a, [key]: val } : a)));
+  };
+
+  const addAccount = () => {
+    setEditAccounts((prev) => [
+      ...prev,
+      { id: "", owner_name: "", owner_id: "", account_number: "", bank_name: "", currency: "USD", is_active: true },
+    ]);
+  };
+
+  const removeAccount = (idx) => {
+    setEditAccounts((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const saveAccounts = async () => {
+    const cleaned = editAccounts
+      .map((a) => ({
+        ...a,
+        owner_name: String(a.owner_name || "").trim(),
+        account_number: String(a.account_number || "").trim(),
+        bank_name: String(a.bank_name || "").trim(),
+      }))
+      .filter((a) => a.owner_name && a.account_number && a.bank_name);
+    setSavingAccounts(true);
+    try {
+      await updateBankAccounts(cleaned);
+      toast.success("Cuentas bancarias actualizadas");
+      setManageOpen(false);
+      await loadSummary();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Error al guardar cuentas");
+    } finally {
+      setSavingAccounts(false);
+    }
+  };
 
   const openDeposit = () => {
     setForm({ amount: "", description: "", reference_number: "" });
@@ -324,6 +385,7 @@ export default function AdminBankAccounts() {
               <p className="text-xs text-indigo-200">Banca en línea · {summary?.tenant_name || ""}</p>
             </div>
           </div>
+          <div className="flex items-center gap-2">
           <Button
             variant="ghost"
             size="sm"
@@ -334,6 +396,16 @@ export default function AdminBankAccounts() {
             <RefreshCw className="h-4 w-4 mr-1" />
             Actualizar
           </Button>
+          <Button
+            size="sm"
+            onClick={openManage}
+            className="bg-white text-indigo-800 hover:bg-indigo-50 rounded-lg gap-1 font-semibold"
+            data-testid="manage-accounts-btn"
+          >
+            <Plus className="h-4 w-4" />
+            Gestionar cuentas
+          </Button>
+          </div>
         </div>
         {/* Grand-balance hero */}
         <div className="max-w-6xl mx-auto px-4 pb-6">
@@ -375,8 +447,16 @@ export default function AdminBankAccounts() {
               <Landmark className="h-12 w-12 mx-auto text-indigo-300 mb-3" />
               <p className="text-lg font-bold text-slate-800">Aún no tienes cuentas configuradas</p>
               <p className="text-sm text-slate-500 mt-1">
-                Pídele al Superadmin que configure las cuentas bancarias de la empresa.
+                Agrega la primera cuenta bancaria para empezar a registrar movimientos y atribuir recargas.
               </p>
+              <Button
+                onClick={openManage}
+                className="mt-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg gap-1"
+                data-testid="empty-add-account-btn"
+              >
+                <Plus className="h-4 w-4" />
+                Agregar cuenta
+              </Button>
             </CardContent>
           </Card>
         ) : (
@@ -856,6 +936,149 @@ export default function AdminBankAccounts() {
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 mt-3">
             <Button variant="outline" onClick={() => setUnassignedOpen(false)}>
               Cerrar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage bank accounts dialog (add / edit / remove) */}
+      <Dialog open={manageOpen} onOpenChange={setManageOpen}>
+        <DialogContent className="rounded-2xl max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings2 className="h-5 w-5 text-indigo-600" />
+              Gestionar Cuentas Bancarias
+            </DialogTitle>
+            <p className="text-xs text-slate-500 mt-1">
+              Configura las cuentas donde los clientes envían sus recargas. El sistema usa el número de cuenta o el nombre del beneficiario para atribuir cada recarga aprobada.
+            </p>
+          </DialogHeader>
+
+          <div className="space-y-3 pt-2">
+            {manageLoading ? (
+              <div className="text-center py-8 text-slate-500 text-sm">Cargando…</div>
+            ) : (
+              <>
+                {editAccounts.length === 0 && (
+                  <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                    <Landmark className="h-10 w-10 mx-auto text-slate-300 mb-2" />
+                    <p className="text-sm text-slate-500 font-medium">Sin cuentas bancarias configuradas</p>
+                    <p className="text-xs text-slate-400 mt-1">Agrega la primera para empezar</p>
+                  </div>
+                )}
+
+                {editAccounts.map((acc, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50/40 to-white p-3 space-y-2"
+                    data-testid={`edit-bank-account-row-${idx}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-indigo-700">
+                        Cuenta #{idx + 1}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeAccount(idx)}
+                        className="h-7 w-7 p-0 text-red-500 hover:bg-red-50"
+                        data-testid={`remove-edit-account-${idx}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-xs font-semibold text-slate-700">Nombre del banco</Label>
+                        <Input
+                          value={acc.bank_name || ""}
+                          onChange={(e) => updateAccountField(idx, "bank_name", e.target.value)}
+                          placeholder="Ej: Banco Pichincha"
+                          className="h-9 rounded-lg"
+                          data-testid={`edit-bank-name-${idx}`}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs font-semibold text-slate-700">Número de cuenta</Label>
+                        <Input
+                          value={acc.account_number || ""}
+                          onChange={(e) => updateAccountField(idx, "account_number", e.target.value)}
+                          placeholder="Ej: 2200123456"
+                          className="h-9 rounded-lg font-mono"
+                          data-testid={`edit-account-number-${idx}`}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs font-semibold text-slate-700">Nombre del dueño</Label>
+                        <Input
+                          value={acc.owner_name || ""}
+                          onChange={(e) => updateAccountField(idx, "owner_name", e.target.value)}
+                          placeholder="Ej: Juan Pérez"
+                          className="h-9 rounded-lg"
+                          data-testid={`edit-owner-name-${idx}`}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs font-semibold text-slate-700">Cédula / ID</Label>
+                        <Input
+                          value={acc.owner_id || ""}
+                          onChange={(e) => updateAccountField(idx, "owner_id", e.target.value)}
+                          placeholder="Ej: 1712345678"
+                          className="h-9 rounded-lg font-mono"
+                          data-testid={`edit-owner-id-${idx}`}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs font-semibold text-slate-700">Moneda</Label>
+                        <Input
+                          value={acc.currency || "USD"}
+                          onChange={(e) => updateAccountField(idx, "currency", e.target.value.toUpperCase())}
+                          placeholder="USD"
+                          maxLength={3}
+                          className="h-9 rounded-lg uppercase"
+                          data-testid={`edit-currency-${idx}`}
+                        />
+                      </div>
+                      <label className="flex items-end gap-2 pb-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={acc.is_active !== false}
+                          onChange={(e) => updateAccountField(idx, "is_active", e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300 text-indigo-600"
+                          data-testid={`edit-active-${idx}`}
+                        />
+                        <span className="text-xs font-semibold text-slate-700">Cuenta activa</span>
+                      </label>
+                    </div>
+                  </div>
+                ))}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={addAccount}
+                  className="w-full h-10 rounded-xl border-dashed border-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                  data-testid="add-edit-account-btn"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Agregar cuenta bancaria
+                </Button>
+              </>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 mt-3">
+            <Button type="button" variant="outline" onClick={() => setManageOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={saveAccounts}
+              disabled={savingAccounts || manageLoading}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white"
+              data-testid="save-edit-accounts-btn"
+            >
+              {savingAccounts ? "Guardando..." : "Guardar Cuentas"}
             </Button>
           </div>
         </DialogContent>

@@ -178,3 +178,10 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
 - Solape del sidebar: `AdminInvoices.jsx` y `AdminBankAccounts.jsx` no tenían la clase `app-bg`, por lo que el desplazamiento global `padding-left:240px` no aplicaba y el sidebar tapaba el contenido. Añadida la clase `app-bg` en la raíz de ambas páginas.
 - Nota: el banner solo aparece si el tenant tiene `dashboard_banner_url` subido (Superadmin → Banner). La respuesta de login NO incluye `tenant_banner`; solo `/auth/me` (tras recargar) lo pobla. Por eso puede no verse justo después de iniciar sesión hasta recargar la página.
 
+
+## 2026-06 — Gestión de cuentas bancarias desde el módulo Cuentas (admin)
+- Backend: nuevo `PUT /api/admin/bank-accounts` (misma normalización que el endpoint superadmin `_normalize_bank_accounts`, pero scoped al tenant del usuario). Admin siempre permitido; empleado requiere permiso `manage_bank_accounts`.
+- Frontend `AdminBankAccounts.jsx`: botón "Gestionar cuentas" en el header + botón "Agregar cuenta" en el estado vacío, con diálogo para agregar/editar/eliminar cuentas (replica el diálogo de SuperadminDashboard). API `updateBankAccounts` en `lib/api.js`.
+- Nota IMPORTANTE: el PUT reemplaza la lista COMPLETA (igual que superadmin). El diálogo carga primero todas las cuentas vía `listBankAccounts`, por lo que al guardar se preservan las existentes. No llamar el PUT con una lista parcial.
+- Verificado E2E: crear cuenta desde la UI (aparece como tarjeta) y eliminar preserva las cuentas restantes.
+

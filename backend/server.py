@@ -1677,6 +1677,26 @@ async def list_bank_accounts_admin(current_user: dict = Depends(get_current_user
     return {"bank_accounts": (tenant or {}).get("bank_accounts", [])}
 
 
+@api_router.put("/admin/bank-accounts")
+async def update_bank_accounts_admin(data: dict, current_user: dict = Depends(get_current_user)):
+    """Admin (or employee with the banking permission) manages the bank
+    accounts of their OWN tenant — same normalization/logic as the superadmin
+    endpoint, but scoped to the caller's tenant."""
+    if current_user["role"] not in ("admin", "employee"):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    if current_user["role"] == "employee":
+        emp = await db.employees.find_one({"id": current_user["user_id"]}, {"_id": 0, "permissions": 1})
+        if not emp or not emp.get("permissions", {}).get("manage_bank_accounts"):
+            raise HTTPException(status_code=403, detail="No tienes permiso para gestionar cuentas bancarias")
+    tid = current_user["tenant_id"]
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "id": 1})
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant no encontrado")
+    normalized = _normalize_bank_accounts(data.get("bank_accounts", []))
+    await db.tenants.update_one({"id": tid}, {"$set": {"bank_accounts": normalized}})
+    return {"message": "Cuentas bancarias actualizadas", "bank_accounts": normalized}
+
+
 async def _compute_account_balance(tenant_id: str, account_id: str) -> dict:
     """Sum recharge + manual deposits (credits) − withdrawals (debits).
 
