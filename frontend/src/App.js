@@ -100,6 +100,21 @@ const AuthProvider = ({ children }) => {
   const login = (userData) => {
     setUser(userData);
     localStorage.setItem("outletsusa_user", JSON.stringify(userData));
+    // The login response omits some tenant fields (e.g. the dashboard banner).
+    // Refresh the profile from /auth/me right away so the banner and any other
+    // fresh fields appear instantly, without needing a manual page reload.
+    import("@/lib/api").then(({ authMe }) => {
+      authMe()
+        .then((res) => {
+          const current = JSON.parse(localStorage.getItem("outletsusa_user") || "null");
+          if (!current) return; // logged out mid-flight
+          const fresh = { ...current, ...res.data };
+          if (current.token) fresh.token = current.token; // preserve token
+          setUser(fresh);
+          localStorage.setItem("outletsusa_user", JSON.stringify(fresh));
+        })
+        .catch(() => {/* keep the login payload if the refresh fails */});
+    });
   };
 
   const logout = () => {
