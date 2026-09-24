@@ -20,12 +20,15 @@ export const BrandBackgroundVideo = () => {
   return (
     <style data-testid="tenant-brand-style">{`
       /* Clean, professional surface for every authenticated tenant. */
-      body { background-color: #F7F8FA !important; }
+      body { background-color: #FFF7FA !important; }
       .app-bg {
         background-image: none !important;
-        background-color: #F7F8FA !important;
+        background-color: #FFF7FA !important;
       }
       .app-bg::before { display: none !important; }
+      /* Night mode surfaces. */
+      html.dark body { background-color: #0f1420 !important; }
+      html.dark .app-bg { background-color: #0f1420 !important; }
       /* Reserve space for the persistent left sidebar on desktop and the
          compact top bar on mobile — only on admin routes where the sidebar
          actually mounts (body carries .astrid-admin-shell then). */

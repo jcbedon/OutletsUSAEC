@@ -150,3 +150,63 @@ input[type="number"] {
         display: contents !important;
     }
 }
+
+/* ============ LIGHT (default) SOFT SURFACE ============ */
+body { background-color: #FFF7FA; }
+
+/* ============ DARK THEME (night mode) ============ */
+.dark {
+    --background: 222 32% 12%;
+    --foreground: 210 40% 96%;
+    --card: 222 26% 16%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 26% 16%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 213 60% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 20% 22%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 222 20% 22%;
+    --muted-foreground: 215 18% 68%;
+    --accent: 145 55% 46%;
+    --accent-foreground: 0 0% 100%;
+    --border: 222 18% 26%;
+    --input: 222 18% 26%;
+    --ring: 213 60% 58%;
+}
+
+/* Surfaces that use hardcoded utility colors */
+.dark .bg-white,
+.dark .bg-slate-50, .dark .bg-gray-50,
+.dark .bg-slate-100, .dark .bg-gray-100 { background-color: #1a2233 !important; }
+
+/* Left sidebar / shells */
+.dark aside { background-color: #141b29 !important; }
+
+/* Borders */
+.dark .border-slate-100, .dark .border-slate-200,
+.dark .border-gray-100, .dark .border-gray-200 { border-color: #2a3448 !important; }
+
+/* Text */
+.dark .text-slate-900, .dark .text-slate-800,
+.dark .text-gray-900, .dark .text-gray-800 { color: #e8edf5 !important; }
+.dark .text-slate-700, .dark .text-slate-600,
+.dark .text-gray-700, .dark .text-gray-600 { color: #c3cddc !important; }
+.dark .text-slate-500, .dark .text-slate-400,
+.dark .text-gray-500, .dark .text-gray-400 { color: #8b97ab !important; }
+
+/* Inputs */
+.dark input, .dark textarea, .dark select { background-color: #0f1626 !important; color: #e8edf5 !important; border-color: #2a3448 !important; }
+.dark input::placeholder, .dark textarea::placeholder { color: #6b7686 !important; }
+
+/* Hover helpers */
+.dark .hover\:bg-slate-100:hover, .dark .hover\:bg-gray-100:hover,
+.dark .hover\:bg-slate-50:hover, .dark .hover\:bg-gray-50:hover { background-color: #232c3f !important; }
+
+/* Hero banner surface */
+.dark .tenant-hero { background: #0f1420 !important; }
+
+/* Scrollbar */
+.dark ::-webkit-scrollbar-thumb { background: #3a4658; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #4a586d; }
+

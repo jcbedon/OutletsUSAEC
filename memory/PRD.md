@@ -185,3 +185,11 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
 - Nota IMPORTANTE: el PUT reemplaza la lista COMPLETA (igual que superadmin). El diálogo carga primero todas las cuentas vía `listBankAccounts`, por lo que al guardar se preservan las existentes. No llamar el PUT con una lista parcial.
 - Verificado E2E: crear cuenta desde la UI (aparece como tarjeta) y eliminar preserva las cuentas restantes.
 
+
+## 2026-06 — Toggle de tema claro/oscuro
+- Nuevo `components/ThemeToggle.jsx`: botón muy pequeño (h-7 w-7, icono Sun/Moon) que alterna claro/oscuro, persiste en `localStorage["astrid_theme"]` y togglea la clase `dark` en `<html>` (Tailwind `darkMode: "class"`). Sincroniza instancias vía evento `astrid-theme-change`.
+- Ubicación: footer del sidebar (desktop) y topbar móvil en `AstridSidebar.jsx`.
+- `App.js`: aplica el tema guardado a nivel de módulo (antes del render) para evitar flash.
+- Claro: fondo suave `#FFF7FA` (en `BrandBackgroundVideo.jsx` e `index.css`). Oscuro: paleta noche (#0f1420) con overrides en `index.css` — tokens shadcn bajo `.dark` (background/card/popover/border/input/etc.) + overrides de utilidades hardcoded (`.bg-white`, `.text-slate-*`, `.border-*`, `aside`, inputs, `.tenant-hero`). Los badges de color se conservan.
+- Verificado con screenshots: dashboard, tabla de Facturas y diálogos legibles en oscuro; fondo suave en claro.
+

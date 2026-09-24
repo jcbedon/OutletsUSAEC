@@ -19,6 +19,7 @@ import {
   X,
   LogOut,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 // Ordered nav for admins/employees. Client dashboards use their own tabbed UI
 // so they don't get the sidebar.
@@ -129,15 +130,16 @@ export const AstridSidebar = () => {
             );
           })}
         </nav>
-        <div className="px-3 py-3 border-t border-slate-100">
+        <div className="px-3 py-3 border-t border-slate-100 flex items-center gap-2">
           <button
             onClick={handleLogout}
-            className="astrid-nav-item w-full"
+            className="astrid-nav-item flex-1"
             data-testid="astrid-sidebar-logout"
           >
             <LogOut className="h-4 w-4" />
             <span>Salir</span>
           </button>
+          <ThemeToggle />
         </div>
       </aside>
 
@@ -168,6 +170,7 @@ export const AstridSidebar = () => {
         <p className="flex-1 text-sm font-semibold text-slate-800 truncate" data-testid="astrid-mobile-title">
           {currentTitle}
         </p>
+        <ThemeToggle />
         <button
           onClick={() => setMobileOpen(true)}
           className="p-2 rounded-lg hover:bg-slate-100"

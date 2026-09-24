@@ -27,6 +27,15 @@ import SuperadminDashboard from "@/pages/SuperadminDashboard";
 import { BrandBackgroundVideo } from "@/components/BrandBackgroundVideo";
 import AstridSidebar from "@/components/AstridSidebar";
 
+// Apply the saved theme as early as possible to avoid a flash of the wrong theme.
+try {
+  if (localStorage.getItem("astrid_theme") === "dark") {
+    document.documentElement.classList.add("dark");
+  }
+} catch (_e) {
+  /* ignore */
+}
+
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
