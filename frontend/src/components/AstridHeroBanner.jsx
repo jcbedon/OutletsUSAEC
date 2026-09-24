@@ -4,7 +4,8 @@ import { useAuth } from "@/App";
  * Inline top hero banner used on the main dashboards for every tenant that
  * has uploaded a dashboard banner (managed from the superadmin panel).
  * Renders in-flow (not fixed). Uses the SAME image on desktop and mobile —
- * `object-fit: cover` keeps the composition centered on any aspect ratio.
+ * `object-fit: contain` shows the COMPLETE composition (no aggressive crop),
+ * centered on a clean surface with light margins when the ratios differ.
  * If the tenant has no banner configured, nothing renders.
  */
 export const AstridHeroBanner = () => {
@@ -25,17 +26,24 @@ export const AstridHeroBanner = () => {
         .tenant-hero {
           width: 100%;
           overflow: hidden;
-          background: linear-gradient(135deg, #f5efe6 0%, #eadcc5 45%, #d8bfa1 100%);
+          background: #F7F8FA;
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
         .tenant-hero-img {
           width: 100%;
+          height: 100%;
           display: block;
-          object-fit: cover;
+          object-fit: contain;
           object-position: center;
-          height: 300px;
         }
-        @media (min-width: 1440px) { .tenant-hero-img { height: 340px; } }
-        @media (max-width: 767px)  { .tenant-hero-img { height: 200px; } }
+        /* Desktop: adapt height to the image ratio within a comfortable band. */
+        .tenant-hero { height: 360px; }
+        @media (min-width: 1440px) { .tenant-hero { height: 420px; } }
+        /* Mobile: preserve the full composition without cropping the subject. */
+        @media (max-width: 767px)  { .tenant-hero { height: 240px; } }
+        @media (max-width: 400px)  { .tenant-hero { height: 200px; } }
       `}</style>
       <div className="tenant-hero" data-testid="tenant-hero-banner" aria-hidden="true">
         <img

@@ -172,3 +172,9 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
 - `/app/frontend/src/pages/AdminWallet.jsx`
 - `/app/frontend/src/pages/AdminBankAccounts.jsx`
 - `/app/frontend/src/pages/SuperadminDashboard.jsx`
+
+## 2026-06 — Fix banner + solape sidebar
+- Banner hero (`AstridHeroBanner.jsx`): cambiado de `object-fit: cover` a `contain` para mostrar la composición completa sin recorte agresivo; fondo limpio `#F7F8FA`, centrado, alturas 360px desktop / 420px ≥1440 / 240px móvil / 200px <400px.
+- Solape del sidebar: `AdminInvoices.jsx` y `AdminBankAccounts.jsx` no tenían la clase `app-bg`, por lo que el desplazamiento global `padding-left:240px` no aplicaba y el sidebar tapaba el contenido. Añadida la clase `app-bg` en la raíz de ambas páginas.
+- Nota: el banner solo aparece si el tenant tiene `dashboard_banner_url` subido (Superadmin → Banner). La respuesta de login NO incluye `tenant_banner`; solo `/auth/me` (tras recargar) lo pobla. Por eso puede no verse justo después de iniciar sesión hasta recargar la página.
+

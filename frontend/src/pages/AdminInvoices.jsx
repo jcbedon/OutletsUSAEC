@@ -292,7 +292,7 @@ export default function AdminInvoices() {
   const annulledCount = invoices.filter(i => i.is_annulled).length;
 
   return (
-    <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #F8FAFC 0%, #EEF2FF 100%)' }}>
+    <div className="app-bg min-h-screen" style={{ background: 'linear-gradient(135deg, #F8FAFC 0%, #EEF2FF 100%)' }}>
       {/* Header - White Style */}
       <div className="sticky top-0 z-10 bg-white border-b border-gray-100 shadow-sm">
         <div className="px-6 py-4 flex items-center justify-between">

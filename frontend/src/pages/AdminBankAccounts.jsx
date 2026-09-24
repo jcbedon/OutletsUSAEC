@@ -302,7 +302,7 @@ export default function AdminBankAccounts() {
   })();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/40 to-slate-50 pb-12">
+    <div className="app-bg min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/40 to-slate-50 pb-12">
       {/* Header — banking-style hero */}
       <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900 text-white">
         <div className="max-w-6xl mx-auto px-4 py-5 flex items-center justify-between gap-3">
