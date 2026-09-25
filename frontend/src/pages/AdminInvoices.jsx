@@ -315,7 +315,10 @@ export default function AdminInvoices() {
             </Button>
           </div>
         </div>
-        
+      </div>
+
+      {/* Module actions bar — kept outside the hidden top header so it stays visible */}
+      <div className="pt-4">
         {/* Blue Banner - Module Info */}
         <div className="px-6 pb-4">
           <div className="rounded-2xl p-4 flex items-center justify-between" style={{ background: '#1E3A5F' }}>
