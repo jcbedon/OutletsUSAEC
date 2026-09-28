@@ -233,3 +233,6 @@ Problema: `recalculate_client_invoices` redistribuía depósitos entre facturas 
 
 ## 2026-06 — Fix layout PDF Envíos (TOTAL ENVÍOS)
 - Se montaba sobre PERÍODO (posición fija margin+240 y periodLabel largo). Ahora TOTAL ENVÍOS es una píldora lila pastel (#EDE9FE) con texto gris (#6B7280) alineada a la derecha; PERÍODO a la izquierda con recorte de seguridad. `lib/courierManifestPDF.js` bloque META.
+
+## 2026-06 — PDF Envíos: paleta lila pastel + negro, encabezado blanco con recuadro lila
+- `lib/courierManifestPDF.js`: constantes LILAC(#EDE9FE)/LILAC_SOFT/LILAC_BORDER(#C4B5FD)/INK(#111827)/GRAY(#6B7280). Encabezado morado sólido → blanco con recuadro lila y texto negro/gris. Cabecera de tabla, tarjetas de categoría, banda TOTAL A PAGAR, divisores y filas alternas → lila pastel con texto negro. Verificado sin errores.

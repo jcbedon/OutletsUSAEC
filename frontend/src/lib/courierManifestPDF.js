@@ -71,32 +71,41 @@ export async function generateCourierManifestPDF({
     catMap[String(c.key || "").toUpperCase()] = c;
   });
 
-  // ── HEADER ───────────────────────────────────────────────────────────
-  doc.setFillColor(88, 28, 135); // purple-900
-  doc.rect(0, 0, pageW, 96, "F");
-  // Accent stripe
-  doc.setFillColor(126, 34, 206); // purple-700
-  doc.rect(0, 96, pageW, 4, "F");
+  // ── Palette (pastel lilac + gray, black text) ──
+  const LILAC = [237, 233, 254];       // pastel lilac fill (#EDE9FE)
+  const LILAC_SOFT = [245, 243, 255];  // even softer lilac for alternating rows
+  const LILAC_BORDER = [196, 181, 253]; // lilac border (#C4B5FD)
+  const INK = [17, 24, 39];            // near-black text (#111827)
+  const GRAY = [107, 114, 128];        // secondary gray text (#6B7280)
+
+  // ── HEADER: white background with a lilac border box, black text ──────
+  const headerY = 16;
+  const headerH = 82;
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(LILAC_BORDER[0], LILAC_BORDER[1], LILAC_BORDER[2]);
+  doc.setLineWidth(1.5);
+  doc.roundedRect(margin, headerY, pageW - margin * 2, headerH, 10, 10, "FD");
 
   const logo = await loadImage(tenantLogo);
   if (logo) {
-    const targetH = 60;
+    const targetH = 54;
     const ratio = logo.width / logo.height;
     const w = targetH * ratio;
     try {
-      doc.addImage(logo.dataUrl, "PNG", margin, 18, w, targetH);
+      doc.addImage(logo.dataUrl, "PNG", margin + 14, headerY + 14, w, targetH);
     } catch { /* ignore bad image */ }
   }
 
-  doc.setTextColor(255, 255, 255);
+  doc.setTextColor(INK[0], INK[1], INK[2]);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(22);
-  doc.text("MANIFIESTO DE ENVÍOS", pageW - margin, 40, { align: "right" });
+  doc.setFontSize(21);
+  doc.text("MANIFIESTO DE ENVÍOS", pageW - margin - 14, headerY + 28, { align: "right" });
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  doc.text(tenantName || "", pageW - margin, 60, { align: "right" });
+  doc.setTextColor(GRAY[0], GRAY[1], GRAY[2]);
+  doc.text(tenantName || "", pageW - margin - 14, headerY + 46, { align: "right" });
   const today = new Date().toLocaleDateString("es-EC", { day: "2-digit", month: "long", year: "numeric" });
-  doc.text(`Emitido: ${today}`, pageW - margin, 76, { align: "right" });
+  doc.text(`Emitido: ${today}`, pageW - margin - 14, headerY + 62, { align: "right" });
 
   // ── META block ───────────────────────────────────────────────────────
   let y = 128;
@@ -158,10 +167,11 @@ export async function generateCourierManifestPDF({
 
   // ── Category summary cards ──────────────────────────────────────────
   y += 6;
+  doc.setTextColor(INK[0], INK[1], INK[2]);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.text("RESUMEN POR CATEGORÍA", margin, y);
-  doc.setDrawColor(220, 220, 230);
+  doc.setDrawColor(LILAC_BORDER[0], LILAC_BORDER[1], LILAC_BORDER[2]);
   doc.line(margin, y + 4, pageW - margin, y + 4);
   y += 14;
 
@@ -179,24 +189,24 @@ export async function generateCourierManifestPDF({
       const total = catTotals[key];
       const cat = catMap[key];
       const x = margin + i * (cardW + 6);
-      doc.setFillColor(248, 250, 252);
-      doc.setDrawColor(126, 34, 206);
+      doc.setFillColor(LILAC_SOFT[0], LILAC_SOFT[1], LILAC_SOFT[2]);
+      doc.setDrawColor(LILAC_BORDER[0], LILAC_BORDER[1], LILAC_BORDER[2]);
       doc.setLineWidth(0.75);
       doc.roundedRect(x, y, cardW, 60, 6, 6, "FD");
-      doc.setTextColor(126, 34, 206);
+      doc.setTextColor(INK[0], INK[1], INK[2]);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.text(`CATEGORÍA ${key}`, x + 8, y + 14);
-      doc.setTextColor(71, 85, 105);
+      doc.setTextColor(GRAY[0], GRAY[1], GRAY[2]);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(7);
       doc.text(cat?.label?.slice(0, 28) || "", x + 8, y + 26);
-      doc.setTextColor(15, 23, 42);
+      doc.setTextColor(INK[0], INK[1], INK[2]);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
       const qtyLabel = total.mode === "pounds" ? `${total.qty.toFixed(1)} lb` : `${total.qty} pkg`;
       doc.text(qtyLabel, x + 8, y + 42);
-      doc.setTextColor(126, 34, 206);
+      doc.setTextColor(INK[0], INK[1], INK[2]);
       doc.setFontSize(13);
       doc.text(fmtMoney(total.amount), x + cardW - 8, y + 42, { align: "right" });
     });
@@ -204,10 +214,11 @@ export async function generateCourierManifestPDF({
   }
 
   // ── Shipments table ──────────────────────────────────────────────────
-  doc.setTextColor(15, 23, 42);
+  doc.setTextColor(INK[0], INK[1], INK[2]);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(11);
   doc.text("DETALLE DE ENVÍOS", margin, y);
+  doc.setDrawColor(LILAC_BORDER[0], LILAC_BORDER[1], LILAC_BORDER[2]);
   doc.line(margin, y + 4, pageW - margin, y + 4);
   y += 12;
 
@@ -222,11 +233,11 @@ export async function generateCourierManifestPDF({
     amount: pageW - margin - 4,
   };
   const drawTableHeader = (yy) => {
-    doc.setFillColor(241, 245, 249);
+    doc.setFillColor(LILAC[0], LILAC[1], LILAC[2]);
     doc.rect(margin, yy - 10, pageW - margin * 2, 16, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(7.5);
-    doc.setTextColor(71, 85, 105);
+    doc.setTextColor(INK[0], INK[1], INK[2]);
     doc.text("#", colX.idx, yy);
     doc.text("CLIENTE", colX.customer, yy);
     doc.text("TRACKING", colX.tracking, yy);
@@ -246,7 +257,7 @@ export async function generateCourierManifestPDF({
   } else {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(8.5);
-    doc.setTextColor(15, 23, 42);
+    doc.setTextColor(INK[0], INK[1], INK[2]);
     enriched.forEach((s, idx) => {
       if (y > pageH - 80) {
         doc.addPage();
@@ -254,6 +265,12 @@ export async function generateCourierManifestPDF({
         drawTableHeader(y);
         y += 12;
       }
+      // Alternating pastel-lilac row background.
+      if (idx % 2 === 1) {
+        doc.setFillColor(LILAC_SOFT[0], LILAC_SOFT[1], LILAC_SOFT[2]);
+        doc.rect(margin, y - 12, pageW - margin * 2, 22, "F");
+      }
+      doc.setTextColor(INK[0], INK[1], INK[2]);
       const customer = (s.user_name || s.customer_name || s.client_name || (s.client && s.client.name) || "—").slice(0, 28);
       const tracking =
         (Array.isArray(s.tracking_numbers) && s.tracking_numbers[0]) ||
@@ -275,10 +292,10 @@ export async function generateCourierManifestPDF({
       doc.text(qtyLabel, colX.qty, y);
       doc.text(fmtMoney(s._rate), colX.rate, y);
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(126, 34, 206);
+      doc.setTextColor(INK[0], INK[1], INK[2]);
       doc.text(fmtMoney(s._amount), colX.amount, y, { align: "right" });
       doc.setFont("helvetica", "normal");
-      doc.setTextColor(15, 23, 42);
+      doc.setTextColor(INK[0], INK[1], INK[2]);
 
       y += 22;
       doc.setDrawColor(241, 245, 249);
@@ -289,17 +306,19 @@ export async function generateCourierManifestPDF({
   // ── Grand total band ────────────────────────────────────────────────
   if (y > pageH - 110) { doc.addPage(); y = margin + 10; }
   y += 4;
-  doc.setFillColor(88, 28, 135);
-  doc.roundedRect(margin, y, pageW - margin * 2, 50, 8, 8, "F");
-  doc.setTextColor(216, 180, 254);
+  doc.setFillColor(LILAC[0], LILAC[1], LILAC[2]);
+  doc.setDrawColor(LILAC_BORDER[0], LILAC_BORDER[1], LILAC_BORDER[2]);
+  doc.setLineWidth(1);
+  doc.roundedRect(margin, y, pageW - margin * 2, 50, 8, 8, "FD");
+  doc.setTextColor(GRAY[0], GRAY[1], GRAY[2]);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(9);
   doc.text("TOTAL A PAGAR A EMPRESA DE PAQUETERÍA", margin + 16, y + 20);
-  doc.setTextColor(255, 255, 255);
+  doc.setTextColor(INK[0], INK[1], INK[2]);
   doc.setFontSize(22);
   doc.text(fmtMoney(grandTotal), pageW - margin - 16, y + 30, { align: "right" });
   doc.setFontSize(8);
-  doc.setTextColor(216, 180, 254);
+  doc.setTextColor(GRAY[0], GRAY[1], GRAY[2]);
   doc.text(`${enriched.length} envío${enriched.length === 1 ? "" : "s"}`, margin + 16, y + 36);
   y += 70;
 
