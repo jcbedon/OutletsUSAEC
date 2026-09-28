@@ -2570,6 +2570,127 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
         })
     return result
 
+
+@api_router.get("/admin/reports/clients")
+async def clients_report(
+    status: Optional[str] = None,            # active | inactive | all(None)
+    min_inactivity_days: Optional[int] = None,
+    stagnant_only: bool = False,
+    stagnant_days: int = 15,
+    date_from: Optional[str] = None,         # filter by last-purchase date (YYYY-MM-DD)
+    date_to: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Data source for the PDF client report in Estadísticas. Returns per-client:
+    name, whatsapp, last purchase, inactivity days, pending balance (owed) and
+    merchandise age (days since the oldest not-yet-invoiced purchase)."""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    query = {"role": "client", "tenant_id": tid}
+    if status == "active":
+        query["$or"] = [{"is_active": True}, {"is_active": {"$exists": False}}]
+    elif status == "inactive":
+        query["is_active"] = False
+
+    users = await db.users.find(
+        query, {"_id": 0, "id": 1, "name": 1, "whatsapp": 1, "customer_id": 1, "is_active": 1, "created_at": 1}
+    ).to_list(20000)
+    now = datetime.now(timezone.utc)
+    if not users:
+        return {"clients": [], "generated_at": now.isoformat(), "count": 0,
+                "totals": {"saldo_pendiente": 0, "with_stagnant": 0}}
+
+    user_ids = [u["id"] for u in users]
+    customer_ids = [u.get("customer_id") for u in users if u.get("customer_id")]
+
+    last_purchase_agg = await db.purchases.aggregate([
+        {"$match": {"user_id": {"$in": user_ids}, "tenant_id": tid}},
+        {"$group": {"_id": "$user_id", "last": {"$max": "$created_at"}}}
+    ]).to_list(len(user_ids))
+    last_purchase = {r["_id"]: r["last"] for r in last_purchase_agg}
+
+    # Oldest purchase not yet invoiced = "stuck" merchandise in the warehouse.
+    pending_agg = await db.purchases.aggregate([
+        {"$match": {"user_id": {"$in": user_ids}, "tenant_id": tid,
+                    "$or": [{"invoice_id": None}, {"invoice_id": {"$exists": False}}]}},
+        {"$group": {"_id": "$user_id", "oldest": {"$min": "$created_at"}, "count": {"$sum": 1}}}
+    ]).to_list(len(user_ids))
+    pending_map = {r["_id"]: r for r in pending_agg}
+
+    last_invoice_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": {"$in": customer_ids}, "is_annulled": {"$ne": True}}},
+        {"$sort": {"created_at": -1}},
+        {"$group": {"_id": "$customer_id", "total_a_pagar": {"$first": "$total_a_pagar"},
+                    "saldo_a_favor": {"$first": "$saldo_a_favor"}}}
+    ]).to_list(len(customer_ids) or 1)
+    last_invoice = {li["_id"]: li for li in last_invoice_agg}
+
+    def days_since(iso):
+        if not iso:
+            return None
+        try:
+            d = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=timezone.utc)
+            return max(0, (now - d).days)
+        except Exception:
+            return None
+
+    out = []
+    for u in users:
+        uid = u["id"]
+        cid = u.get("customer_id")
+        lp = last_purchase.get(uid)
+        inactivity = days_since(lp)
+        pend = pending_map.get(uid)
+        merch_age = days_since(pend["oldest"]) if pend else None
+        li = last_invoice.get(cid, {})
+        tap = li.get("total_a_pagar", 0) or 0
+        favor = li.get("saldo_a_favor", 0) or 0
+        saldo_pendiente = round(tap, 2) if (tap and favor <= 0) else 0.0
+        stagnant = merch_age is not None and merch_age >= stagnant_days
+
+        # Apply filters
+        if min_inactivity_days is not None and (inactivity is None or inactivity < min_inactivity_days):
+            continue
+        if stagnant_only and not stagnant:
+            continue
+        if (date_from or date_to):
+            if not lp:
+                continue
+            lp_date = str(lp)[:10]
+            if date_from and lp_date < date_from:
+                continue
+            if date_to and lp_date > date_to:
+                continue
+
+        out.append({
+            "name": u.get("name", ""),
+            "whatsapp": u.get("whatsapp", ""),
+            "customer_id": cid,
+            "is_active": u.get("is_active", True),
+            "last_purchase": lp,
+            "inactivity_days": inactivity,
+            "saldo_pendiente": saldo_pendiente,
+            "merchandise_age_days": merch_age,
+            "pending_items": (pend or {}).get("count", 0),
+            "stagnant": stagnant,
+        })
+
+    out.sort(key=lambda r: r["saldo_pendiente"], reverse=True)
+    return {
+        "clients": out,
+        "generated_at": now.isoformat(),
+        "count": len(out),
+        "totals": {
+            "saldo_pendiente": round(sum(r["saldo_pendiente"] for r in out), 2),
+            "with_stagnant": sum(1 for r in out if r["stagnant"]),
+        },
+    }
+
+
 @api_router.post("/admin/clients/create")
 async def admin_create_client(data: AdminClientCreate, current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:

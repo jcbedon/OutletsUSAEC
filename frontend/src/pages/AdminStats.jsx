@@ -12,6 +12,7 @@ import { ArrowLeft, DollarSign, TrendingUp, TrendingDown, Wallet, Store, Radio, 
 import { SalesTrendChart, StoreBarChart, ProfitPieChart, LiveBarChart, ClientsDebtsChart, ClientsDebtsPieChart, ClientsByDateChart } from "@/components/StatsCharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import StoreProfitsReport from "@/components/StoreProfitsReport";
+import ClientReportGenerator from "@/components/ClientReportGenerator";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 
 function formatMoney(n) {
@@ -297,6 +298,15 @@ export default function AdminStats() {
               {opt.label}
             </Button>
           ))}
+        </div>
+
+        {/* Client PDF Report generator */}
+        <div className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/60 via-white to-purple-50/40 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3" data-testid="client-report-section">
+          <div>
+            <p className="text-sm font-bold text-slate-800">Reporte PDF de Clientes</p>
+            <p className="text-xs text-slate-500">Filtra por estado, inactividad, mercadería estancada y fechas, y descarga un PDF profesional.</p>
+          </div>
+          <ClientReportGenerator tenantName={user?.tenant_name || "Reporte de Clientes"} />
         </div>
 
         {/* Summary Cards — KPIs de dinero (visibles solo si el empleado tiene

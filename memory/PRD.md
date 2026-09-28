@@ -225,3 +225,8 @@ Problema: `recalculate_client_invoices` redistribuía depósitos entre facturas 
 
 ## 2026-06 — PDF Paquetería: nombre + código del cliente
 - El PDF usaba `customer_name/client_name` (vienen null); el envío trae el nombre en `user_name` y el código en `customer_id`. Fix en `lib/courierManifestPDF.js`: la columna CLIENTE ahora usa `s.user_name` como primer fallback. El código `#customer_id` ya se imprimía debajo. Verificado contra datos reales (user_name="Self Registered Client", customer_id="S7951").
+
+## 2026-06 — Módulo Reporte PDF de Clientes (Estadísticas)
+- Backend `GET /api/admin/reports/clients` con filtros: `status` (active/inactive), `min_inactivity_days`, `stagnant_only`+`stagnant_days`, `date_from`/`date_to` (por última compra). Devuelve por cliente: name, whatsapp, last_purchase, inactivity_days, saldo_pendiente (adeudado), merchandise_age_days (antigüedad = días desde la compra no facturada más antigua), stagnant, + totals (saldo total, con estancada).
+- Frontend: `lib/clientReportPDF.js` (jsPDF + jspdf-autotable): tabla Cliente/WhatsApp/Última Compra/Días Inact./Saldo Pend./Antig. Mercadería, filas alternas, links WhatsApp (doc.link a wa.me), estancada y saldo en rojo, banda resumen con totales. `components/ClientReportGenerator.jsx` (diálogo de filtros) montado en `AdminStats.jsx`. API `getClientReport`.
+- Verificado: backend 119 clientes / saldo $31,051.66 / 89 estancados; filtros inactividad(104) y estancada(89) OK; UI genera PDF sin errores (toast 104 clientes).

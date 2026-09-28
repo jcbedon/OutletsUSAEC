@@ -39,6 +39,7 @@ export const updateTenantSettings = (tenantId, settings) => api.put(`/superadmin
 export const getTenantBankAccounts = (tenantId) => api.get(`/superadmin/tenants/${tenantId}/bank-accounts`);
 export const updateTenantBankAccounts = (tenantId, bank_accounts) => api.put(`/superadmin/tenants/${tenantId}/bank-accounts`, { bank_accounts });
 export const listBankAccounts = () => api.get("/admin/bank-accounts");
+export const getClientReport = (params) => api.get("/admin/reports/clients", { params });
 export const reviewClientDeposits = (q) => api.get("/admin/maintenance/client-deposits", { params: { q } });
 export const reassignDepositMaintenance = (deposit_id, invoice_number) => api.post("/admin/maintenance/reassign-deposit", { deposit_id, invoice_number });
 export const updateBankAccounts = (bank_accounts) => api.put("/admin/bank-accounts", { bank_accounts });
