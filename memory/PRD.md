@@ -215,3 +215,10 @@ Problema: `recalculate_client_invoices` redistribuía depósitos entre facturas 
 - Recarga `77bc201f` ($100, hecha 18‑sep = semana de FG6‑003) estaba en FG6‑004. Se reasignó a FG6‑003 con el endpoint desplegado `PUT /wallet/deposit/{id}/assign-invoice` (fija target_invoice_id, respetado por el recálculo). Resultado: FG6‑003 a_pagar 99.84→0 (favor 0.16), FG6‑004 sin cambio (a_pagar 0).
 - Nelly (N7N): revisada. La única recarga sospechosa (032fd8b8 $275) fue el domingo 27‑sep 22:39 hora Ecuador = dentro de la semana de N7N‑020 → correctamente ubicada. Sin correcciones.
 
+
+## 2026-06 — Fix descarga PDF Paquetería (Envíos)
+- Síntoma: "no se descarga nada" al pulsar "PDF Paquetería" (reportado en producción).
+- Causa raíz: en móvil (iOS/Safari) la descarga vía blob `application/octet-stream` + `a.download` falla silenciosamente.
+- Fix en `lib/courierManifestPDF.js`: entrega multiplataforma — escritorio descarga con ancla; iOS/Safari abre el PDF en una pestaña nueva (ver/guardar/compartir) usando MIME `application/pdf`; fallbacks `doc.save` y `dataurlnewwindow`.
+- Confirmado: el manifiesto incluye TODOS los envíos de la semana sin importar el status (preparando/tránsito/entregado/enviado). Se corrigió el comentario obsoleto en `AdminShipments.jsx` que decía "solo marked_sent" (ya incluía todos). Verificado en preview (4 envíos de la semana en el PDF).
+

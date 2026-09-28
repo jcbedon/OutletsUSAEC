@@ -316,28 +316,45 @@ export async function generateCourierManifestPDF({
 
   const safeName = String(periodLabel || "todos").replace(/[^a-z0-9]+/gi, "_").toLowerCase();
   const filename = `manifiesto_paqueteria_${safeName}_${Date.now()}.pdf`;
-  // Robust cross-browser + CSP-safe download. jsPDF's doc.save() sometimes
-  // fails silently in production builds (minified/CSP), so we build the blob
-  // ourselves with application/octet-stream to force the download dialog and
-  // keep the anchor alive long enough for slow network conditions.
+
+  // Cross-platform delivery. On desktop we force a real download via an anchor.
+  // On iOS/Safari the `download` attribute is unreliable and octet-stream blobs
+  // fail silently ("no se descarga nada"), so we open the PDF in a new tab where
+  // the user can view, save or share it from the browser's built-in viewer.
+  const ua = navigator.userAgent || "";
+  const isIOS = /iP(hone|ad|od)/.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(ua);
+  const testAnchor = document.createElement("a");
+  const supportsDownload = "download" in testAnchor && !isIOS && !isSafari;
+
   try {
-    const rawBlob = doc.output("blob");
-    const blob = new Blob([rawBlob], { type: "application/octet-stream" });
+    const blob = new Blob([doc.output("blob")], { type: "application/pdf" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    a.rel = "noopener";
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      try { document.body.removeChild(a); } catch {}
-      URL.revokeObjectURL(url);
-    }, 10000);
+    if (supportsDownload) {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.rel = "noopener";
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        try { document.body.removeChild(a); } catch {}
+        URL.revokeObjectURL(url);
+      }, 15000);
+    } else {
+      // Mobile / Safari: open in a new tab (allowed inside the click gesture).
+      const win = window.open(url, "_blank");
+      if (!win) {
+        // Popup blocked — navigate the current tab to the PDF as a last resort.
+        window.location.href = url;
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
     return;
   } catch (e) {
-    console.error("Blob download failed, trying doc.save:", e);
+    console.error("Blob delivery failed, trying doc.save:", e);
   }
   try {
     doc.save(filename);
@@ -345,8 +362,7 @@ export async function generateCourierManifestPDF({
   } catch (e) {
     console.error("doc.save failed, opening in new tab:", e);
   }
-  // Last resort: open the PDF in a new tab so the user can save it manually
-  // via the browser's built-in PDF viewer toolbar.
+  // Last resort: open the PDF in a new tab so the user can save it manually.
   try {
     doc.output("dataurlnewwindow");
   } catch (e) {

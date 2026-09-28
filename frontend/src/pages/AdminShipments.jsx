@@ -549,8 +549,8 @@ export default function AdminShipments() {
   };
 
   // Build & download the courier manifest PDF for the currently active
-  // week filter. Includes only shipments physically dispatched
-  // (`marked_sent=true`). The total at the bottom matches the live widget.
+  // week filter. Includes ALL shipments of that week regardless of status
+  // (preparando, en tránsito, entregado, enviado). Total matches the widget.
   const handleExportCourierManifest = async () => {
     const filtered = (weekFilter === "all"
       ? shipments
