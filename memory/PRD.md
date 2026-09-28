@@ -216,9 +216,9 @@ Problema: `recalculate_client_invoices` redistribuía depósitos entre facturas 
 - Nelly (N7N): revisada. La única recarga sospechosa (032fd8b8 $275) fue el domingo 27‑sep 22:39 hora Ecuador = dentro de la semana de N7N‑020 → correctamente ubicada. Sin correcciones.
 
 
-## 2026-06 — Fix descarga PDF Paquetería (Envíos)
-- Síntoma: "no se descarga nada" al pulsar "PDF Paquetería" (reportado en producción).
-- Causa raíz: en móvil (iOS/Safari) la descarga vía blob `application/octet-stream` + `a.download` falla silenciosamente.
-- Fix en `lib/courierManifestPDF.js`: entrega multiplataforma — escritorio descarga con ancla; iOS/Safari abre el PDF en una pestaña nueva (ver/guardar/compartir) usando MIME `application/pdf`; fallbacks `doc.save` y `dataurlnewwindow`.
-- Confirmado: el manifiesto incluye TODOS los envíos de la semana sin importar el status (preparando/tránsito/entregado/enviado). Se corrigió el comentario obsoleto en `AdminShipments.jsx` que decía "solo marked_sent" (ya incluía todos). Verificado en preview (4 envíos de la semana en el PDF).
+## 2026-06 — Fix descarga PDF Paquetería (Envíos) — CAUSA REAL
+- Causa raíz real: `ReferenceError: getWeekKey is not defined` (y luego `weekList is not defined`) dentro de `handleExportCourierManifest`. Ambos estaban definidos SOLO dentro de IIFEs del render, no a nivel de componente. Solo fallaba con una semana específica seleccionada (con "Todas" el ternario hacía short-circuit y no evaluaba `getWeekKey`), por eso una prueba con "Todas" no lo reproducía.
+- Fix en `AdminShipments.jsx`: `getWeekKey` y `getWeekLabel` movidos/duplicados a scope de componente (junto a `getCurrentWeekKey`). El handler ya no usa `weekList`; deriva la etiqueta con `getWeekLabel(filtered[0].created_at)`.
+- (Adicional, no era la causa) `lib/courierManifestPDF.js`: entrega multiplataforma (móvil abre en pestaña) — se mantiene como mejora.
+- El manifiesto incluye TODOS los envíos de la semana sin importar el status. Verificado en preview con semana específica (6-Abril, 2 envíos): "Manifiesto PDF generado" sin overlay de error.
 

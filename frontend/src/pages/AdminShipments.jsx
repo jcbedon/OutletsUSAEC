@@ -96,6 +96,44 @@ export default function AdminShipments() {
     }
     return candidate.toISOString().slice(0, 10);
   };
+  // Week key for an arbitrary date (used by the courier PDF export and filters).
+  // Must live at component scope so handlers like handleExportCourierManifest
+  // can reference it (previously it was only defined inside nested render IIFEs,
+  // causing "ReferenceError: getWeekKey is not defined" when exporting the PDF).
+  const getWeekKey = (dateStr) => {
+    const d = new Date(dateStr);
+    const day = d.getDay();
+    const daysSinceMonday = (day - 1 + 7) % 7;
+    const candidate = new Date(d);
+    candidate.setDate(d.getDate() - daysSinceMonday);
+    candidate.setHours(12, 0, 0, 0);
+    if (candidate > d) {
+      candidate.setDate(candidate.getDate() - 7);
+    }
+    return candidate.toISOString().slice(0, 10);
+  };
+  // Human label for the week that contains `dateStr` (component scope so the
+  // PDF export handler can use it without the render-only `weekList`).
+  const getWeekLabel = (dateStr) => {
+    const d = new Date(dateStr);
+    const day = d.getDay();
+    const daysSinceMonday = (day - 1 + 7) % 7;
+    const startMonday = new Date(d);
+    startMonday.setDate(d.getDate() - daysSinceMonday);
+    startMonday.setHours(12, 0, 0, 0);
+    if (startMonday > d) {
+      startMonday.setDate(startMonday.getDate() - 7);
+    }
+    const endMonday = new Date(startMonday);
+    endMonday.setDate(startMonday.getDate() + 7);
+    const fmt = (dt) => {
+      const dayN = dt.getDate();
+      const monthRaw = dt.toLocaleDateString("es-ES", { month: "long" });
+      const month = monthRaw.charAt(0).toUpperCase() + monthRaw.slice(1);
+      return `${dayN}-${month}`;
+    };
+    return `Lunes ${fmt(startMonday)} - Lunes ${fmt(endMonday)}`;
+  };
   const [weekFilter, setWeekFilter] = useState(() => getCurrentWeekKey());
   // Courier (paquetería) pricing — used to compute "Pago a Empresa Paquetería"
   // live whenever any shipment is toggled as "Enviado".
@@ -563,8 +601,9 @@ export default function AdminShipments() {
     }
     const periodLabel = (() => {
       if (weekFilter === "all") return "Todas las semanas";
-      const w = weekList.find(([k]) => k === weekFilter);
-      return w ? `Semana ${w[1].label}` : weekFilter;
+      // Derive the label from a shipment in the selected week (filtered is
+      // guaranteed non-empty here) — avoids the render-only `weekList`.
+      return `Semana ${getWeekLabel(filtered[0].created_at)}`;
     })();
     try {
       await generateCourierManifestPDF({
