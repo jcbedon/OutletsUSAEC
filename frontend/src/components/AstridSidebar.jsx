@@ -14,6 +14,7 @@ import {
   Landmark,
   UserCog,
   ClipboardList,
+  Wrench,
   ArrowLeft,
   Menu,
   X,
@@ -34,6 +35,7 @@ const ADMIN_NAV = [
   { to: "/admin/reports", label: "Reportes", icon: BarChart3 },
   { to: "/admin/stats", label: "Estadísticas", icon: TrendingUp },
   { to: "/admin/bank-accounts", label: "Cuentas", icon: Landmark },
+  { to: "/admin/deposit-maintenance", label: "Mant. Recargas", icon: Wrench },
   { to: "/admin/employees", label: "Empleados", icon: UserCog },
   { to: "/admin/audit", label: "Auditoría", icon: ClipboardList },
 ];

@@ -23,6 +23,7 @@ import AdminInvoices from "@/pages/AdminInvoices";
 import AdminPackagesReport from "@/pages/AdminPackagesReport";
 import AdminPendingShipments from "@/pages/AdminPendingShipments";
 import AdminBankAccounts from "@/pages/AdminBankAccounts";
+import AdminDepositMaintenance from "@/pages/AdminDepositMaintenance";
 import SuperadminDashboard from "@/pages/SuperadminDashboard";
 import { BrandBackgroundVideo } from "@/components/BrandBackgroundVideo";
 import AstridSidebar from "@/components/AstridSidebar";
@@ -213,6 +214,7 @@ function App() {
           <Route path="/admin/packages-report" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminPackagesReport /></ProtectedRoute>} />
           <Route path="/admin/pending-shipments" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminPendingShipments /></ProtectedRoute>} />
           <Route path="/admin/bank-accounts" element={<ProtectedRoute allowedRoles={["admin", "employee"]}><AdminBankAccounts /></ProtectedRoute>} />
+          <Route path="/admin/deposit-maintenance" element={<ProtectedRoute allowedRoles={["admin"]}><AdminDepositMaintenance /></ProtectedRoute>} />
 
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />

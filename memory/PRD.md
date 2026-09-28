@@ -204,3 +204,14 @@ Problema: `recalculate_client_invoices` redistribuía depósitos entre facturas 
 - **Verificado en preview** (3 tests + smoke API): candado, memoria (factura nueva no roba el depósito), auditoría de movimiento con actor, y reassign positivo (R8062).
 - **PENDIENTE EN PRODUCCIÓN** (los datos FG6/Gioconda/Nelly/77bc201f NO existen en preview): tras Deploy, ejecutar el fix manual de 77bc201f→FG6-003 y revisar Gioconda Ayala y Nelly (N7N) con los endpoints o la UI de "Asignar recarga".
 
+
+## 2026-06 — Pantalla "Mantenimiento de Recargas" (admin)
+- Nueva página `pages/AdminDepositMaintenance.jsx`, ruta `/admin/deposit-maintenance` (solo admin), ítem "Mant. Recargas" en el sidebar (icono Wrench).
+- Busca cliente por nombre o customer_id → lista cada recarga aprobada con: monto, factura vinculada (candado) o "Sin vínculo fijo", si la factura está anulada, fecha, descripción e id. Desplegable con las facturas vivas del cliente + botón "Fijar" para reasignar (usa `POST /admin/maintenance/reassign-deposit`, que bloquea + audita + recalcula).
+- API en `lib/api.js`: `reviewClientDeposits(q)`, `reassignDepositMaintenance(deposit_id, invoice_number)`.
+- Verificado en preview (búsqueda R8062 muestra 3 recargas con dropdown). Requiere Deploy para funcionar en producción (los endpoints de mantenimiento aún dan 404 en prod hasta desplegar).
+
+## 2026-06 — Fix producción aplicado (Gioconda FG6)
+- Recarga `77bc201f` ($100, hecha 18‑sep = semana de FG6‑003) estaba en FG6‑004. Se reasignó a FG6‑003 con el endpoint desplegado `PUT /wallet/deposit/{id}/assign-invoice` (fija target_invoice_id, respetado por el recálculo). Resultado: FG6‑003 a_pagar 99.84→0 (favor 0.16), FG6‑004 sin cambio (a_pagar 0).
+- Nelly (N7N): revisada. La única recarga sospechosa (032fd8b8 $275) fue el domingo 27‑sep 22:39 hora Ecuador = dentro de la semana de N7N‑020 → correctamente ubicada. Sin correcciones.
+
