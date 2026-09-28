@@ -341,6 +341,12 @@ class WalletTransaction(BaseModel):
     # to this specific invoice regardless of the weekly-cutoff / date-based
     # rules. Admin sets this from AdminClients → "Recargas Disponibles" pill.
     target_invoice_id: Optional[str] = None
+    # PERMANENT LINK (lock): once a deposit is assigned to an invoice, this
+    # stores that invoice id. The recalc engine MUST respect it — it can never
+    # move the deposit to another invoice nor leave it floating while this is
+    # set to a live invoice. This turns deposit→invoice assignment from a
+    # date-based redistribution into a persistent, audited link.
+    assigned_invoice_id: Optional[str] = None
 
 class Live(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -752,8 +758,17 @@ async def check_employee_permission(user_id: str, permission: str) -> bool:
     return employee.get("permissions", {}).get(permission, False)
 
 
-async def recalculate_client_invoices(tenant_id: str, customer_id: str):
-    """Assign each deposit to the invoice that was the LATEST at the time the deposit was approved."""
+async def recalculate_client_invoices(tenant_id: str, customer_id: str,
+                                      actor_id: str = None,
+                                      actor_name: str = "Recálculo automático",
+                                      actor_role: str = "sistema"):
+    """Assign each deposit to the invoice that was the LATEST at the time the deposit was approved.
+
+    PERMANENT LINK / LOCK: if a deposit has `assigned_invoice_id` pointing to a
+    live invoice, it stays there no matter what — never moved, never floated.
+    The first time a deposit is assigned, the link is persisted (giving the
+    system "memory"). Any real move between invoices is written to audit_logs.
+    """
     client = await db.users.find_one({"customer_id": customer_id, "tenant_id": tenant_id}, {"_id": 0, "id": 1})
     if not client:
         return
@@ -803,12 +818,12 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
 
     all_deposits = await db.wallet_transactions.find(
         {"user_id": client["id"], "tenant_id": tenant_id, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
-        {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1, "target_invoice_id": 1}
+        {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "description": 1, "target_invoice_id": 1, "assigned_invoice_id": 1}
     ).sort("created_at", 1).to_list(20000)
     
     all_invoices = await db.invoices.find(
         {"customer_id": customer_id, "tenant_id": tenant_id, "is_annulled": {"$ne": True}},
-        {"_id": 0, "id": 1, "total": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1, "shipping_cost": 1, "created_at": 1, "applied_deposits": 1}
+        {"_id": 0, "id": 1, "invoice_number": 1, "total": 1, "saldo_pendiente": 1, "saldo_a_favor_anterior": 1, "shipping_cost": 1, "created_at": 1, "applied_deposits": 1}
     ).sort("created_at", 1).to_list(20000)
 
     # Snapshot existing assignments BEFORE we recompute, so historical
@@ -859,16 +874,30 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
     # Group deposits by which invoice was the latest at the time of the deposit
     deposits_by_invoice = {inv["id"]: [] for inv in all_invoices}
     valid_invoice_ids = {inv["id"] for inv in all_invoices}
+    inv_number_by_id = {inv["id"]: inv.get("invoice_number", inv["id"]) for inv in all_invoices}
+    # dep_id -> invoice_id it ends up on (None/absent if it floats).
+    computed_by_dep = {}
 
     for dep in all_deposits:
         dep_date = dep.get("created_at", "")
         target_invoice = None
 
-        # 1) Manual override wins over everything: admin explicitly chose the
-        #    invoice this deposit should attach to.
-        manual_target = dep.get("target_invoice_id")
-        if manual_target and manual_target in valid_invoice_ids:
-            target_invoice = next((i for i in all_invoices if i["id"] == manual_target), None)
+        # 0) PERMANENT LOCK: if this deposit is already linked to a live invoice
+        #    via `assigned_invoice_id`, keep it there. The recalc engine may
+        #    NOT move it to another invoice nor let it float. Only if the linked
+        #    invoice no longer exists / was annulled do we fall through so the
+        #    money isn't stranded on a dead invoice.
+        locked_id = dep.get("assigned_invoice_id")
+        if locked_id and locked_id in valid_invoice_ids:
+            target_invoice = next((i for i in all_invoices if i["id"] == locked_id), None)
+
+        # 1) Manual override: admin explicitly chose the invoice via the
+        #    "assign recarga" action (also sets assigned_invoice_id going
+        #    forward, but honor legacy rows that only have target_invoice_id).
+        if target_invoice is None:
+            manual_target = dep.get("target_invoice_id")
+            if manual_target and manual_target in valid_invoice_ids:
+                target_invoice = next((i for i in all_invoices if i["id"] == manual_target), None)
 
         # 2) Preserve existing historical assignment: if this deposit was
         #    already attached to a still-live invoice, keep it there. Prevents
@@ -920,6 +949,7 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
             "created_at": dep.get("created_at", ""),
             "description": dep.get("description", "")
         })
+        computed_by_dep[dep.get("id", "")] = target_invoice["id"]
     
     # Update each invoice with its corresponding deposits.
     # We propagate two carries between LIVE invoices (already filtered: is_annulled != True):
@@ -970,6 +1000,46 @@ async def recalculate_client_invoices(tenant_id: str, customer_id: str):
                 "shipping_cost": round(effective_shipping, 2),
             }}
         )
+
+    # ── Persist the permanent link (memory) + audit real moves ──
+    # For every deposit that landed on an invoice, store `assigned_invoice_id`.
+    # This is what turns the engine from a date-based redistribution into a
+    # persistent, audited link: once written, priority #0 above keeps it there.
+    for dep in all_deposits:
+        dep_id = dep.get("id", "")
+        new_inv = computed_by_dep.get(dep_id)
+        if not new_inv:
+            continue  # deposit floated (no live invoice) — leave memory untouched
+        old_inv = dep.get("assigned_invoice_id")
+        if old_inv == new_inv:
+            continue  # already locked here — nothing to do
+        await db.wallet_transactions.update_one(
+            {"id": dep_id, "tenant_id": tenant_id},
+            {"$set": {"assigned_invoice_id": new_inv}}
+        )
+        # Audit only genuine MOVES (was linked to a real invoice, now different).
+        # First-time links (old_inv is None) are persisted silently to avoid
+        # flooding the audit trail on the initial migration run.
+        if old_inv:
+            await log_audit_action(
+                tenant_id=tenant_id,
+                user_id=actor_id or "system",
+                user_name=actor_name,
+                user_role=actor_role,
+                action="deposit_reassigned",
+                entity_type="wallet_transaction",
+                entity_id=dep_id,
+                entity_name=f"Recarga ${dep.get('amount', 0)}",
+                details={
+                    "customer_id": customer_id,
+                    "amount": dep.get("amount"),
+                    "from_invoice_id": old_inv,
+                    "from_invoice_number": inv_number_by_id.get(old_inv, old_inv),
+                    "to_invoice_id": new_inv,
+                    "to_invoice_number": inv_number_by_id.get(new_inv, new_inv),
+                    "reason": "Factura destino anulada/eliminada — recálculo reubicó la recarga",
+                },
+            )
 
 
 # ==================== AUTH ENDPOINTS ====================
@@ -3673,6 +3743,7 @@ async def assign_deposit_to_invoice(
         raise HTTPException(status_code=400, detail="Solo se pueden asignar recargas aprobadas")
 
     target = payload.invoice_id
+    target_number = None
     if target:
         inv = await db.invoices.find_one(
             {"id": target, "tenant_id": tid,
@@ -3682,14 +3753,169 @@ async def assign_deposit_to_invoice(
         )
         if not inv:
             raise HTTPException(status_code=404, detail="Factura destino no encontrada o anulada")
+        target_number = inv.get("invoice_number")
 
+    old_assigned = tx.get("assigned_invoice_id")
+    old_number = None
+    if old_assigned:
+        old_inv = await db.invoices.find_one({"id": old_assigned, "tenant_id": tid}, {"_id": 0, "invoice_number": 1})
+        old_number = (old_inv or {}).get("invoice_number", old_assigned)
+
+    # Set BOTH the manual override and the permanent lock so the recalc engine
+    # keeps this deposit on the chosen invoice from now on (or lets it float
+    # again when unlinked with null).
     await db.wallet_transactions.update_one(
         {"id": transaction_id, "tenant_id": tid},
-        {"$set": {"target_invoice_id": target}}
+        {"$set": {"target_invoice_id": target, "assigned_invoice_id": target}}
     )
-    # Recompute the chain so the new assignment is reflected everywhere
-    await recalculate_client_invoices(tid, tx["customer_id"])
+
+    # Audit the manual assignment/move/unlink with the acting user's name.
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=tid,
+        user_id=current_user["user_id"],
+        user_name=actor_name,
+        user_role=current_user["role"],
+        action="deposit_reassigned" if target else "deposit_unlinked",
+        entity_type="wallet_transaction",
+        entity_id=transaction_id,
+        entity_name=f"Recarga ${tx.get('amount', 0)}",
+        details={
+            "customer_id": tx.get("customer_id"),
+            "amount": tx.get("amount"),
+            "from_invoice_id": old_assigned,
+            "from_invoice_number": old_number,
+            "to_invoice_id": target,
+            "to_invoice_number": target_number,
+            "manual": True,
+        },
+    )
+
+    # Recompute the chain so the new assignment is reflected everywhere.
+    await recalculate_client_invoices(
+        tid, tx["customer_id"],
+        actor_id=current_user["user_id"], actor_name=actor_name, actor_role=current_user["role"]
+    )
     return {"message": "Recarga asignada correctamente", "target_invoice_id": target}
+
+
+
+@api_router.get("/admin/maintenance/client-deposits")
+async def review_client_deposits(q: str, current_user: dict = Depends(get_current_user)):
+    """Review a client's approved deposits and where each is currently linked.
+    `q` matches a customer_id (exact, case-insensitive) or a name substring.
+    Admin/employee only, scoped to the caller's tenant."""
+    if current_user["role"] not in ("admin", "employee"):
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    q = (q or "").strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="Falta el parámetro de búsqueda")
+    users = await db.users.find(
+        {"tenant_id": tid, "$or": [
+            {"customer_id": q.upper()},
+            {"name": {"$regex": q, "$options": "i"}},
+        ]},
+        {"_id": 0, "id": 1, "name": 1, "customer_id": 1}
+    ).to_list(50)
+    results = []
+    for u in users:
+        deposits = await db.wallet_transactions.find(
+            {"user_id": u["id"], "tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
+            {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "assigned_invoice_id": 1, "target_invoice_id": 1, "description": 1}
+        ).sort("created_at", 1).to_list(20000)
+        inv_ids = {d.get("assigned_invoice_id") for d in deposits if d.get("assigned_invoice_id")}
+        inv_map = {}
+        if inv_ids:
+            async for inv in db.invoices.find({"id": {"$in": list(inv_ids)}, "tenant_id": tid}, {"_id": 0, "id": 1, "invoice_number": 1, "is_annulled": 1}):
+                inv_map[inv["id"]] = inv
+        results.append({
+            "customer_id": u.get("customer_id"),
+            "name": u.get("name"),
+            "deposits": [{
+                "id": d.get("id"),
+                "amount": d.get("amount"),
+                "created_at": d.get("created_at"),
+                "assigned_invoice_id": d.get("assigned_invoice_id"),
+                "assigned_invoice_number": (inv_map.get(d.get("assigned_invoice_id")) or {}).get("invoice_number"),
+                "assigned_invoice_annulled": (inv_map.get(d.get("assigned_invoice_id")) or {}).get("is_annulled", False),
+                "target_invoice_id": d.get("target_invoice_id"),
+                "description": d.get("description"),
+            } for d in deposits],
+        })
+    return {"matches": results}
+
+
+class MaintenanceReassignRequest(BaseModel):
+    deposit_id: str            # full id or a unique prefix
+    invoice_number: str        # e.g. "FG6-003"
+
+
+@api_router.post("/admin/maintenance/reassign-deposit")
+async def maintenance_reassign_deposit(payload: MaintenanceReassignRequest, current_user: dict = Depends(get_current_user)):
+    """Permanently link a deposit to an invoice by human-readable identifiers
+    (deposit id/prefix + invoice number). Sets the lock, audits the move and
+    recomputes the client's chain. Admin only."""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Solo un administrador puede ejecutar esta acción")
+    tid = current_user["tenant_id"]
+    dep_q = (payload.deposit_id or "").strip()
+    inv_num = (payload.invoice_number or "").strip()
+    if not dep_q or not inv_num:
+        raise HTTPException(status_code=400, detail="Faltan deposit_id o invoice_number")
+
+    # Resolve deposit (exact id, else unique prefix).
+    tx = await db.wallet_transactions.find_one({"id": dep_q, "tenant_id": tid, "type": "deposit"}, {"_id": 0})
+    if not tx:
+        candidates = await db.wallet_transactions.find(
+            {"id": {"$regex": f"^{dep_q}"}, "tenant_id": tid, "type": "deposit"}, {"_id": 0}
+        ).to_list(5)
+        if len(candidates) == 0:
+            raise HTTPException(status_code=404, detail="Recarga no encontrada")
+        if len(candidates) > 1:
+            raise HTTPException(status_code=400, detail="El prefijo de la recarga no es único")
+        tx = candidates[0]
+    if tx.get("status") != "approved":
+        raise HTTPException(status_code=400, detail="Solo se pueden asignar recargas aprobadas")
+
+    inv = await db.invoices.find_one(
+        {"invoice_number": inv_num, "tenant_id": tid, "customer_id": tx.get("customer_id"), "is_annulled": {"$ne": True}},
+        {"_id": 0, "id": 1, "invoice_number": 1}
+    )
+    if not inv:
+        raise HTTPException(status_code=404, detail=f"Factura {inv_num} no encontrada para este cliente (o está anulada)")
+
+    old_assigned = tx.get("assigned_invoice_id")
+    old_number = None
+    if old_assigned:
+        oi = await db.invoices.find_one({"id": old_assigned, "tenant_id": tid}, {"_id": 0, "invoice_number": 1})
+        old_number = (oi or {}).get("invoice_number", old_assigned)
+
+    await db.wallet_transactions.update_one(
+        {"id": tx["id"], "tenant_id": tid},
+        {"$set": {"target_invoice_id": inv["id"], "assigned_invoice_id": inv["id"]}}
+    )
+    actor_name = await get_actor_name(current_user["user_id"])
+    await log_audit_action(
+        tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name, user_role="admin",
+        action="deposit_reassigned", entity_type="wallet_transaction", entity_id=tx["id"],
+        entity_name=f"Recarga ${tx.get('amount', 0)}",
+        details={
+            "customer_id": tx.get("customer_id"), "amount": tx.get("amount"),
+            "from_invoice_id": old_assigned, "from_invoice_number": old_number,
+            "to_invoice_id": inv["id"], "to_invoice_number": inv["invoice_number"],
+            "manual": True, "via": "maintenance-endpoint",
+        },
+    )
+    await recalculate_client_invoices(
+        tid, tx["customer_id"],
+        actor_id=current_user["user_id"], actor_name=actor_name, actor_role="admin"
+    )
+    return {
+        "message": f"Recarga ${tx.get('amount', 0)} vinculada permanentemente a {inv['invoice_number']}",
+        "deposit_id": tx["id"], "customer_id": tx.get("customer_id"),
+        "from_invoice_number": old_number, "to_invoice_number": inv["invoice_number"],
+    }
 
 
 

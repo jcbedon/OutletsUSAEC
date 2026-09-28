@@ -789,7 +789,7 @@ export default function AdminShipments() {
             <DialogTrigger asChild>
               <Button 
                 className="font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}
-                data-testid="create-shipment-btn"
+                data-testid="create-shipment-trigger-hidden"
               >
                 <Plus className="h-4 w-4 mr-2" />
                 Nuevo
@@ -1211,6 +1211,21 @@ export default function AdminShipments() {
             </DialogContent>
           </Dialog>
         </div>
+      </div>
+
+      {/* Visible actions bar — the top header is hidden by the admin shell,
+          so the primary action lives here to stay reachable. */}
+      <div className="max-w-4xl mx-auto px-4 pt-4 flex items-center justify-between gap-3">
+        <span className="font-bold text-slate-800 text-lg">Envíos</span>
+        <Button
+          className="font-bold rounded-xl"
+          style={{ background: '#1E3A5F', color: 'white' }}
+          onClick={() => setCreateDialogOpen(true)}
+          data-testid="create-shipment-btn"
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Nuevo
+        </Button>
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-6">

@@ -193,3 +193,14 @@ Multi-tenant SaaS para personal shoppers con live shopping, wallets, facturació
 - Claro: fondo suave `#FFF7FA` (en `BrandBackgroundVideo.jsx` e `index.css`). Oscuro: paleta noche (#0f1420) con overrides en `index.css` — tokens shadcn bajo `.dark` (background/card/popover/border/input/etc.) + overrides de utilidades hardcoded (`.bg-white`, `.text-slate-*`, `.border-*`, `aside`, inputs, `.tenant-hero`). Los badges de color se conservan.
 - Verificado con screenshots: dashboard, tabla de Facturas y diálogos legibles en oscuro; fondo suave en claro.
 
+
+## 2026-06 — Vínculo permanente depósito↔factura (candado en recálculo) + auditoría
+Problema: `recalculate_client_invoices` redistribuía depósitos entre facturas por fecha en cada ejecución (ej. movió $100 de FG6-003 a FG6-004).
+- **Schema**: nuevo campo `assigned_invoice_id` en `wallet_transactions` (vínculo permanente).
+- **Candado (server.py `recalculate_client_invoices`)**: prioridad #0 — si el depósito tiene `assigned_invoice_id` a una factura viva, se queda ahí; nunca se mueve ni queda suelto. Solo si esa factura fue anulada/eliminada cae al cálculo normal.
+- **Memoria**: al final del recálculo persiste `assigned_invoice_id` para cada depósito que aterriza en una factura (primera vez, silencioso). Así el sistema deja de repartir por fecha.
+- **Auditoría**: firma con `actor_id/actor_name/actor_role`. Movimientos reales (de una factura viva a otra distinta) generan `audit_logs` con acción `deposit_reassigned`. La asignación manual (`PUT /wallet/deposit/{id}/assign-invoice`) ahora fija también `assigned_invoice_id`, audita con el nombre del usuario y pasa el actor al recálculo.
+- **Endpoints de mantenimiento (admin)**: `GET /api/admin/maintenance/client-deposits?q=<cid|nombre>` para revisar asignaciones; `POST /api/admin/maintenance/reassign-deposit {deposit_id(prefijo ok), invoice_number}` para mover+bloquear+auditar+recalcular con identificadores legibles.
+- **Verificado en preview** (3 tests + smoke API): candado, memoria (factura nueva no roba el depósito), auditoría de movimiento con actor, y reassign positivo (R8062).
+- **PENDIENTE EN PRODUCCIÓN** (los datos FG6/Gioconda/Nelly/77bc201f NO existen en preview): tras Deploy, ejecutar el fix manual de 77bc201f→FG6-003 y revisar Gioconda Ayala y Nelly (N7N) con los endpoints o la UI de "Asignar recarga".
+
