@@ -3824,6 +3824,17 @@ async def review_client_deposits(q: str, current_user: dict = Depends(get_curren
             {"user_id": u["id"], "tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
             {"_id": 0, "id": 1, "amount": 1, "created_at": 1, "assigned_invoice_id": 1, "target_invoice_id": 1, "description": 1}
         ).sort("created_at", 1).to_list(20000)
+        # Which invoice each deposit CURRENTLY lives on (from applied_deposits),
+        # regardless of whether the permanent lock is set yet.
+        current_by_dep = {}
+        cust = u.get("customer_id")
+        async for inv in db.invoices.find(
+            {"customer_id": cust, "tenant_id": tid, "is_annulled": {"$ne": True}},
+            {"_id": 0, "id": 1, "invoice_number": 1, "applied_deposits": 1}
+        ):
+            for ad in (inv.get("applied_deposits") or []):
+                if ad.get("deposit_id"):
+                    current_by_dep[ad["deposit_id"]] = (inv["id"], inv.get("invoice_number"))
         inv_ids = {d.get("assigned_invoice_id") for d in deposits if d.get("assigned_invoice_id")}
         inv_map = {}
         if inv_ids:
@@ -3839,6 +3850,9 @@ async def review_client_deposits(q: str, current_user: dict = Depends(get_curren
                 "assigned_invoice_id": d.get("assigned_invoice_id"),
                 "assigned_invoice_number": (inv_map.get(d.get("assigned_invoice_id")) or {}).get("invoice_number"),
                 "assigned_invoice_annulled": (inv_map.get(d.get("assigned_invoice_id")) or {}).get("is_annulled", False),
+                "current_invoice_id": (current_by_dep.get(d.get("id")) or (None, None))[0],
+                "current_invoice_number": (current_by_dep.get(d.get("id")) or (None, None))[1],
+                "is_locked": bool(d.get("assigned_invoice_id")),
                 "target_invoice_id": d.get("target_invoice_id"),
                 "description": d.get("description"),
             } for d in deposits],

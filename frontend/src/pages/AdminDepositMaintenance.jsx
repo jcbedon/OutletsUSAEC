@@ -160,17 +160,26 @@ export default function AdminDepositMaintenance() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-base font-extrabold text-slate-900">{fmtMoney(dep.amount)}</span>
-                        {dep.assigned_invoice_number ? (
-                          <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 gap-1">
-                            <Lock className="h-3 w-3" /> {dep.assigned_invoice_number}
+                        {/* Current invoice this deposit lives on right now */}
+                        {dep.current_invoice_number ? (
+                          <Badge className="bg-indigo-50 text-indigo-700 border border-indigo-200 gap-1" data-testid={`current-inv-${dep.id.slice(0, 8)}`}>
+                            Actualmente en: {dep.current_invoice_number}
                           </Badge>
                         ) : (
-                          <Badge className="bg-amber-50 text-amber-700 border border-amber-200 gap-1">
-                            <AlertTriangle className="h-3 w-3" /> Sin vínculo fijo
+                          <Badge className="bg-slate-100 text-slate-500 border border-slate-200">Sin factura (flotante)</Badge>
+                        )}
+                        {/* Lock status */}
+                        {dep.is_locked ? (
+                          <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 gap-1" title="Vínculo permanente: el recálculo no la moverá">
+                            <Lock className="h-3 w-3" /> Fijada
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-amber-50 text-amber-700 border border-amber-200 gap-1" title="La recarga está en esa factura, pero sin candado: el recálculo podría moverla. Pulsa Fijar para bloquearla.">
+                            <AlertTriangle className="h-3 w-3" /> Sin candado
                           </Badge>
                         )}
                         {dep.assigned_invoice_annulled && (
-                          <Badge className="bg-red-50 text-red-700 border border-red-200">Factura anulada</Badge>
+                          <Badge className="bg-red-50 text-red-700 border border-red-200">Factura fijada anulada</Badge>
                         )}
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5 truncate">
@@ -181,7 +190,7 @@ export default function AdminDepositMaintenance() {
 
                     <div className="flex items-center gap-2 shrink-0">
                       <Select
-                        value={pending[dep.id] || dep.assigned_invoice_number || ""}
+                        value={pending[dep.id] || dep.assigned_invoice_number || dep.current_invoice_number || ""}
                         onValueChange={(v) => setPending((p) => ({ ...p, [dep.id]: v }))}
                       >
                         <SelectTrigger className="h-10 w-44 rounded-lg" data-testid={`invoice-select-${dep.id.slice(0, 8)}`}>
