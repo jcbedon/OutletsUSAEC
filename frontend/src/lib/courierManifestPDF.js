@@ -100,17 +100,38 @@ export async function generateCourierManifestPDF({
 
   // ── META block ───────────────────────────────────────────────────────
   let y = 128;
+
+  // TOTAL ENVÍOS as a right-aligned pastel-lilac pill with soft gray text.
+  // (Previously it sat at a fixed x and a long PERÍODO label overlapped it.)
+  const pillText = `TOTAL ENVÍOS: ${shipments.length}`;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(9);
+  const pillTextW = doc.getTextWidth(pillText);
+  const padX = 12;
+  const pillW = pillTextW + padX * 2;
+  const pillH = 22;
+  const pillX = pageW - margin - pillW;
+  const pillY = y - 15;
+  doc.setFillColor(237, 233, 254); // pastel lilac (#EDE9FE)
+  doc.roundedRect(pillX, pillY, pillW, pillH, 11, 11, "F");
+  doc.setTextColor(107, 114, 128); // gray-500
+  doc.text(pillText, pillX + pillW / 2, y, { align: "center" });
+
+  // PERÍODO on the left; clip only as a safety net so it never reaches the pill.
   doc.setTextColor(15, 23, 42);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.text("PERÍODO:", margin, y);
   doc.setFont("helvetica", "normal");
-  doc.text(periodLabel || "Todos", margin + 70, y);
-
-  doc.setFont("helvetica", "bold");
-  doc.text("TOTAL ENVÍOS:", margin + 240, y);
-  doc.setFont("helvetica", "normal");
-  doc.text(String(shipments.length), margin + 330, y);
+  const maxPeriodW = pillX - (margin + 70) - 14;
+  let periodTxt = periodLabel || "Todos";
+  if (doc.getTextWidth(periodTxt) > maxPeriodW) {
+    while (periodTxt.length > 4 && doc.getTextWidth(periodTxt + "…") > maxPeriodW) {
+      periodTxt = periodTxt.slice(0, -1);
+    }
+    periodTxt = periodTxt.trimEnd() + "…";
+  }
+  doc.text(periodTxt, margin + 70, y);
   y += 18;
 
   // Per-category totals (for the courier company)

@@ -230,3 +230,6 @@ Problema: `recalculate_client_invoices` redistribuía depósitos entre facturas 
 - Backend `GET /api/admin/reports/clients` con filtros: `status` (active/inactive), `min_inactivity_days`, `stagnant_only`+`stagnant_days`, `date_from`/`date_to` (por última compra). Devuelve por cliente: name, whatsapp, last_purchase, inactivity_days, saldo_pendiente (adeudado), merchandise_age_days (antigüedad = días desde la compra no facturada más antigua), stagnant, + totals (saldo total, con estancada).
 - Frontend: `lib/clientReportPDF.js` (jsPDF + jspdf-autotable): tabla Cliente/WhatsApp/Última Compra/Días Inact./Saldo Pend./Antig. Mercadería, filas alternas, links WhatsApp (doc.link a wa.me), estancada y saldo en rojo, banda resumen con totales. `components/ClientReportGenerator.jsx` (diálogo de filtros) montado en `AdminStats.jsx`. API `getClientReport`.
 - Verificado: backend 119 clientes / saldo $31,051.66 / 89 estancados; filtros inactividad(104) y estancada(89) OK; UI genera PDF sin errores (toast 104 clientes).
+
+## 2026-06 — Fix layout PDF Envíos (TOTAL ENVÍOS)
+- Se montaba sobre PERÍODO (posición fija margin+240 y periodLabel largo). Ahora TOTAL ENVÍOS es una píldora lila pastel (#EDE9FE) con texto gris (#6B7280) alineada a la derecha; PERÍODO a la izquierda con recorte de seguridad. `lib/courierManifestPDF.js` bloque META.
