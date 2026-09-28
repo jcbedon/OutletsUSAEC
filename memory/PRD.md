@@ -222,3 +222,6 @@ Problema: `recalculate_client_invoices` redistribuía depósitos entre facturas 
 - (Adicional, no era la causa) `lib/courierManifestPDF.js`: entrega multiplataforma (móvil abre en pestaña) — se mantiene como mejora.
 - El manifiesto incluye TODOS los envíos de la semana sin importar el status. Verificado en preview con semana específica (6-Abril, 2 envíos): "Manifiesto PDF generado" sin overlay de error.
 
+
+## 2026-06 — PDF Paquetería: nombre + código del cliente
+- El PDF usaba `customer_name/client_name` (vienen null); el envío trae el nombre en `user_name` y el código en `customer_id`. Fix en `lib/courierManifestPDF.js`: la columna CLIENTE ahora usa `s.user_name` como primer fallback. El código `#customer_id` ya se imprimía debajo. Verificado contra datos reales (user_name="Self Registered Client", customer_id="S7951").

@@ -233,7 +233,7 @@ export async function generateCourierManifestPDF({
         drawTableHeader(y);
         y += 12;
       }
-      const customer = (s.customer_name || s.client_name || (s.client && s.client.name) || s.customer_id || "—").slice(0, 28);
+      const customer = (s.user_name || s.customer_name || s.client_name || (s.client && s.client.name) || "—").slice(0, 28);
       const tracking =
         (Array.isArray(s.tracking_numbers) && s.tracking_numbers[0]) ||
         s.tracking_number ||
