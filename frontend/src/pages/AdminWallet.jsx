@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount, scanDepositProof, listBankAccounts } from "@/lib/api";
+import { getPendingDeposits, approveDeposit, rejectDeposit, getAllDeposits, adminBalanceAdjustment, adminCreateRecharge, getAllClients, generateRechargeUploadQR, checkRechargeUploadStatus, deleteDeposit, getDeletedDeposits, setDepositAmount, scanDepositProof, listBankAccounts, setDepositBankReviewed } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart, QrCode, Smartphone, Loader2, Trash2, AlertTriangle, RefreshCw } from "lucide-react";
+import { ArrowLeft, CheckCircle, Clock, Image, ZoomIn, XCircle, History, Minus, DollarSign, Search, Plus, Upload, FileBarChart, QrCode, Smartphone, Loader2, Trash2, AlertTriangle, RefreshCw, Check } from "lucide-react";
 import RechargeReport from "@/components/RechargeReport";
 import QRCode from "qrcode";
 
@@ -504,6 +504,18 @@ export default function AdminWallet() {
     if (!deposit.proof_url) return null;
     if (deposit.proof_url.startsWith("http")) return deposit.proof_url;
     return `${BACKEND_URL}${deposit.proof_url}`;
+  };
+
+  // Toggle the subtle "reviewed against the bank account" marker on a recharge.
+  const toggleBankReviewed = async (deposit) => {
+    const next = !deposit.bank_reviewed;
+    setAllDeposits(prev => prev.map(d => d.id === deposit.id ? { ...d, bank_reviewed: next } : d));
+    try {
+      await setDepositBankReviewed(deposit.id, next);
+    } catch (e) {
+      setAllDeposits(prev => prev.map(d => d.id === deposit.id ? { ...d, bank_reviewed: !next } : d));
+      toast.error("No se pudo actualizar la revisión");
+    }
   };
 
   const getStatusBadge = (status) => {
@@ -1379,7 +1391,7 @@ export default function AdminWallet() {
                         )}
                       </span>
                     </div>
-                    {group.items.map((deposit) => {
+                    {group.items.map((deposit, idx) => {
                       const proofUrl = getProofUrl(deposit);
                       return (
                         <Card key={deposit.id} className={`rounded-xl ${deposit.is_deleted ? 'opacity-70 border-dashed border-2 border-red-200' : ''}`} data-testid="history-deposit-item">
@@ -1387,9 +1399,21 @@ export default function AdminWallet() {
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
                                 <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <span className="text-[11px] font-bold text-gray-400 tabular-nums w-6 shrink-0" data-testid={`deposit-number-${deposit.id}`}>#{idx + 1}</span>
                                   <Badge variant="outline" className="font-bold text-xs">#{deposit.customer_id}</Badge>
                                   <span className="font-semibold text-slate-800">{deposit.user_name}</span>
                                   {getStatusBadge(deposit.status)}
+                                  {deposit.status === 'approved' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleBankReviewed(deposit)}
+                                      title={deposit.bank_reviewed ? `Revisada en banco${deposit.bank_reviewed_by ? ' por ' + deposit.bank_reviewed_by : ''}` : 'Marcar como revisada en banco'}
+                                      className={`inline-flex items-center justify-center h-4 w-4 rounded-full border transition-colors ${deposit.bank_reviewed ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 text-transparent hover:border-green-400 hover:text-green-400'}`}
+                                      data-testid={`bank-reviewed-toggle-${deposit.id}`}
+                                    >
+                                      <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                                    </button>
+                                  )}
                                   {deposit.is_deleted && (
                                     <Badge className="bg-red-100 text-red-700 border-red-200 text-[10px] uppercase font-bold" data-testid="deposit-deleted-badge">Eliminada</Badge>
                                   )}

@@ -3322,6 +3322,33 @@ async def get_all_deposits(include_deleted: bool = False, current_user: dict = D
         })
     return result
 
+@api_router.post("/wallet/deposit/{transaction_id}/bank-reviewed")
+async def set_deposit_bank_reviewed(transaction_id: str, data: dict = Body(default=None), current_user: dict = Depends(get_current_user)):
+    """Toggle the 'reviewed against the bank account' flag on a deposit — a
+    subtle reconciliation marker shown in the Recargas history view."""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    reviewed = bool((data or {}).get("reviewed", True))
+    tx = await db.wallet_transactions.find_one(
+        {"id": transaction_id, "tenant_id": tid, "type": "deposit"}, {"_id": 0, "id": 1}
+    )
+    if not tx:
+        raise HTTPException(status_code=404, detail="Recarga no encontrada")
+    actor_name = await get_actor_name(current_user["user_id"])
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.wallet_transactions.update_one(
+        {"id": transaction_id, "tenant_id": tid},
+        {"$set": {
+            "bank_reviewed": reviewed,
+            "bank_reviewed_at": now_iso if reviewed else None,
+            "bank_reviewed_by": actor_name if reviewed else None,
+        }}
+    )
+    return {"message": "Revisión actualizada", "bank_reviewed": reviewed,
+            "bank_reviewed_at": now_iso if reviewed else None, "bank_reviewed_by": actor_name if reviewed else None}
+
+
 @api_router.get("/wallet/deleted-deposits")
 async def get_deleted_deposits(current_user: dict = Depends(get_current_user)):
     """Get all soft-deleted deposits"""
