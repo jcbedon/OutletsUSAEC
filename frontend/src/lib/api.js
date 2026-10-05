@@ -80,7 +80,7 @@ export const getDeletedDeposits = () => api.get("/wallet/deleted-deposits");
 // Lives
 export const createLive = (data) => api.post("/lives", data);
 export const updateLive = (liveId, data) => api.put(`/lives/${liveId}`, data);
-export const startLive = (liveId) => api.post(`/lives/${liveId}/start`);
+export const startLive = (liveId, data = {}) => api.post(`/lives/${liveId}/start`, data);
 export const endLive = (liveId) => api.post(`/lives/${liveId}/end`);
 export const getLives = (status) => api.get("/lives", { params: { status } });
 export const getActiveLive = () => api.get("/lives/active");
@@ -102,7 +102,7 @@ export const checkRechargeUploadStatus = (uploadToken) => api.get(`/wallet/check
 export const createPurchase = (data) => api.post("/purchases", data);
 export const getUserPurchases = (userId) => api.get(`/purchases/user/${userId}`);
 export const updatePurchase = (purchaseId, data) => api.put(`/purchases/${purchaseId}`, data);
-export const deletePurchase = (purchaseId) => api.delete(`/purchases/${purchaseId}`);
+export const deletePurchase = (purchaseId, data) => api.delete(`/purchases/${purchaseId}`, data ? { data } : undefined);
 export const getDeletePurchasePreview = (purchaseId) => api.get(`/purchases/${purchaseId}/delete-preview`);
 export const getLivePurchases = (liveId) => api.get(`/purchases/live/${liveId}`);
 export const getPendingShipmentPurchases = (userId) => api.get(`/purchases/pending-shipment/${userId}`);

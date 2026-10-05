@@ -143,6 +143,14 @@ export default function AdminLive() {
   const [deletePreview, setDeletePreview] = useState(null);
   const [deletePreviewLoading, setDeletePreviewLoading] = useState(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+
+  // Admin-password gate for sensitive actions on FINALIZED lives.
+  const [reactivatePwd, setReactivatePwd] = useState("");
+  const [reactivatePwdOpen, setReactivatePwdOpen] = useState(false);
+  const [reactivatePwdSubmitting, setReactivatePwdSubmitting] = useState(false);
+  const [reactivatePwdError, setReactivatePwdError] = useState("");
+  const [deletePwd, setDeletePwd] = useState("");
+  const [deletePwdError, setDeletePwdError] = useState("");
   
   // Redirect if no permission
   useEffect(() => {
@@ -423,11 +431,26 @@ export default function AdminLive() {
     }
   };
 
-  const handleReactivateLive = async () => {
+  const handleReactivateLive = () => {
     if (!selectedLive) return;
+    setReactivatePwd("");
+    setReactivatePwdError("");
+    setReactivatePwdOpen(true);
+  };
+
+  const doReactivateLive = async () => {
+    if (!selectedLive) return;
+    if (!reactivatePwd.trim()) {
+      setReactivatePwdError("Ingresa la clave del administrador");
+      return;
+    }
+    setReactivatePwdSubmitting(true);
+    setReactivatePwdError("");
     try {
-      await startLive(selectedLive.id);
+      await startLive(selectedLive.id, { password: reactivatePwd });
       toast.success("¡Live reactivado! Ahora puedes agregar productos");
+      setReactivatePwdOpen(false);
+      setReactivatePwd("");
       // Reload to update status
       const livesRes = await getLives();
       setLives(livesRes.data);
@@ -437,8 +460,13 @@ export default function AdminLive() {
         setActiveLive(reactivatedLive);
       }
     } catch (error) {
-      const errorMessage = error.response?.data?.detail || "Error al reactivar Live";
-      toast.error(errorMessage);
+      if (error.response?.status === 401) {
+        setReactivatePwdError("Clave de administrador incorrecta");
+      } else {
+        toast.error(error.response?.data?.detail || "Error al reactivar Live");
+      }
+    } finally {
+      setReactivatePwdSubmitting(false);
     }
   };
 
@@ -685,6 +713,8 @@ export default function AdminLive() {
   // the confirm dialog can show "this will leave the invoice with X items / $Y".
   const handleDeletePurchase = async (purchaseId) => {
     setDeletePreviewLoading(true);
+    setDeletePwd("");
+    setDeletePwdError("");
     setDeletePreview({ purchase_id: purchaseId }); // open dialog immediately with skeleton
     try {
       const res = await getDeletePurchasePreview(purchaseId);
@@ -700,14 +730,25 @@ export default function AdminLive() {
   // Step 2: User confirms in the dialog → actually delete.
   const confirmDeletePurchase = async () => {
     if (!deletePreview?.purchase_id) return;
+    const isFinalized = selectedLive && ["completed", "ended", "finalized"].includes(selectedLive.status);
+    if (isFinalized && !deletePwd.trim()) {
+      setDeletePwdError("Ingresa la clave del administrador");
+      return;
+    }
     setDeleteSubmitting(true);
+    setDeletePwdError("");
     try {
-      await deletePurchase(deletePreview.purchase_id);
+      await deletePurchase(deletePreview.purchase_id, isFinalized ? { password: deletePwd } : undefined);
       toast.success("Compra eliminada y saldo reembolsado");
       setDeletePreview(null);
+      setDeletePwd("");
       loadData(true); // Preserve selection to stay on current Live
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Error al eliminar");
+      if (error.response?.status === 401) {
+        setDeletePwdError("Clave de administrador incorrecta");
+      } else {
+        toast.error(error.response?.data?.detail || "Error al eliminar");
+      }
     } finally {
       setDeleteSubmitting(false);
     }
@@ -1740,8 +1781,60 @@ export default function AdminLive() {
           </DialogContent>
         </Dialog>
 
+        {/* Reactivate finalized live — requires Astrid-Shop admin password */}
+        <Dialog open={reactivatePwdOpen} onOpenChange={(open) => { if (!open && !reactivatePwdSubmitting) { setReactivatePwdOpen(false); setReactivatePwd(""); setReactivatePwdError(""); } }}>
+          <DialogContent className="rounded-2xl max-w-md" data-testid="reactivate-pwd-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-slate-800">
+                <Play className="h-5 w-5 text-green-600" />
+                Reactivar Live
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <p className="text-sm text-gray-600">
+                Para reactivar este live finalizado y <strong>agregar productos</strong>, ingresa la <strong>clave del administrador de Astrid-Shop</strong>.
+              </p>
+              <div>
+                <Label className="text-sm font-medium">Clave de administrador</Label>
+                <Input
+                  type="password"
+                  autoFocus
+                  value={reactivatePwd}
+                  onChange={(e) => { setReactivatePwd(e.target.value); setReactivatePwdError(""); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") doReactivateLive(); }}
+                  placeholder="••••••••"
+                  className="h-12 rounded-xl mt-2"
+                  data-testid="reactivate-pwd-input"
+                />
+                {reactivatePwdError && (
+                  <p className="text-xs text-red-600 mt-1" data-testid="reactivate-pwd-error">{reactivatePwdError}</p>
+                )}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => { setReactivatePwdOpen(false); setReactivatePwd(""); setReactivatePwdError(""); }}
+                  disabled={reactivatePwdSubmitting}
+                  className="flex-1 h-11 rounded-xl"
+                  data-testid="reactivate-pwd-cancel"
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={doReactivateLive}
+                  disabled={reactivatePwdSubmitting}
+                  className="flex-1 h-11 rounded-xl font-bold bg-green-600 hover:bg-green-700 text-white"
+                  data-testid="reactivate-pwd-confirm"
+                >
+                  {reactivatePwdSubmitting ? "Verificando…" : "Reactivar"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Delete purchase confirmation with backend-computed preview */}
-        <AlertDialog open={!!deletePreview} onOpenChange={(open) => { if (!open && !deleteSubmitting) setDeletePreview(null); }}>
+        <AlertDialog open={!!deletePreview} onOpenChange={(open) => { if (!open && !deleteSubmitting) { setDeletePreview(null); setDeletePwd(""); setDeletePwdError(""); } }}>
           <AlertDialogContent data-testid="delete-purchase-preview-dialog">
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2 text-red-700">
@@ -1785,6 +1878,24 @@ export default function AdminLive() {
                       ) : (
                         <p className="text-xs text-slate-500">Este producto no pertenece a ninguna factura.</p>
                       )}
+                      {selectedLive && ["completed", "ended", "finalized"].includes(selectedLive.status) && (
+                        <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 space-y-2" data-testid="delete-pwd-block">
+                          <p className="text-xs font-semibold text-slate-700">
+                            Este live está finalizado. Ingresa la <strong>clave del administrador de Astrid-Shop</strong> para eliminar.
+                          </p>
+                          <Input
+                            type="password"
+                            value={deletePwd}
+                            onChange={(e) => { setDeletePwd(e.target.value); setDeletePwdError(""); }}
+                            placeholder="Clave de administrador"
+                            className="h-10 rounded-lg bg-white"
+                            data-testid="delete-pwd-input"
+                          />
+                          {deletePwdError && (
+                            <p className="text-xs text-red-600" data-testid="delete-pwd-error">{deletePwdError}</p>
+                          )}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -1794,7 +1905,7 @@ export default function AdminLive() {
               <AlertDialogCancel data-testid="delete-purchase-cancel">Cancelar</AlertDialogCancel>
               <AlertDialogAction
                 onClick={(e) => { e.preventDefault(); confirmDeletePurchase(); }}
-                disabled={deleteSubmitting || deletePreviewLoading || !deletePreview?.item_name}
+                disabled={deleteSubmitting || deletePreviewLoading || !deletePreview?.item_name || (selectedLive && ["completed", "ended", "finalized"].includes(selectedLive.status) && !deletePwd.trim())}
                 className="bg-red-600 hover:bg-red-700 text-white"
                 data-testid="delete-purchase-confirm"
               >

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Form as FastAPIForm, Response
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, UploadFile, File, Form as FastAPIForm, Response, Body
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -658,6 +658,18 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, password_hash: str) -> bool:
     return hash_password(password) == password_hash
+
+async def verify_tenant_admin_password(tenant_id: str, password: str) -> bool:
+    """Verify a plaintext password against the tenant's admin account.
+    Used to gate sensitive actions that must always be authorized by the
+    store admin (e.g. reactivating/editing a finalized live), regardless of
+    who is operating (admin or an employee with a module permission)."""
+    if not password:
+        return False
+    admin = await db.users.find_one(
+        {"tenant_id": tenant_id, "role": "admin"}, {"_id": 0, "password_hash": 1}
+    )
+    return bool(admin and verify_password(password, admin["password_hash"]))
 
 async def create_notification(tenant_id: str, user_id: str, customer_id: str, notif_type: str, title: str, message: str):
     notification = Notification(
@@ -4744,11 +4756,19 @@ async def create_live(live_data: LiveCreate, current_user: dict = Depends(get_cu
     return {"message": "Live creado", "live_id": live.id}
 
 @api_router.post("/lives/{live_id}/start")
-async def start_live(live_id: str, current_user: dict = Depends(get_current_user)):
+async def start_live(live_id: str, data: dict = Body(default=None), current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
-    live = await db.lives.find_one({"id": live_id, "tenant_id": current_user["tenant_id"]}, {"_id": 0, "title": 1, "store": 1})
-    result = await db.lives.update_one({"id": live_id, "tenant_id": current_user["tenant_id"]},
+    tid = current_user["tenant_id"]
+    live = await db.lives.find_one({"id": live_id, "tenant_id": tid}, {"_id": 0, "title": 1, "store": 1, "status": 1})
+    if not live:
+        raise HTTPException(status_code=404, detail="Live no encontrado")
+    # Reactivating a FINALIZED live to add products requires the Astrid-Shop
+    # admin password — always, even for employees with the lives permission.
+    if live.get("status") in ("completed", "ended", "finalized"):
+        if not await verify_tenant_admin_password(tid, (data or {}).get("password")):
+            raise HTTPException(status_code=401, detail="Clave de administrador incorrecta")
+    result = await db.lives.update_one({"id": live_id, "tenant_id": tid},
         {"$set": {"status": "active", "started_at": datetime.now(timezone.utc).isoformat()}})
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Live no encontrado")
@@ -5397,13 +5417,18 @@ async def get_delete_purchase_preview(purchase_id: str, current_user: dict = Dep
 
 
 @api_router.delete("/purchases/{purchase_id}")
-async def delete_purchase(purchase_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_purchase(purchase_id: str, data: dict = Body(default=None), current_user: dict = Depends(get_current_user)):
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     tid = current_user["tenant_id"]
     purchase = await db.purchases.find_one({"id": purchase_id, "tenant_id": tid}, {"_id": 0})
     if not purchase:
         raise HTTPException(status_code=404, detail="Compra no encontrada")
+    # Deleting a product from a FINALIZED live requires the Astrid-Shop admin password.
+    parent_live = await db.lives.find_one({"id": purchase.get("live_id"), "tenant_id": tid}, {"_id": 0, "status": 1})
+    if (parent_live or {}).get("status") in ("completed", "ended", "finalized"):
+        if not await verify_tenant_admin_password(tid, (data or {}).get("password")):
+            raise HTTPException(status_code=401, detail="Clave de administrador incorrecta")
     # Refund total to wallet
     wallet = await db.wallets.find_one({"user_id": purchase["user_id"], "tenant_id": tid}, {"_id": 0})
     if wallet:
