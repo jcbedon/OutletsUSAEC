@@ -151,6 +151,7 @@ export default function AdminLive() {
   const [reactivatePwdError, setReactivatePwdError] = useState("");
   const [deletePwd, setDeletePwd] = useState("");
   const [deletePwdError, setDeletePwdError] = useState("");
+  const [deletePwdRequired, setDeletePwdRequired] = useState(false);
   
   // Redirect if no permission
   useEffect(() => {
@@ -715,6 +716,7 @@ export default function AdminLive() {
     setDeletePreviewLoading(true);
     setDeletePwd("");
     setDeletePwdError("");
+    setDeletePwdRequired(!!(selectedLive && ["completed", "ended", "finalized"].includes(selectedLive.status)));
     setDeletePreview({ purchase_id: purchaseId }); // open dialog immediately with skeleton
     try {
       const res = await getDeletePurchasePreview(purchaseId);
@@ -730,22 +732,24 @@ export default function AdminLive() {
   // Step 2: User confirms in the dialog → actually delete.
   const confirmDeletePurchase = async () => {
     if (!deletePreview?.purchase_id) return;
-    const isFinalized = selectedLive && ["completed", "ended", "finalized"].includes(selectedLive.status);
-    if (isFinalized && !deletePwd.trim()) {
+    if (deletePwdRequired && !deletePwd.trim()) {
       setDeletePwdError("Ingresa la clave del administrador");
       return;
     }
     setDeleteSubmitting(true);
     setDeletePwdError("");
     try {
-      await deletePurchase(deletePreview.purchase_id, isFinalized ? { password: deletePwd } : undefined);
+      await deletePurchase(deletePreview.purchase_id, deletePwd.trim() ? { password: deletePwd } : undefined);
       toast.success("Compra eliminada y saldo reembolsado");
       setDeletePreview(null);
       setDeletePwd("");
+      setDeletePwdRequired(false);
       loadData(true); // Preserve selection to stay on current Live
     } catch (error) {
       if (error.response?.status === 401) {
-        setDeletePwdError("Clave de administrador incorrecta");
+        // Live finalizado: el backend exige la clave del administrador.
+        setDeletePwdRequired(true);
+        setDeletePwdError(deletePwd.trim() ? "Clave de administrador incorrecta" : "Este live está finalizado. Ingresa la clave del administrador para eliminar.");
       } else {
         toast.error(error.response?.data?.detail || "Error al eliminar");
       }
@@ -1834,7 +1838,7 @@ export default function AdminLive() {
         </Dialog>
 
         {/* Delete purchase confirmation with backend-computed preview */}
-        <AlertDialog open={!!deletePreview} onOpenChange={(open) => { if (!open && !deleteSubmitting) { setDeletePreview(null); setDeletePwd(""); setDeletePwdError(""); } }}>
+        <AlertDialog open={!!deletePreview} onOpenChange={(open) => { if (!open && !deleteSubmitting) { setDeletePreview(null); setDeletePwd(""); setDeletePwdError(""); setDeletePwdRequired(false); } }}>
           <AlertDialogContent data-testid="delete-purchase-preview-dialog">
             <AlertDialogHeader>
               <AlertDialogTitle className="flex items-center gap-2 text-red-700">
@@ -1878,7 +1882,7 @@ export default function AdminLive() {
                       ) : (
                         <p className="text-xs text-slate-500">Este producto no pertenece a ninguna factura.</p>
                       )}
-                      {selectedLive && ["completed", "ended", "finalized"].includes(selectedLive.status) && (
+                      {deletePwdRequired && (
                         <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5 space-y-2" data-testid="delete-pwd-block">
                           <p className="text-xs font-semibold text-slate-700">
                             Este live está finalizado. Ingresa la <strong>clave del administrador de Astrid-Shop</strong> para eliminar.
@@ -1905,7 +1909,7 @@ export default function AdminLive() {
               <AlertDialogCancel data-testid="delete-purchase-cancel">Cancelar</AlertDialogCancel>
               <AlertDialogAction
                 onClick={(e) => { e.preventDefault(); confirmDeletePurchase(); }}
-                disabled={deleteSubmitting || deletePreviewLoading || !deletePreview?.item_name || (selectedLive && ["completed", "ended", "finalized"].includes(selectedLive.status) && !deletePwd.trim())}
+                disabled={deleteSubmitting || deletePreviewLoading || !deletePreview?.item_name || (deletePwdRequired && !deletePwd.trim())}
                 className="bg-red-600 hover:bg-red-700 text-white"
                 data-testid="delete-purchase-confirm"
               >
