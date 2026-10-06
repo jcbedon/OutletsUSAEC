@@ -660,16 +660,18 @@ def verify_password(password: str, password_hash: str) -> bool:
     return hash_password(password) == password_hash
 
 async def verify_tenant_admin_password(tenant_id: str, password: str) -> bool:
-    """Verify a plaintext password against the tenant's admin account.
+    """Verify a plaintext password against ANY admin account of the tenant.
     Used to gate sensitive actions that must always be authorized by the
     store admin (e.g. reactivating/editing a finalized live), regardless of
-    who is operating (admin or an employee with a module permission)."""
+    who is operating (admin or an employee with a module permission).
+    Checks all admin accounts so tenants with more than one admin still work."""
     if not password:
         return False
-    admin = await db.users.find_one(
+    admins = await db.users.find(
         {"tenant_id": tenant_id, "role": "admin"}, {"_id": 0, "password_hash": 1}
-    )
-    return bool(admin and verify_password(password, admin["password_hash"]))
+    ).to_list(50)
+    ph = hash_password(password)
+    return any(a.get("password_hash") == ph for a in admins)
 
 async def create_notification(tenant_id: str, user_id: str, customer_id: str, notif_type: str, title: str, message: str):
     notification = Notification(
