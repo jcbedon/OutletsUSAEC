@@ -1046,7 +1046,7 @@ export default function AdminLive() {
 
         {/* Selected Live - Purchase Mode */}
         {selectedLive && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Purchase Form - LEFT */}
             <div className="space-y-4">
               {/* Live Header */}
@@ -1116,7 +1116,7 @@ export default function AdminLive() {
                     </div>
 
                     {/* Stats Row */}
-                    <div className="flex gap-6 mt-4 pt-4 border-t border-white/20">
+                    <div className="flex flex-wrap items-center gap-x-5 gap-y-3 mt-4 pt-4 border-t border-white/20">
                       <div>
                         <p className="text-gray-300 text-xs">Ventas</p>
                         <p className="text-2xl font-bold">{selectedLive.purchase_count || 0}</p>
@@ -1130,7 +1130,7 @@ export default function AdminLive() {
                         <p className="text-2xl font-bold">${(selectedLive.total_commissions || 0).toFixed(2)}</p>
                       </div>
                       {/* Store Invoice inline in header - always show */}
-                      <div className="ml-auto">
+                      <div className="ml-auto max-w-full min-w-0">
                         <StoreInvoiceSection 
                           live={selectedLive} 
                           onUpdate={async () => {
@@ -1583,7 +1583,7 @@ export default function AdminLive() {
                   </div>
                 </CardHeader>
                 <CardContent className="p-4 pt-0">
-                  <ScrollArea className="h-[calc(100vh-520px)]">
+                  <ScrollArea className="h-[calc(100vh-360px)] min-h-[420px]">
                     {(() => {
                       let filtered = purchases;
                       // If a client is selected from the summary, filter to that client
@@ -1614,7 +1614,7 @@ export default function AdminLive() {
                         );
                       }
                       return (
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                           {expandedClient && !purchaseSearch.trim() && (
                             <div className="flex items-center justify-between mb-1">
                               <p className="text-xs text-blue-600 font-medium" data-testid="filtered-client-label">
