@@ -182,6 +182,9 @@ export default function AdminDashboard() {
   // Get employee permissions (if employee)
   const permissions = user?.permissions || {};
   const isAdmin = user?.role === "admin";
+  // Single switch to hide the business MONEY cards on the dashboard for employees.
+  // Reuses the existing "Ver KPIs de dinero" permission (admin always sees them).
+  const canSeeMoneyCards = isAdmin || permissions.stats_view_money_kpis === true;
 
   // Filter menu items based on role and permissions
   const getFilteredMenuItems = () => {
@@ -328,7 +331,7 @@ export default function AdminDashboard() {
             { key: "shipments", icon: Truck, value: `$${summary?.total_shipping?.toFixed(0) || 0}`, label: "Envios", bg: "bg-purple-50", iconBg: "rgba(147,51,234,0.1)", iconColor: "#9333ea", prefix: "", onClick: () => navigate("/admin/shipments") },
             { key: "packages", icon: Package, value: summary?.total_packages || 0, label: `Paquetes${summary?.shipments_count != null ? ` · ${summary.shipments_count} envío${summary.shipments_count === 1 ? '' : 's'}` : ''}`, bg: "bg-orange-50", iconBg: "rgba(249,115,22,0.1)", iconColor: "#ea580c", prefix: "", onClick: () => navigate("/admin/packages-report") },
             { key: "buyers", icon: ShoppingBag, value: summary?.buyers_count || 0, label: "Compraron", bg: "bg-teal-50", iconBg: "rgba(20,184,166,0.1)", iconColor: "#0d9488", prefix: "", onClick: openBuyersReport },
-          ].map((stat) => (
+          ].filter((stat) => canSeeMoneyCards || !["sales", "commissions", "shipments"].includes(stat.key)).map((stat) => (
             <div key={stat.key} className={`${stat.bg} rounded-xl p-3 text-center ${stat.onClick ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-slate-300 transition-all' : ''}`} data-testid={`stat-${stat.key}`} onClick={stat.onClick}>
               <div className="w-8 h-8 rounded-lg flex items-center justify-center mx-auto mb-1.5" style={{ background: stat.iconBg }}>
                 <stat.icon className="h-4 w-4" style={{ color: stat.iconColor }} />
@@ -365,7 +368,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Top Customers */}
-        {summary?.top_customers && summary.top_customers.length > 0 && (
+        {canSeeMoneyCards && summary?.top_customers && summary.top_customers.length > 0 && (
           <div className="mt-8">
             <h2 className="text-lg font-bold text-slate-800 mb-4">Mejores Clientes</h2>
             <Card className="rounded-xl">

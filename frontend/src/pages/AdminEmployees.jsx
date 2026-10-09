@@ -43,7 +43,7 @@ const PERMISSION_GROUPS = [
     title: "Estadísticas",
     items: [
       { key: "view_statistics", label: "Acceso al módulo Estadísticas", description: "Permite entrar a /admin/stats (toggle maestro)" },
-      { key: "stats_view_money_kpis", label: "Ver KPIs de dinero (cabecera)", description: "Muestra las tarjetas de Ganancia, Ventas, Comisiones y Envíos en la parte superior" },
+      { key: "stats_view_money_kpis", label: "Ver KPIs de dinero (cabecera)", description: "Muestra las tarjetas de dinero (Ventas, Comisiones, Envíos) arriba del Dashboard y la cabecera de Estadísticas. Si está apagado, el empleado no ve esos números del negocio." },
       { key: "stats_resumen", label: "Pestaña: Resumen", description: "" },
       { key: "stats_tiendas", label: "Pestaña: Tiendas", description: "" },
       { key: "stats_deudas", label: "Pestaña: Deudas", description: "" },
