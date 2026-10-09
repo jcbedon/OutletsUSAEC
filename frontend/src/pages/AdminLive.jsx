@@ -1473,8 +1473,8 @@ export default function AdminLive() {
 
             {/* Purchases List - RIGHT */}
             <div>
-              <Card className="rounded-2xl h-[calc(100vh-160px)]">
-                <CardHeader className="pb-2">
+              <Card className="rounded-2xl h-[calc(100vh-160px)] flex flex-col">
+                <CardHeader className="pb-2 shrink-0">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-lg" data-testid="live-purchases-title">Compras del Live ({purchases.length})</CardTitle>
                     <div className="flex items-center gap-2">
@@ -1582,8 +1582,8 @@ export default function AdminLive() {
                     />
                   </div>
                 </CardHeader>
-                <CardContent className="p-4 pt-0">
-                  <ScrollArea className="h-[calc(100vh-360px)] min-h-[420px]">
+                <CardContent className="p-4 pt-0 flex-1 min-h-0">
+                  <ScrollArea className="h-full">
                     {(() => {
                       let filtered = purchases;
                       // If a client is selected from the summary, filter to that client
