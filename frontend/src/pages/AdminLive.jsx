@@ -325,17 +325,15 @@ export default function AdminLive() {
   };
 
   const handleCreateLive = async () => {
-    if (!newLiveTitle.trim()) {
-      toast.error("Ingresa un título para el Live");
-      return;
-    }
     if (!newLiveStore.trim()) {
       toast.error("Ingresa el nombre de la tienda");
       return;
     }
+    // Auto-build the title: store name + current date.
+    const autoTitle = `${newLiveStore.trim()} ${new Date().toLocaleDateString('es-EC')}`;
 
     try {
-      const res = await createLive({ title: newLiveTitle, store: newLiveStore });
+      const res = await createLive({ title: autoTitle, store: newLiveStore.trim() });
       const newLiveId = res.data.live_id;
       toast.success("Live creado");
       setNewLiveTitle("");
@@ -820,16 +818,6 @@ export default function AdminLive() {
                     </DialogHeader>
                     <div className="space-y-4 pt-4">
                       <div>
-                        <Label>Título del Live</Label>
-                        <Input
-                          placeholder="Ej: Live Walmart Febrero"
-                          value={newLiveTitle}
-                          onChange={(e) => setNewLiveTitle(e.target.value)}
-                          className="h-12 rounded-xl mt-2"
-                          data-testid="live-title-input"
-                        />
-                      </div>
-                      <div>
                         <Label>Tienda *</Label>
                         <Input
                           placeholder="Ej: Walmart, Target, Amazon..."
@@ -837,8 +825,11 @@ export default function AdminLive() {
                           onChange={(e) => setNewLiveStore(e.target.value)}
                           className="h-12 rounded-xl mt-2"
                           data-testid="live-store-input"
+                          autoFocus
                         />
-                        <p className="text-xs text-gray-500 mt-1">Todas las compras de este Live serán de esta tienda</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          El nombre del Live se crea solo: <span className="font-semibold">{newLiveStore.trim() ? `${newLiveStore.trim()} ${new Date().toLocaleDateString('es-EC')}` : `Tienda ${new Date().toLocaleDateString('es-EC')}`}</span>
+                        </p>
                       </div>
                       <Button 
                         className="w-full h-12 font-bold rounded-xl" style={{ background: '#1E3A5F', color: 'white' }}

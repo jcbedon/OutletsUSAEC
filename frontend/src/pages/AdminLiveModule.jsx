@@ -43,7 +43,7 @@ export default function AdminLiveModule() {
 
   // Create-live form
   const [showCreate, setShowCreate] = useState(false);
-  const [newLive, setNewLive] = useState({ title: "", store: "", taxOption: "0", customTax: "" });
+  const [newLive, setNewLive] = useState({ store: "", taxOption: "0", customTax: "" });
   const [creating, setCreating] = useState(false);
 
   // Product form
@@ -94,17 +94,19 @@ export default function AdminLiveModule() {
   };
 
   const handleCreateLive = async () => {
-    if (!newLive.title.trim()) { toast.error("Ingresa el nombre del Live"); return; }
+    if (!newLive.store.trim()) { toast.error("Ingresa el nombre de la tienda"); return; }
+    // Auto-build the title: store name + current date.
+    const autoTitle = `${newLive.store.trim()} ${new Date().toLocaleDateString('es-EC')}`;
     const apply = newLive.taxOption !== "0";
     const rate = getEffectiveTaxRate(newLive.taxOption, newLive.customTax);
     setCreating(true);
     try {
-      const res = await createLive({ title: newLive.title.trim(), store: newLive.store.trim(), tax_rate: rate, apply_tax: apply });
+      const res = await createLive({ title: autoTitle, store: newLive.store.trim(), tax_rate: rate, apply_tax: apply });
       const liveId = res.data?.live_id;
       try { await startLive(liveId); } catch (_e) { /* already fine */ }
       toast.success("Live creado");
       setShowCreate(false);
-      setNewLive({ title: "", store: "", taxOption: "0", customTax: "" });
+      setNewLive({ store: "", taxOption: "0", customTax: "" });
       const livesRes = await getLives();
       setLives(livesRes.data || []);
       const created = (livesRes.data || []).find(l => l.id === liveId);
@@ -293,14 +295,9 @@ export default function AdminLiveModule() {
                 <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-4 space-y-3" data-testid="live-module-create-form">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <Label className="text-xs">Nombre del Live *</Label>
-                      <Input value={newLive.title} onChange={e => setNewLive({ ...newLive, title: e.target.value })}
-                        placeholder="Ej: Live Viernes" className="h-10 rounded-lg mt-1" data-testid="new-live-title" />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Tienda</Label>
+                      <Label className="text-xs">Tienda *</Label>
                       <Input value={newLive.store} onChange={e => setNewLive({ ...newLive, store: e.target.value })}
-                        placeholder="Ej: PRIMARK" className="h-10 rounded-lg mt-1" data-testid="new-live-store" />
+                        placeholder="Ej: PRIMARK" className="h-10 rounded-lg mt-1" autoFocus data-testid="new-live-store" />
                     </div>
                     <div>
                       <Label className="text-xs">Impuesto (Tax)</Label>
@@ -319,6 +316,9 @@ export default function AdminLiveModule() {
                       </div>
                     )}
                   </div>
+                  <p className="text-xs text-slate-500" data-testid="new-live-name-preview">
+                    El Live se llamará: <span className="font-semibold text-rose-600">{newLive.store.trim() ? `${newLive.store.trim()} ${new Date().toLocaleDateString('es-EC')}` : `Tienda ${new Date().toLocaleDateString('es-EC')}`}</span>
+                  </p>
                   <Button onClick={handleCreateLive} disabled={creating} className="w-full h-11 rounded-xl bg-[#B84A5E] hover:bg-[#A33F52] text-white font-bold" data-testid="new-live-submit">
                     {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Crear Live"}
                   </Button>
