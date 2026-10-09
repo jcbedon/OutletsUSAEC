@@ -368,7 +368,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Top Customers */}
-        {canSeeMoneyCards && summary?.top_customers && summary.top_customers.length > 0 && (
+        {summary?.top_customers && summary.top_customers.length > 0 && (
           <div className="mt-8">
             <h2 className="text-lg font-bold text-slate-800 mb-4">Mejores Clientes</h2>
             <Card className="rounded-xl">
