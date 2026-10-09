@@ -1,0 +1,492 @@
+import { useState, useEffect, useRef, useMemo } from "react";
+import { useAuth } from "@/App";
+import { useNavigate } from "react-router-dom";
+import {
+  getLives,
+  createLive,
+  startLive,
+  getTenantSettings,
+  getAllClients,
+  getClientInfo,
+  getProductHistory,
+  createLiveModulePurchases,
+} from "@/lib/api";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Video, Plus, Search, X, DollarSign, Store, Radio, CheckCircle,
+  AlertTriangle, Trash2, ArrowLeft, Loader2, Users, Tag,
+} from "lucide-react";
+
+const getEffectiveTaxRate = (taxOption, customTax) => {
+  if (taxOption === "0") return 0;
+  if (taxOption === "other") return parseFloat(customTax) / 100 || 0;
+  return parseFloat(taxOption) / 100;
+};
+
+export default function AdminLiveModule() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const logoUrl = user?.tenant_logo || "https://customer-assets.emergentagent.com/job_compraenvivo/artifacts/qvyfsb43_WhatsApp%20Image%202026-02-03%20at%208.05.08%20PM.jpeg";
+  const moduleEnabled = !!user?.live_module_enabled;
+
+  const [lives, setLives] = useState([]);
+  const [selectedLive, setSelectedLive] = useState(null);
+  const [taxOptions, setTaxOptions] = useState([
+    { value: "8.25", label: "8.25%" }, { value: "0", label: "Sin Taxes" }, { value: "other", label: "Otro" },
+  ]);
+
+  // Create-live form
+  const [showCreate, setShowCreate] = useState(false);
+  const [newLive, setNewLive] = useState({ title: "", store: "", taxOption: "0", customTax: "" });
+  const [creating, setCreating] = useState(false);
+
+  // Product form
+  const [product, setProduct] = useState({ item_name: "", price: "", commission: "" });
+  const [history, setHistory] = useState([]);
+
+  // Clients
+  const [allClients, setAllClients] = useState([]);
+  const [clientQuery, setClientQuery] = useState("");
+  const [selectedClients, setSelectedClients] = useState([]); // [{customer_id,name,wallet_balance,pending_to_invoice,owes}]
+  const [submitting, setSubmitting] = useState(false);
+  const priceRef = useRef(null);
+  const clientSearchRef = useRef(null);
+
+  useEffect(() => {
+    if (!moduleEnabled) return;
+    loadLives();
+    getTenantSettings().then(res => {
+      if (res.data?.tax_options?.length) setTaxOptions(res.data.tax_options);
+    }).catch(() => {});
+    getAllClients().then(res => setAllClients(res.data || [])).catch(() => {});
+    refreshHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moduleEnabled]);
+
+  const loadLives = async () => {
+    try {
+      const res = await getLives();
+      setLives(res.data || []);
+      // keep selected live fresh
+      if (selectedLive) {
+        const fresh = (res.data || []).find(l => l.id === selectedLive.id);
+        if (fresh) setSelectedLive(fresh);
+      }
+    } catch (_e) { /* noop */ }
+  };
+
+  const refreshHistory = async (q = "") => {
+    try {
+      const res = await getProductHistory(q);
+      setHistory(res.data?.items || []);
+    } catch (_e) { /* noop */ }
+  };
+
+  const taxLabel = (live) => {
+    if (!live?.apply_tax || !live?.tax_rate) return "Sin impuesto";
+    return `Impuesto ${(live.tax_rate * 100).toFixed(2).replace(/\.00$/, "")}%`;
+  };
+
+  const handleCreateLive = async () => {
+    if (!newLive.title.trim()) { toast.error("Ingresa el nombre del Live"); return; }
+    const apply = newLive.taxOption !== "0";
+    const rate = getEffectiveTaxRate(newLive.taxOption, newLive.customTax);
+    setCreating(true);
+    try {
+      const res = await createLive({ title: newLive.title.trim(), store: newLive.store.trim(), tax_rate: rate, apply_tax: apply });
+      const liveId = res.data?.live_id;
+      try { await startLive(liveId); } catch (_e) { /* already fine */ }
+      toast.success("Live creado");
+      setShowCreate(false);
+      setNewLive({ title: "", store: "", taxOption: "0", customTax: "" });
+      const livesRes = await getLives();
+      setLives(livesRes.data || []);
+      const created = (livesRes.data || []).find(l => l.id === liveId);
+      if (created) setSelectedLive(created);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Error al crear el Live");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const filteredClients = useMemo(() => {
+    const q = clientQuery.trim().toLowerCase();
+    if (!q) return [];
+    return (allClients || [])
+      .filter(c =>
+        (c.customer_id || "").toLowerCase().includes(q) ||
+        (c.name || "").toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [clientQuery, allClients]);
+
+  const addClient = async (client) => {
+    if (!client) return;
+    if (selectedClients.some(c => c.customer_id === client.customer_id)) {
+      setClientQuery("");
+      clientSearchRef.current?.focus();
+      return;
+    }
+    // optimistic add, then enrich with owes info
+    const base = {
+      customer_id: client.customer_id,
+      name: client.name,
+      wallet_balance: client.wallet_balance ?? 0,
+      pending_to_invoice: 0,
+      owes: false,
+      loading: true,
+    };
+    setSelectedClients(prev => [base, ...prev]);
+    setClientQuery("");
+    clientSearchRef.current?.focus();
+    try {
+      const res = await getClientInfo(client.customer_id);
+      const d = res.data;
+      const pending = Number(d.pending_to_invoice || 0);
+      setSelectedClients(prev => prev.map(c => c.customer_id === client.customer_id
+        ? { ...c, wallet_balance: Number(d.wallet_balance || 0), pending_to_invoice: pending, owes: pending > 0, loading: false }
+        : c));
+    } catch (_e) {
+      setSelectedClients(prev => prev.map(c => c.customer_id === client.customer_id ? { ...c, loading: false } : c));
+    }
+  };
+
+  const handleClientKeyDown = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const q = clientQuery.trim().toLowerCase();
+      // exact code match first, else first filtered
+      const exact = (allClients || []).find(c => (c.customer_id || "").toLowerCase() === q);
+      addClient(exact || filteredClients[0]);
+    }
+  };
+
+  const removeClient = (cid) => setSelectedClients(prev => prev.filter(c => c.customer_id !== cid));
+
+  const priceNum = parseFloat(product.price) || 0;
+  const commissionNum = product.commission === "" ? 0 : (parseFloat(product.commission) || 0);
+  const finalValue = priceNum + commissionNum;
+
+  const handleRegister = async () => {
+    if (!selectedLive) { toast.error("Selecciona o crea un Live"); return; }
+    if (!product.item_name.trim()) { toast.error("Ingresa el nombre del producto"); return; }
+    if (priceNum <= 0) { toast.error("Ingresa un precio válido"); return; }
+    if (selectedClients.length === 0) { toast.error("Agrega al menos un cliente"); return; }
+    setSubmitting(true);
+    try {
+      const res = await createLiveModulePurchases({
+        live_id: selectedLive.id,
+        item_name: product.item_name.trim(),
+        store: selectedLive.store || "",
+        price: priceNum,
+        commission_amount: product.commission === "" ? null : commissionNum,
+        customer_ids: selectedClients.map(c => c.customer_id),
+      });
+      const created = res.data?.created?.length || 0;
+      const failed = res.data?.failed || [];
+      toast.success(`${created} compra(s) registrada(s) en el Live`);
+      if (failed.length) {
+        toast.error(`${failed.length} no se registraron: ${failed.map(f => f.customer_id).join(", ")}`);
+      }
+      // Reset product + clients, keep live
+      setProduct({ item_name: "", price: "", commission: "" });
+      setSelectedClients([]);
+      refreshHistory();
+      loadLives();
+      // focus product name for the next entry
+      setTimeout(() => document.getElementById("live-product-name")?.focus(), 50);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Error al registrar");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!moduleEnabled) {
+    return (
+      <div className="app-bg min-h-screen flex items-center justify-center p-6">
+        <Card className="rounded-2xl max-w-md w-full">
+          <CardContent className="p-8 text-center space-y-3">
+            <div className="h-14 w-14 rounded-2xl bg-red-50 flex items-center justify-center mx-auto">
+              <Video className="h-7 w-7 text-red-500" />
+            </div>
+            <h2 className="text-lg font-bold text-slate-800">Módulo Live no activo</h2>
+            <p className="text-sm text-slate-500">Este módulo debe ser activado por el Superadministrador para tu tienda.</p>
+            <Button variant="outline" className="rounded-xl" onClick={() => navigate("/admin")} data-testid="live-module-back">
+              <ArrowLeft className="h-4 w-4 mr-2" /> Volver al Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-bg" data-testid="live-module-page">
+      {/* Header (same shell as other modules) */}
+      <div className="bg-white border-b border-gray-100 sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/admin")} data-testid="back-btn">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+            <div className="bg-white rounded-lg p-1">
+              <img src={logoUrl} alt="Logo" className="h-10 object-contain logo-transparent" />
+            </div>
+          </div>
+          <Badge className="text-white text-sm px-3 py-1" style={{ background: "#EF4444" }}>
+            <Video className="h-3 w-3 mr-2 inline" /> LIVE
+          </Badge>
+        </div>
+      </div>
+
+      <div className="max-w-6xl mx-auto px-4 py-4 space-y-4">
+        {/* ===== TOP: Live info / selector ===== */}
+        {selectedLive ? (
+          <Card className="rounded-2xl overflow-hidden border-0" style={{ background: "linear-gradient(135deg,#B91C1C,#EF4444)" }}>
+            <CardContent className="p-5 text-white">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Radio className="h-4 w-4 animate-pulse" />
+                    <span className="text-[11px] uppercase tracking-wider opacity-80">Live activo</span>
+                  </div>
+                  <h2 className="text-xl font-bold truncate" data-testid="live-module-title">{selectedLive.title}</h2>
+                  <div className="flex items-center gap-3 mt-1 text-sm opacity-90">
+                    {selectedLive.store && <span className="flex items-center gap-1"><Store className="h-3.5 w-3.5" />{selectedLive.store}</span>}
+                    <span className="flex items-center gap-1"><Tag className="h-3.5 w-3.5" />{taxLabel(selectedLive)}</span>
+                  </div>
+                </div>
+                <Button
+                  variant="secondary" size="sm"
+                  className="bg-white/15 hover:bg-white/25 text-white border-0 rounded-lg shrink-0"
+                  onClick={() => setSelectedLive(null)}
+                  data-testid="live-module-change"
+                >
+                  Cambiar live
+                </Button>
+              </div>
+              <div className="flex flex-nowrap items-center gap-x-5 mt-4 pt-4 border-t border-white/20">
+                <div><p className="text-[11px] opacity-70">Ventas</p><p className="text-lg font-bold leading-tight">{selectedLive.purchase_count || 0}</p></div>
+                <div><p className="text-[11px] opacity-70">Total</p><p className="text-lg font-bold leading-tight">${(selectedLive.total_sales || 0).toFixed(2)}</p></div>
+                <div><p className="text-[11px] opacity-70">Comisiones</p><p className="text-lg font-bold leading-tight">${(selectedLive.total_commissions || 0).toFixed(2)}</p></div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="rounded-2xl">
+            <CardContent className="p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2"><Video className="h-5 w-5 text-red-500" /> Selecciona o crea un Live</h2>
+                <Button onClick={() => setShowCreate(v => !v)} className="rounded-xl bg-red-500 hover:bg-red-600 text-white" data-testid="live-module-new-btn">
+                  <Plus className="h-4 w-4 mr-1" /> Nuevo Live
+                </Button>
+              </div>
+
+              {showCreate && (
+                <div className="rounded-xl border border-red-100 bg-red-50/40 p-4 space-y-3" data-testid="live-module-create-form">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs">Nombre del Live *</Label>
+                      <Input value={newLive.title} onChange={e => setNewLive({ ...newLive, title: e.target.value })}
+                        placeholder="Ej: Live Viernes" className="h-10 rounded-lg mt-1" data-testid="new-live-title" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Tienda</Label>
+                      <Input value={newLive.store} onChange={e => setNewLive({ ...newLive, store: e.target.value })}
+                        placeholder="Ej: PRIMARK" className="h-10 rounded-lg mt-1" data-testid="new-live-store" />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Impuesto (Tax)</Label>
+                      <Select value={newLive.taxOption} onValueChange={v => setNewLive({ ...newLive, taxOption: v })}>
+                        <SelectTrigger className="h-10 rounded-lg mt-1" data-testid="new-live-tax"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {taxOptions.map(opt => <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {newLive.taxOption === "other" && (
+                      <div>
+                        <Label className="text-xs">Tax personalizado (%)</Label>
+                        <Input type="number" value={newLive.customTax} onChange={e => setNewLive({ ...newLive, customTax: e.target.value })}
+                          placeholder="Ej: 12" className="h-10 rounded-lg mt-1" data-testid="new-live-custom-tax" />
+                      </div>
+                    )}
+                  </div>
+                  <Button onClick={handleCreateLive} disabled={creating} className="w-full h-11 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold" data-testid="new-live-submit">
+                    {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Crear Live"}
+                  </Button>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {lives.length === 0 && <p className="text-sm text-slate-400 text-center py-4">No hay lives. Crea uno para empezar.</p>}
+                {lives.map(live => (
+                  <button
+                    key={live.id}
+                    onClick={() => setSelectedLive(live)}
+                    className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-red-300 hover:bg-red-50/40 transition-colors text-left"
+                    data-testid={`live-module-pick-${live.id}`}
+                  >
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-800 truncate">{live.title}</p>
+                      <p className="text-xs text-slate-500">{live.store || "—"} · {taxLabel(live)}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant="outline" className="text-[10px]">{live.purchase_count || 0} items</Badge>
+                      <Badge className={`text-[10px] ${live.status === "active" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>
+                        {live.status === "active" ? "EN VIVO" : "Finalizado"}
+                      </Badge>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ===== PRODUCT + CLIENTS (only when a live is selected) ===== */}
+        {selectedLive && (
+          <>
+            {/* Product */}
+            <Card className="rounded-2xl">
+              <CardContent className="p-5 space-y-3">
+                <h3 className="font-bold text-slate-800 flex items-center gap-2"><Tag className="h-4 w-4 text-red-500" /> Producto</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr,130px,130px,140px] gap-3 items-end">
+                  <div>
+                    <Label className="text-xs">Nombre del producto *</Label>
+                    <Input
+                      id="live-product-name"
+                      list="live-product-history"
+                      value={product.item_name}
+                      onChange={e => { setProduct({ ...product, item_name: e.target.value }); }}
+                      onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); priceRef.current?.focus(); } }}
+                      placeholder="Ej: Pijama dumbo"
+                      className="h-11 rounded-lg mt-1"
+                      autoFocus
+                      data-testid="live-product-name"
+                    />
+                    <datalist id="live-product-history">
+                      {history.map((n, i) => <option key={i} value={n} />)}
+                    </datalist>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Precio *</Label>
+                    <div className="relative mt-1">
+                      <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <Input ref={priceRef} type="number" step="0.01" value={product.price}
+                        onChange={e => setProduct({ ...product, price: e.target.value })}
+                        placeholder="0.00" className="h-11 rounded-lg pl-8" data-testid="live-product-price" />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Comisión</Label>
+                    <div className="relative mt-1">
+                      <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                      <Input type="number" step="0.01" value={product.commission}
+                        onChange={e => setProduct({ ...product, commission: e.target.value })}
+                        onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); clientSearchRef.current?.focus(); } }}
+                        placeholder="(vacía)" className="h-11 rounded-lg pl-8" data-testid="live-product-commission" />
+                    </div>
+                  </div>
+                  <div className="rounded-lg bg-slate-900 text-white px-3 py-2 text-center" data-testid="live-final-value">
+                    <p className="text-[10px] opacity-70 leading-tight">Valor final</p>
+                    <p className="text-lg font-bold leading-tight">${finalValue.toFixed(2)}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Clients */}
+            <Card className="rounded-2xl">
+              <CardContent className="p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2"><Users className="h-4 w-4 text-red-500" /> Clientes que compran</h3>
+                  <Badge variant="outline" className="font-bold" data-testid="live-clients-count">{selectedClients.length}</Badge>
+                </div>
+
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                  <Input
+                    ref={clientSearchRef}
+                    value={clientQuery}
+                    onChange={e => setClientQuery(e.target.value)}
+                    onKeyDown={handleClientKeyDown}
+                    placeholder="Buscar por código o nombre y Enter para agregar…"
+                    className="h-11 rounded-lg pl-9"
+                    data-testid="live-client-search"
+                  />
+                  {filteredClients.length > 0 && (
+                    <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden" data-testid="live-client-suggestions">
+                      {filteredClients.map(c => (
+                        <button key={c.customer_id} onClick={() => addClient(c)}
+                          className="w-full flex items-center justify-between px-3 py-2 hover:bg-red-50 text-left text-sm"
+                          data-testid={`live-client-suggest-${c.customer_id}`}>
+                          <span className="flex items-center gap-2 min-w-0">
+                            <span className="text-[10px] font-bold text-red-600 shrink-0">{c.customer_id}</span>
+                            <span className="truncate text-slate-700">{c.name}</span>
+                          </span>
+                          <span className="text-xs text-slate-500 shrink-0">${Number(c.wallet_balance || 0).toFixed(2)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  {selectedClients.length === 0 && (
+                    <p className="text-sm text-slate-400 text-center py-4">Agrega los clientes que recibirán este producto.</p>
+                  )}
+                  {selectedClients.map(c => (
+                    <div key={c.customer_id}
+                      className={`flex items-center justify-between p-3 rounded-xl border ${c.owes ? "border-red-200 bg-red-50/50" : "border-slate-200"}`}
+                      data-testid={`live-client-chip-${c.customer_id}`}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-[11px] font-bold text-red-600 shrink-0">{c.customer_id}</span>
+                        <span className="font-medium text-slate-800 truncate">{c.name}</span>
+                        {c.loading ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
+                        ) : c.owes ? (
+                          <Badge className="bg-red-100 text-red-700 text-[10px] flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" /> Debe ${c.pending_to_invoice.toFixed(2)}
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-green-100 text-green-700 text-[10px] flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" /> Al día
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <span className="text-xs text-slate-500">Saldo ${Number(c.wallet_balance || 0).toFixed(2)}</span>
+                        <button onClick={() => removeClient(c.customer_id)} className="text-slate-400 hover:text-red-500" data-testid={`live-client-remove-${c.customer_id}`}>
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <Button
+                  onClick={handleRegister}
+                  disabled={submitting || selectedClients.length === 0 || !product.item_name.trim() || priceNum <= 0}
+                  className="w-full h-12 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-base"
+                  data-testid="live-register-btn"
+                >
+                  {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : (
+                    <>Registrar en {selectedClients.length} cliente(s) · ${(finalValue * selectedClients.length).toFixed(2)}</>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

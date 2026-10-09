@@ -240,6 +240,8 @@ class Tenant(BaseModel):
         {"value": "other", "label": "Otro"}
     ])
     tracking_url_template: Optional[str] = None  # URL template with {tracking} placeholder
+    # Live module (fast product entry) — opt-in per tenant, controlled by superadmin.
+    live_module_enabled: bool = False
     # Invoice settings
     invoice_show_tax_per_item: bool = True  # Show tax column in product table
     invoice_show_tax_summary: bool = True   # Show tax total at the bottom
@@ -368,6 +370,9 @@ class Live(BaseModel):
     # from `purchase_count` which counts client-assigned items).
     store_invoice_items_count: Optional[int] = None
     store_profit: Optional[float] = None          # Calculated profit: total_sales - store_invoice_amount
+    # Tax chosen at creation (used by the Live fast-entry module; optional).
+    tax_rate: Optional[float] = None
+    apply_tax: Optional[bool] = None
 
 class Purchase(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -553,6 +558,8 @@ class UserRegister(BaseModel):
 class LiveCreate(BaseModel):
     title: str
     store: Optional[str] = None
+    tax_rate: Optional[float] = None
+    apply_tax: Optional[bool] = None
 
 class PurchaseCreate(BaseModel):
     customer_id: str
@@ -564,6 +571,15 @@ class PurchaseCreate(BaseModel):
     apply_tax: bool = True
     apply_commission: bool = True
     commission_amount: float = 0
+
+class LiveModulePurchaseCreate(BaseModel):
+    """Fast-entry: one product assigned to many clients at once (Live module)."""
+    live_id: str
+    item_name: str
+    store: Optional[str] = None
+    price: float
+    commission_amount: Optional[float] = None  # empty => no commission
+    customer_ids: List[str]
 
 class ShipmentCreate(BaseModel):
     user_id: str
@@ -1139,7 +1155,7 @@ async def auth_me(current_user: dict = Depends(get_current_user)):
     tenant_logo = None
     tenant_slug = None
     if profile.get("tenant_id"):
-        tenant = await db.tenants.find_one({"id": profile["tenant_id"]}, {"_id": 0, "business_name": 1, "logo_url": 1, "slug": 1, "dashboard_banner_url": 1})
+        tenant = await db.tenants.find_one({"id": profile["tenant_id"]}, {"_id": 0, "business_name": 1, "logo_url": 1, "slug": 1, "dashboard_banner_url": 1, "live_module_enabled": 1})
         if tenant:
             tenant_name = tenant.get("business_name")
             tenant_logo = tenant.get("logo_url")
@@ -1153,6 +1169,7 @@ async def auth_me(current_user: dict = Depends(get_current_user)):
         "tenant_logo": tenant_logo,
         "tenant_slug": tenant_slug,
         "tenant_banner": (tenant or {}).get("dashboard_banner_url") if profile.get("tenant_id") else None,
+        "live_module_enabled": bool((tenant or {}).get("live_module_enabled")) if profile.get("tenant_id") else False,
         "permissions": profile.get("permissions") or {},
         "customer_id": profile.get("customer_id"),
         "email": profile.get("email"),
@@ -2363,6 +2380,10 @@ async def update_tenant_settings(tenant_id: str, data: dict, current_user: dict 
     # Feature toggles
     if "show_shipments_diagnostic" in data:
         update_fields["show_shipments_diagnostic"] = bool(data["show_shipments_diagnostic"])
+
+    # Live fast-entry module (opt-in per tenant)
+    if "live_module_enabled" in data:
+        update_fields["live_module_enabled"] = bool(data["live_module_enabled"])
 
     if update_fields:
         await db.tenants.update_one({"id": tenant_id}, {"$set": update_fields})
@@ -4774,6 +4795,10 @@ async def create_live(live_data: LiveCreate, current_user: dict = Depends(get_cu
     if current_user["role"] not in ["admin", "employee"]:
         raise HTTPException(status_code=403, detail="No autorizado")
     live = Live(tenant_id=current_user["tenant_id"], title=live_data.title, store=live_data.store)
+    if live_data.tax_rate is not None:
+        live.tax_rate = live_data.tax_rate
+    if live_data.apply_tax is not None:
+        live.apply_tax = live_data.apply_tax
     await db.lives.insert_one(live.model_dump())
     actor_name = await get_actor_name(current_user["user_id"])
     await log_audit_action(
@@ -5156,6 +5181,133 @@ async def create_purchase(purchase_data: PurchaseCreate, current_user: dict = De
         "tax": tax, "price_with_tax": price_with_tax, "commission": commission_fee, "total": total,
         "amount_deducted": total, "new_balance": new_balance, "customer_name": user["name"]
     }
+
+# ==================== LIVE MODULE (fast product entry) ====================
+
+@api_router.post("/live-module/purchases")
+async def create_live_module_purchases(data: LiveModulePurchaseCreate, current_user: dict = Depends(get_current_user)):
+    """Assign one product to many clients at once. Each selected client gets a
+    normal purchase (same invoicing flow) tagged `entry_source='live'` so it can
+    be told apart from products entered one-by-one in Live Shopping."""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    tenant = await db.tenants.find_one({"id": tid}, {"_id": 0, "live_module_enabled": 1})
+    if not tenant or not tenant.get("live_module_enabled"):
+        raise HTTPException(status_code=403, detail="El módulo Live no está activo para este tenant")
+    live = await db.lives.find_one({"id": data.live_id, "tenant_id": tid}, {"_id": 0})
+    if not live:
+        raise HTTPException(status_code=404, detail="Live no encontrado")
+    if not data.customer_ids:
+        raise HTTPException(status_code=400, detail="Debes agregar al menos un cliente")
+
+    # Tax comes from the live (chosen at creation). Commission is a flat amount
+    # per item; empty => nothing added.
+    apply_tax = bool(live.get("apply_tax"))
+    tax_rate = float(live.get("tax_rate") or 0) if apply_tax else 0
+    commission_fee = round(float(data.commission_amount), 2) if data.commission_amount else 0
+    price = round(float(data.price), 2)
+    tax = round(price * tax_rate, 2)
+    price_with_tax = round(price + tax, 2)
+    total = round(price_with_tax + commission_fee, 2)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    created = []
+    failed = []
+    agg_sales = 0.0
+    agg_comm = 0.0
+    for raw_cid in data.customer_ids:
+        cid = (raw_cid or "").upper().strip()
+        if not cid:
+            continue
+        user = await db.users.find_one({"customer_id": cid, "tenant_id": tid}, {"_id": 0})
+        if not user:
+            failed.append({"customer_id": cid, "reason": "Cliente no encontrado"})
+            continue
+        wallet = await db.wallets.find_one({"user_id": user["id"], "tenant_id": tid}, {"_id": 0})
+        if not wallet:
+            failed.append({"customer_id": cid, "reason": "Wallet no encontrada"})
+            continue
+        purchase_dict = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tid,
+            "user_id": user["id"],
+            "customer_id": cid,
+            "item_name": data.item_name,
+            "store": data.store or live.get("store") or "",
+            "price": price,
+            "tax": tax,
+            "tax_rate": tax_rate,
+            "apply_tax": apply_tax,
+            "price_with_tax": price_with_tax,
+            "commission": commission_fee,
+            "apply_commission": commission_fee > 0,
+            "total": total,
+            "status": "confirmed",
+            "live_id": data.live_id,
+            "entry_source": "live",  # <-- mark: entered via the Live fast module
+            "created_at": now_iso,
+        }
+        await db.purchases.insert_one(purchase_dict)
+        new_balance = wallet["available"] - total
+        await db.wallets.update_one({"user_id": user["id"], "tenant_id": tid},
+            {"$set": {"available": new_balance, "updated_at": now_iso}})
+        transaction = WalletTransaction(tenant_id=tid, user_id=user["id"], customer_id=cid,
+            type="purchase", amount=-total, balance_after=new_balance,
+            description=f"Compra (Live): {data.item_name} - Total: ${total:.2f}", status="approved",
+            approved_at=now_iso, purchase_id=purchase_dict["id"])
+        await db.wallet_transactions.insert_one(transaction.model_dump())
+        agg_sales += price_with_tax
+        agg_comm += commission_fee
+        created.append({"customer_id": cid, "name": user.get("name"), "new_balance": round(new_balance, 2)})
+
+    if created:
+        await db.lives.update_one({"id": data.live_id, "tenant_id": tid},
+            {"$inc": {"total_sales": round(agg_sales, 2), "total_commissions": round(agg_comm, 2), "purchase_count": len(created)}})
+        # Save product name to history for autocomplete (name only).
+        name_clean = data.item_name.strip()
+        if name_clean:
+            await db.product_history.update_one(
+                {"tenant_id": tid, "name_lower": name_clean.lower()},
+                {"$set": {"tenant_id": tid, "name": name_clean, "name_lower": name_clean.lower(), "last_used": now_iso},
+                 "$inc": {"use_count": 1}},
+                upsert=True)
+        actor_name = await get_actor_name(current_user["user_id"])
+        await log_audit_action(
+            tenant_id=tid, user_id=current_user["user_id"], user_name=actor_name,
+            user_role=current_user.get("role", "admin"), action="create_live_purchases",
+            entity_type="live", entity_id=data.live_id,
+            entity_name=f"{data.item_name} x{len(created)}",
+            details={"item_name": data.item_name, "price": price, "commission": commission_fee,
+                     "total": total, "clients": len(created), "customer_ids": [c["customer_id"] for c in created]}
+        )
+
+    return {
+        "message": f"{len(created)} compra(s) registrada(s)",
+        "created": created,
+        "failed": failed,
+        "unit_total": total,
+        "price": price,
+        "commission": commission_fee,
+    }
+
+
+@api_router.get("/live-module/product-history")
+async def get_product_history(q: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Autocomplete suggestions of previously entered product names (name only)."""
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+    rows = await db.product_history.find({"tenant_id": tid}, {"_id": 0, "name": 1, "name_lower": 1}).sort("last_used", -1).limit(200).to_list(200)
+    ql = (q or "").strip().lower()
+    names = []
+    for r in rows:
+        if ql and ql not in (r.get("name_lower") or r["name"].lower()):
+            continue
+        names.append(r["name"])
+        if len(names) >= 20:
+            break
+    return {"items": names}
 
 @api_router.get("/purchases/user/{user_id}")
 async def get_user_purchases(user_id: str, current_user: dict = Depends(get_current_user)):

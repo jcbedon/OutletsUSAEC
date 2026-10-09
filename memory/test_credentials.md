@@ -20,3 +20,4 @@
 - Admin: admin@demo.com / demo123
 - Clientes (login con customer_id): D1001 / 123 (Ana Torres, activo), D1002 / 123 (Luis Mora, activo), D1003 / 123 (Sofia Vega, inactivo)
 - Contiene: 3 clientes, 12 facturas (4 semanas), 27 compras (1 sin facturar=mercadería estancada), 12 recargas (3 pendientes por aprobar), 4 envíos (estados variados), 2 cuentas bancarias, categorías de envío G/A/B con costo courier.
+- MÓDULO LIVE: el tenant demo tiene `live_module_enabled=true`. Se crearon wallets para D1001/D1002/D1003 (requerido por compras). El tenant principal (outletsusaec) tiene el módulo DESACTIVADO por defecto.

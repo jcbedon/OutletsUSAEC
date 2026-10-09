@@ -19,6 +19,7 @@ import {
   Menu,
   X,
   LogOut,
+  Video,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -44,6 +45,11 @@ const ROUTE_TITLES = ADMIN_NAV.reduce((acc, n) => {
   acc[n.to] = n.label;
   return acc;
 }, {});
+ROUTE_TITLES["/admin/live-module"] = "Live";
+
+// Red-accented "Live" fast-entry module, inserted right after Live Shopping
+// but only for tenants that have the module enabled.
+const LIVE_MODULE_ITEM = { to: "/admin/live-module", label: "Live", icon: Video, iconColor: "#EF4444" };
 
 /**
  * Fixed left sidebar (desktop) + compact back-button header (mobile) shown on
@@ -72,6 +78,11 @@ export const AstridSidebar = () => {
 
   const isDashboardHome = location.pathname === "/admin";
   const currentTitle = ROUTE_TITLES[location.pathname] || "Astrid Shop";
+
+  // Inject the Live module link (after Live Shopping) only when enabled for the tenant.
+  const navItems = user?.live_module_enabled
+    ? [ADMIN_NAV[0], ADMIN_NAV[1], LIVE_MODULE_ITEM, ...ADMIN_NAV.slice(2)]
+    : ADMIN_NAV;
 
   const isActive = (item) =>
     item.exact ? location.pathname === item.to : location.pathname.startsWith(item.to);
@@ -117,16 +128,17 @@ export const AstridSidebar = () => {
           <p className="text-xs text-slate-500 truncate">{user?.name || user?.email}</p>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {ADMIN_NAV.map((item) => {
+          {navItems.map((item) => {
             const Icon = item.icon;
+            const active = isActive(item);
             return (
               <Link
                 key={item.to}
                 to={item.to}
-                className={`astrid-nav-item ${isActive(item) ? "active" : ""}`}
+                className={`astrid-nav-item ${active ? "active" : ""}`}
                 data-testid={`astrid-nav-${item.to.replace(/\//g, "-")}`}
               >
-                <Icon className="h-4 w-4 shrink-0" />
+                <Icon className="h-4 w-4 shrink-0" style={item.iconColor && !active ? { color: item.iconColor } : undefined} />
                 <span className="truncate">{item.label}</span>
               </Link>
             );
@@ -209,17 +221,18 @@ export const AstridSidebar = () => {
               </button>
             </div>
             <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-              {ADMIN_NAV.map((item) => {
+              {navItems.map((item) => {
                 const Icon = item.icon;
+                const active = isActive(item);
                 return (
                   <Link
                     key={item.to}
                     to={item.to}
                     onClick={() => setMobileOpen(false)}
-                    className={`astrid-nav-item ${isActive(item) ? "active" : ""}`}
+                    className={`astrid-nav-item ${active ? "active" : ""}`}
                     data-testid={`astrid-drawer-nav-${item.to.replace(/\//g, "-")}`}
                   >
-                    <Icon className="h-4 w-4 shrink-0" />
+                    <Icon className="h-4 w-4 shrink-0" style={item.iconColor && !active ? { color: item.iconColor } : undefined} />
                     <span className="truncate">{item.label}</span>
                   </Link>
                 );

@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Percent, X, Link, Truck, Key, Eye, EyeOff, FileText, Package, DollarSign, Landmark, Trash2, Image as ImageIcon, Upload } from "lucide-react";
+import { Building, Users, Shield, Plus, LogOut, Power, UserPlus, Percent, X, Link, Truck, Key, Eye, EyeOff, FileText, Package, DollarSign, Landmark, Trash2, Image as ImageIcon, Upload, Video } from "lucide-react";
 
 export default function SuperadminDashboard() {
   const { user, logout } = useAuth();
@@ -406,7 +406,8 @@ export default function SuperadminDashboard() {
       invoice_show_tax_per_item: tenant.invoice_show_tax_per_item !== false,
       invoice_show_tax_summary: tenant.invoice_show_tax_summary !== false,
       shipment_show_product_list: tenant.shipment_show_product_list !== false,
-      allow_custom_client_id: tenant.allow_custom_client_id === true
+      allow_custom_client_id: tenant.allow_custom_client_id === true,
+      live_module_enabled: tenant.live_module_enabled === true
     });
     setSettingsDialogOpen(true);
   };
@@ -1316,6 +1317,37 @@ export default function SuperadminDashboard() {
                         : 'bg-gray-300 text-gray-600'
                     }`}>
                       {tenantSettings.allow_custom_client_id ? 'ACTIVO' : 'INACTIVO'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Módulos Section */}
+              <div className="border border-gray-200 rounded-xl p-4">
+                <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                  <Video className="h-4 w-4 text-red-500" />
+                  Módulos
+                </h4>
+                <div className="space-y-3">
+                  <div
+                    className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${
+                      tenantSettings.live_module_enabled
+                        ? 'bg-red-50 border border-red-200'
+                        : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'
+                    }`}
+                    onClick={() => setTenantSettings({...tenantSettings, live_module_enabled: !tenantSettings.live_module_enabled})}
+                    data-testid="toggle-live-module"
+                  >
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">Módulo Live</p>
+                      <p className="text-xs text-gray-500 mt-1">Ingreso rápido de productos a varios clientes (se marca como "LIVE")</p>
+                    </div>
+                    <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${
+                      tenantSettings.live_module_enabled
+                        ? 'bg-red-500 text-white'
+                        : 'bg-gray-300 text-gray-600'
+                    }`}>
+                      {tenantSettings.live_module_enabled ? 'ACTIVO' : 'INACTIVO'}
                     </div>
                   </div>
                 </div>
