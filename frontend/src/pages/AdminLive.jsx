@@ -1116,21 +1116,21 @@ export default function AdminLive() {
                     </div>
 
                     {/* Stats Row */}
-                    <div className="flex flex-wrap items-center gap-x-5 gap-y-3 mt-4 pt-4 border-t border-white/20">
+                    <div className="flex flex-nowrap items-center gap-x-4 mt-4 pt-4 border-t border-white/20">
                       <div>
-                        <p className="text-gray-300 text-xs">Ventas</p>
-                        <p className="text-2xl font-bold">{selectedLive.purchase_count || 0}</p>
+                        <p className="text-gray-300 text-[11px]">Ventas</p>
+                        <p className="text-lg font-bold leading-tight">{selectedLive.purchase_count || 0}</p>
                       </div>
                       <div>
-                        <p className="text-gray-300 text-xs">Total</p>
-                        <p className="text-2xl font-bold">${(selectedLive.total_sales || 0).toFixed(2)}</p>
+                        <p className="text-gray-300 text-[11px]">Total</p>
+                        <p className="text-lg font-bold leading-tight">${(selectedLive.total_sales || 0).toFixed(2)}</p>
                       </div>
                       <div>
-                        <p className="text-gray-300 text-xs">Comisiones</p>
-                        <p className="text-2xl font-bold">${(selectedLive.total_commissions || 0).toFixed(2)}</p>
+                        <p className="text-gray-300 text-[11px]">Comisiones</p>
+                        <p className="text-lg font-bold leading-tight">${(selectedLive.total_commissions || 0).toFixed(2)}</p>
                       </div>
                       {/* Store Invoice inline in header - always show */}
-                      <div className="ml-auto max-w-full min-w-0">
+                      <div className="ml-auto min-w-0">
                         <StoreInvoiceSection 
                           live={selectedLive} 
                           onUpdate={async () => {

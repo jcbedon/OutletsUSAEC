@@ -171,33 +171,33 @@ export default function StoreInvoiceSection({ live, onUpdate, compact = false })
     return (
       <>
         <div 
-          className="flex items-center gap-3 bg-white/10 rounded-xl px-3 py-2 cursor-pointer hover:bg-white/20 transition-colors"
+          className="flex items-center gap-2 bg-white/10 rounded-xl px-2.5 py-1.5 cursor-pointer hover:bg-white/20 transition-colors whitespace-nowrap"
           onClick={() => setShowExpandedDialog(true)}
         >
-          <Receipt className="h-4 w-4 text-white/70" />
+          <Receipt className="h-3.5 w-3.5 text-white/70 shrink-0" />
           <div className="text-left">
-            <p className="text-xs text-white/60">Factura Tienda</p>
+            <p className="text-[10px] text-white/60 leading-tight">Factura Tienda</p>
             {hasAmount ? (
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-bold text-white">${storeAmount.toFixed(2)}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs font-bold text-white leading-tight">${storeAmount.toFixed(2)}</p>
                 {live?.store_invoice_items_count != null && (
                   <span className="text-[10px] text-white/70 flex items-center gap-0.5" data-testid="store-invoice-items-badge">
-                    <Package className="h-3 w-3" />
+                    <Package className="h-2.5 w-2.5" />
                     {live.store_invoice_items_count}
                   </span>
                 )}
               </div>
             ) : (
-              <p className="text-xs text-white/50">Sin registrar</p>
+              <p className="text-[11px] text-white/50 leading-tight">Sin registrar</p>
             )}
           </div>
           {hasAmount && (
             <div className={`text-right ${profit >= 0 ? "text-green-300" : "text-red-300"}`}>
-              <p className="text-xs opacity-70">Ganancia</p>
-              <p className="text-sm font-bold">{profit >= 0 ? "+" : ""}${profit.toFixed(2)}</p>
+              <p className="text-[10px] opacity-70 leading-tight">Ganancia</p>
+              <p className="text-xs font-bold leading-tight">{profit >= 0 ? "+" : ""}${profit.toFixed(2)}</p>
             </div>
           )}
-          {hasImage && <CheckCircle className="h-4 w-4 text-green-300" />}
+          {hasImage && <CheckCircle className="h-3.5 w-3.5 text-green-300 shrink-0" />}
         </div>
 
         {/* Expanded Dialog */}
