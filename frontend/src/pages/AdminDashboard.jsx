@@ -27,7 +27,8 @@ import {
   FileText,
   Search,
   ShoppingBag,
-  Landmark
+  Landmark,
+  Video
 } from "lucide-react";
 import { uploadTenantLogo } from "@/lib/api";
 import { useRefreshOnTabFocus } from "@/hooks/useRefreshOnTabFocus";
@@ -186,6 +187,7 @@ export default function AdminDashboard() {
   const getFilteredMenuItems = () => {
     const allItems = [
       { icon: Radio, label: "Live Shopping", path: "/admin/live", color: "#1E3A5F", description: "Gestionar ventas en vivo", permission: "manage_lives" },
+      ...(user?.live_module_enabled ? [{ icon: Video, label: "Live", path: "/admin/live-module", color: "#B84A5E", description: "Ingreso rápido de productos", permission: "manage_lives" }] : []),
       { icon: Users, label: "Clientes", path: "/admin/clients", color: "#2a4f7f", description: "Ver y gestionar clientes", permission: "manage_clients" },
       { icon: FileText, label: "Facturas", path: "/admin/invoices", color: "#3498DB", description: "Buscar y gestionar facturas", permission: "manage_invoices" },
       { icon: Wallet, label: "Recargas", path: "/admin/wallet", color: "#2ECC71", description: "Aprobar depósitos", permission: "approve_recharges" },
