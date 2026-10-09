@@ -240,7 +240,7 @@ export default function AdminLiveModule() {
               <img src={logoUrl} alt="Logo" className="h-10 object-contain logo-transparent" />
             </div>
           </div>
-          <Badge className="text-white text-sm px-3 py-1" style={{ background: "#BE123C" }}>
+          <Badge className="text-white text-sm px-3 py-1" style={{ background: "#B84A5E" }}>
             <Video className="h-3 w-3 mr-2 inline" /> LIVE
           </Badge>
         </div>
@@ -249,7 +249,7 @@ export default function AdminLiveModule() {
       <div className="max-w-6xl mx-auto px-4 py-4 space-y-4">
         {/* ===== TOP: Live info / selector ===== */}
         {selectedLive ? (
-          <Card className="rounded-2xl overflow-hidden border-0" style={{ background: "linear-gradient(135deg,#881337,#BE123C)" }}>
+          <Card className="rounded-2xl overflow-hidden border-0" style={{ background: "linear-gradient(135deg,#7F2A3C,#B84A5E)" }}>
             <CardContent className="p-5 text-white">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -284,7 +284,7 @@ export default function AdminLiveModule() {
             <CardContent className="p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="font-bold text-slate-800 flex items-center gap-2"><Video className="h-5 w-5 text-rose-600" /> Selecciona o crea un Live</h2>
-                <Button onClick={() => setShowCreate(v => !v)} className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white" data-testid="live-module-new-btn">
+                <Button onClick={() => setShowCreate(v => !v)} className="rounded-xl bg-[#B84A5E] hover:bg-[#A33F52] text-white" data-testid="live-module-new-btn">
                   <Plus className="h-4 w-4 mr-1" /> Nuevo Live
                 </Button>
               </div>
@@ -319,7 +319,7 @@ export default function AdminLiveModule() {
                       </div>
                     )}
                   </div>
-                  <Button onClick={handleCreateLive} disabled={creating} className="w-full h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold" data-testid="new-live-submit">
+                  <Button onClick={handleCreateLive} disabled={creating} className="w-full h-11 rounded-xl bg-[#B84A5E] hover:bg-[#A33F52] text-white font-bold" data-testid="new-live-submit">
                     {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Crear Live"}
                   </Button>
                 </div>
@@ -475,7 +475,7 @@ export default function AdminLiveModule() {
                 <Button
                   onClick={handleRegister}
                   disabled={submitting || selectedClients.length === 0 || !product.item_name.trim() || priceNum <= 0}
-                  className="w-full h-12 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-base"
+                  className="w-full h-12 rounded-xl bg-[#B84A5E] hover:bg-[#A33F52] text-white font-bold text-base"
                   data-testid="live-register-btn"
                 >
                   {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : (
