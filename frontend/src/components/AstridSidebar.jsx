@@ -49,7 +49,7 @@ ROUTE_TITLES["/admin/live-module"] = "Live";
 
 // Red-accented "Live" fast-entry module, inserted right after Live Shopping
 // but only for tenants that have the module enabled.
-const LIVE_MODULE_ITEM = { to: "/admin/live-module", label: "Live", icon: Video, iconColor: "#EF4444" };
+const LIVE_MODULE_ITEM = { to: "/admin/live-module", label: "Live", icon: Video, iconColor: "#E11D48" };
 
 /**
  * Fixed left sidebar (desktop) + compact back-button header (mobile) shown on

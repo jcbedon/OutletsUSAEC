@@ -213,8 +213,8 @@ export default function AdminLiveModule() {
       <div className="app-bg min-h-screen flex items-center justify-center p-6">
         <Card className="rounded-2xl max-w-md w-full">
           <CardContent className="p-8 text-center space-y-3">
-            <div className="h-14 w-14 rounded-2xl bg-red-50 flex items-center justify-center mx-auto">
-              <Video className="h-7 w-7 text-red-500" />
+            <div className="h-14 w-14 rounded-2xl bg-rose-50 flex items-center justify-center mx-auto">
+              <Video className="h-7 w-7 text-rose-600" />
             </div>
             <h2 className="text-lg font-bold text-slate-800">Módulo Live no activo</h2>
             <p className="text-sm text-slate-500">Este módulo debe ser activado por el Superadministrador para tu tienda.</p>
@@ -240,7 +240,7 @@ export default function AdminLiveModule() {
               <img src={logoUrl} alt="Logo" className="h-10 object-contain logo-transparent" />
             </div>
           </div>
-          <Badge className="text-white text-sm px-3 py-1" style={{ background: "#EF4444" }}>
+          <Badge className="text-white text-sm px-3 py-1" style={{ background: "#BE123C" }}>
             <Video className="h-3 w-3 mr-2 inline" /> LIVE
           </Badge>
         </div>
@@ -249,7 +249,7 @@ export default function AdminLiveModule() {
       <div className="max-w-6xl mx-auto px-4 py-4 space-y-4">
         {/* ===== TOP: Live info / selector ===== */}
         {selectedLive ? (
-          <Card className="rounded-2xl overflow-hidden border-0" style={{ background: "linear-gradient(135deg,#B91C1C,#EF4444)" }}>
+          <Card className="rounded-2xl overflow-hidden border-0" style={{ background: "linear-gradient(135deg,#881337,#BE123C)" }}>
             <CardContent className="p-5 text-white">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -283,14 +283,14 @@ export default function AdminLiveModule() {
           <Card className="rounded-2xl">
             <CardContent className="p-5 space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="font-bold text-slate-800 flex items-center gap-2"><Video className="h-5 w-5 text-red-500" /> Selecciona o crea un Live</h2>
-                <Button onClick={() => setShowCreate(v => !v)} className="rounded-xl bg-red-500 hover:bg-red-600 text-white" data-testid="live-module-new-btn">
+                <h2 className="font-bold text-slate-800 flex items-center gap-2"><Video className="h-5 w-5 text-rose-600" /> Selecciona o crea un Live</h2>
+                <Button onClick={() => setShowCreate(v => !v)} className="rounded-xl bg-rose-600 hover:bg-rose-700 text-white" data-testid="live-module-new-btn">
                   <Plus className="h-4 w-4 mr-1" /> Nuevo Live
                 </Button>
               </div>
 
               {showCreate && (
-                <div className="rounded-xl border border-red-100 bg-red-50/40 p-4 space-y-3" data-testid="live-module-create-form">
+                <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-4 space-y-3" data-testid="live-module-create-form">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <Label className="text-xs">Nombre del Live *</Label>
@@ -319,7 +319,7 @@ export default function AdminLiveModule() {
                       </div>
                     )}
                   </div>
-                  <Button onClick={handleCreateLive} disabled={creating} className="w-full h-11 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold" data-testid="new-live-submit">
+                  <Button onClick={handleCreateLive} disabled={creating} className="w-full h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold" data-testid="new-live-submit">
                     {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : "Crear Live"}
                   </Button>
                 </div>
@@ -331,7 +331,7 @@ export default function AdminLiveModule() {
                   <button
                     key={live.id}
                     onClick={() => setSelectedLive(live)}
-                    className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-red-300 hover:bg-red-50/40 transition-colors text-left"
+                    className="w-full flex items-center justify-between p-3 rounded-xl border border-slate-200 hover:border-rose-300 hover:bg-rose-50/40 transition-colors text-left"
                     data-testid={`live-module-pick-${live.id}`}
                   >
                     <div className="min-w-0">
@@ -357,7 +357,7 @@ export default function AdminLiveModule() {
             {/* Product */}
             <Card className="rounded-2xl">
               <CardContent className="p-5 space-y-3">
-                <h3 className="font-bold text-slate-800 flex items-center gap-2"><Tag className="h-4 w-4 text-red-500" /> Producto</h3>
+                <h3 className="font-bold text-slate-800 flex items-center gap-2"><Tag className="h-4 w-4 text-rose-600" /> Producto</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-[1fr,130px,130px,140px] gap-3 items-end">
                   <div>
                     <Label className="text-xs">Nombre del producto *</Label>
@@ -407,7 +407,7 @@ export default function AdminLiveModule() {
             <Card className="rounded-2xl">
               <CardContent className="p-5 space-y-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-slate-800 flex items-center gap-2"><Users className="h-4 w-4 text-red-500" /> Clientes que compran</h3>
+                  <h3 className="font-bold text-slate-800 flex items-center gap-2"><Users className="h-4 w-4 text-rose-600" /> Clientes que compran</h3>
                   <Badge variant="outline" className="font-bold" data-testid="live-clients-count">{selectedClients.length}</Badge>
                 </div>
 
@@ -426,10 +426,10 @@ export default function AdminLiveModule() {
                     <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden" data-testid="live-client-suggestions">
                       {filteredClients.map(c => (
                         <button key={c.customer_id} onClick={() => addClient(c)}
-                          className="w-full flex items-center justify-between px-3 py-2 hover:bg-red-50 text-left text-sm"
+                          className="w-full flex items-center justify-between px-3 py-2 hover:bg-rose-50 text-left text-sm"
                           data-testid={`live-client-suggest-${c.customer_id}`}>
                           <span className="flex items-center gap-2 min-w-0">
-                            <span className="text-[10px] font-bold text-red-600 shrink-0">{c.customer_id}</span>
+                            <span className="text-[10px] font-bold text-rose-600 shrink-0">{c.customer_id}</span>
                             <span className="truncate text-slate-700">{c.name}</span>
                           </span>
                           <span className="text-xs text-slate-500 shrink-0">${Number(c.wallet_balance || 0).toFixed(2)}</span>
@@ -448,7 +448,7 @@ export default function AdminLiveModule() {
                       className={`flex items-center justify-between p-3 rounded-xl border ${c.owes ? "border-red-200 bg-red-50/50" : "border-slate-200"}`}
                       data-testid={`live-client-chip-${c.customer_id}`}>
                       <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-[11px] font-bold text-red-600 shrink-0">{c.customer_id}</span>
+                        <span className="text-[11px] font-bold text-rose-600 shrink-0">{c.customer_id}</span>
                         <span className="font-medium text-slate-800 truncate">{c.name}</span>
                         {c.loading ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />
@@ -464,7 +464,7 @@ export default function AdminLiveModule() {
                       </div>
                       <div className="flex items-center gap-3 shrink-0">
                         <span className="text-xs text-slate-500">Saldo ${Number(c.wallet_balance || 0).toFixed(2)}</span>
-                        <button onClick={() => removeClient(c.customer_id)} className="text-slate-400 hover:text-red-500" data-testid={`live-client-remove-${c.customer_id}`}>
+                        <button onClick={() => removeClient(c.customer_id)} className="text-slate-400 hover:text-rose-600" data-testid={`live-client-remove-${c.customer_id}`}>
                           <X className="h-4 w-4" />
                         </button>
                       </div>
@@ -475,7 +475,7 @@ export default function AdminLiveModule() {
                 <Button
                   onClick={handleRegister}
                   disabled={submitting || selectedClients.length === 0 || !product.item_name.trim() || priceNum <= 0}
-                  className="w-full h-12 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-base"
+                  className="w-full h-12 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-base"
                   data-testid="live-register-btn"
                 >
                   {submitting ? <Loader2 className="h-5 w-5 animate-spin" /> : (

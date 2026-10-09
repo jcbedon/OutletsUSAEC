@@ -211,7 +211,7 @@ export default function PurchaseItem({
                   {new Date(purchase.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
                 </span>
                 {purchase.entry_source === "live" && (
-                  <Badge className="bg-red-500 text-white text-[10px] px-1.5 py-0 h-4 font-bold" data-testid={`purchase-source-live-${purchase.id}`}>LIVE</Badge>
+                  <Badge className="bg-rose-600 text-white text-[10px] px-1.5 py-0 h-4 font-bold" data-testid={`purchase-source-live-${purchase.id}`}>LIVE</Badge>
                 )}
               </div>
               <p className="font-medium text-slate-800">{purchase.item_name}</p>

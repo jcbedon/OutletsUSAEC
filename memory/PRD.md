@@ -253,3 +253,25 @@ Problema: `recalculate_client_invoices` redistribuía depósitos entre facturas 
 - El candado (reactivar + eliminar producto en live finalizado) aplica a TODOS los usuarios por igual (admin o empleado); el backend lo exige siempre que el live esté completed/ended/finalized.
 - Frontend `AdminLive.jsx`: el flujo de eliminar ahora es robusto — muestra el campo de clave si detecta el live finalizado, y TAMBIÉN lo revela si el backend responde 401 (estado `deletePwdRequired`), permitiendo escribir la clave y reintentar sin cerrar el diálogo. Verificado por screenshot: aparece el input y marca "Clave de administrador incorrecta" con clave errónea.
 - Nota de soporte: el síntoma "no le deja poner la clave / solo dice incorrecta" corresponde al frontend viejo cacheado durante el deploy en curso; se resuelve al terminar el deploy + recarga forzada (Ctrl/Cmd+Shift+R).
+
+## 2026-10 — NUEVO MÓDULO "Live" (ingreso rápido de productos) — opt-in por tenant
+Requisito: módulo nuevo "Live" (distinto de "Live Shopping"), ícono rojo en sidebar/dashboard, activable por Superadmin por tenant (default OFF). Mismo shell/encabezado. Ingreso dinámico: se crea el live (con tabla de taxes del tenant) → se define 1 producto (nombre con autocompletado desde historial, precio, comisión vacía=0) → se agregan varios clientes (búsqueda código/nombre, TAB) → "Registrar" crea 1 compra por cliente marcada entry_source='live', que fluye a facturación igual que Live Shopping. Si el módulo está OFF, nada cambia.
+
+Decisiones del usuario: (1) activa Superadmin; (2) lives compartidos con Live Shopping + marca "LIVE"; (3) "valor final" mostrado = precio+comisión (el impuesto del live SÍ se aplica a la compra real); (4) 1 compra/cliente, descuenta saldo; (5) historial guarda solo el nombre.
+
+Backend (server.py):
+- Tenant.live_module_enabled (bool, default False). Toggle vía PUT /superadmin/tenants/{id}/settings {live_module_enabled}.
+- auth/me devuelve live_module_enabled.
+- Live.tax_rate/apply_tax; LiveCreate acepta tax_rate/apply_tax; create_live los guarda.
+- POST /api/live-module/purchases {live_id,item_name,store,price,commission_amount,customer_ids[]}: valida módulo activo (403 si no), 1 compra/cliente con entry_source='live', impuesto del live aplicado, comisión plana (null=0), descuenta wallet, suma totales del live, guarda nombre en product_history, audit. Devuelve created[]/failed[].
+- GET /api/live-module/product-history?q= → nombres para autocompletar.
+
+Frontend:
+- Nueva página pages/AdminLiveModule.jsx (ruta /admin/live-module). Header rosa/vino (#881337→#BE123C, NO rojo neón — ajustado por pedido del usuario). Secciones: live (crear/seleccionar + tax), producto (nombre datalist + precio + comisión + "Valor final"=precio+comisión), clientes (búsqueda rápida, chips con "Debe $X"/"Al día" vía getClientInfo, TAB/Enter). Botón Registrar bulk.
+- AstridSidebar: item "Live" (ícono Video rosa #E11D48) inyectado tras "Live Shopping" solo si user.live_module_enabled.
+- PurchaseItem: badge rosa "LIVE" cuando entry_source==='live' (visible en Live Shopping).
+- SuperadminDashboard: toggle "Módulo Live" en diálogo de configuración del tenant.
+- App.js: ruta protegida admin/employee.
+
+Testing: iteration_15.json → 8/8 backend PASS, todos los flujos frontend PASS, sin issues. Nota: wallets no existían en el tenant demo (seed incompleto); se crearon para D1001/D1002/D1003. NOTA DEPLOY: requiere Deploy para producción; activar el módulo por tenant desde Superadmin → Configuración.
+Pendiente menor (no bloqueante): el endpoint bulk no usa transacción DB (degrada por-cliente con failed[]); refactor de server.py (ya >10k líneas) sigue pendiente.

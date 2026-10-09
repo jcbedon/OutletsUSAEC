@@ -1325,14 +1325,14 @@ export default function SuperadminDashboard() {
               {/* Módulos Section */}
               <div className="border border-gray-200 rounded-xl p-4">
                 <h4 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                  <Video className="h-4 w-4 text-red-500" />
+                  <Video className="h-4 w-4 text-rose-600" />
                   Módulos
                 </h4>
                 <div className="space-y-3">
                   <div
                     className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-all ${
                       tenantSettings.live_module_enabled
-                        ? 'bg-red-50 border border-red-200'
+                        ? 'bg-rose-50 border border-rose-200'
                         : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'
                     }`}
                     onClick={() => setTenantSettings({...tenantSettings, live_module_enabled: !tenantSettings.live_module_enabled})}
@@ -1344,7 +1344,7 @@ export default function SuperadminDashboard() {
                     </div>
                     <div className={`px-3 py-1.5 rounded-full text-xs font-bold ${
                       tenantSettings.live_module_enabled
-                        ? 'bg-red-500 text-white'
+                        ? 'bg-rose-600 text-white'
                         : 'bg-gray-300 text-gray-600'
                     }`}>
                       {tenantSettings.live_module_enabled ? 'ACTIVO' : 'INACTIVO'}
