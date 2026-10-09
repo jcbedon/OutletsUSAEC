@@ -424,6 +424,19 @@ export default function SuperadminDashboard() {
     }
   };
 
+  // One-click toggle of the Live module directly from the tenant card.
+  const handleToggleLiveModule = async (tenant) => {
+    const next = !tenant.live_module_enabled;
+    setTenants(prev => prev.map(t => t.id === tenant.id ? { ...t, live_module_enabled: next } : t));
+    try {
+      await updateTenantSettings(tenant.id, { live_module_enabled: next });
+      toast.success(next ? "Módulo Live ACTIVADO" : "Módulo Live desactivado");
+    } catch (error) {
+      setTenants(prev => prev.map(t => t.id === tenant.id ? { ...t, live_module_enabled: !next } : t));
+      toast.error("No se pudo actualizar el módulo Live");
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -596,6 +609,15 @@ export default function SuperadminDashboard() {
                         >
                           <FileText className="h-4 w-4 mr-1" />
                           Factura
+                        </Button>
+                        <Button
+                          variant="outline" size="sm"
+                          className={`rounded-lg ${tenant.live_module_enabled ? "border-rose-300 text-white bg-[#B84A5E] hover:bg-[#A33F52]" : "border-rose-200 text-rose-600 hover:bg-rose-50"}`}
+                          onClick={() => handleToggleLiveModule(tenant)}
+                          data-testid={`toggle-live-${tenant.id}`}
+                        >
+                          <Video className="h-4 w-4 mr-1" />
+                          Live: {tenant.live_module_enabled ? "ON" : "OFF"}
                         </Button>
                         <Button
                           variant="outline" size="sm"
