@@ -1227,7 +1227,7 @@ export default function AdminLive() {
                               data-testid="selected-client-pending-badge"
                             >
                               <Receipt className="h-3 w-3" />
-                              Por facturar: {pendingCount} items
+                              Por facturar: {pendingCount} items (Subtotal: ${pending.toFixed(2)})
                             </span>
                           )}
                         </div>
