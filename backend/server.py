@@ -2529,7 +2529,7 @@ async def get_all_clients(status: Optional[str] = None, current_user: dict = Dep
                 {"invoice_id": {"$exists": False}}
             ]
         }},
-        {"$group": {"_id": "$user_id", "count": {"$sum": 1}, "total": {"$sum": "$total"}}}
+        {"$group": {"_id": "$user_id", "count": {"$sum": 1}, "total": {"$sum": {"$add": [{"$ifNull": ["$price", 0]}, {"$ifNull": ["$commission", 0]}]}}}}
     ]).to_list(len(user_ids))
     pending_purchases_count_dict = {p["_id"]: p["count"] for p in pending_purchases_agg}
     pending_purchases_total_dict = {p["_id"]: p.get("total", 0) for p in pending_purchases_agg}
@@ -3055,7 +3055,7 @@ async def get_client_info(customer_id: str, current_user: dict = Depends(get_cur
             "tenant_id": tid,
             "$or": [{"invoice_id": None}, {"invoice_id": {"$exists": False}}, {"invoice_id": ""}],
         }},
-        {"$group": {"_id": None, "total": {"$sum": "$total"}, "count": {"$sum": 1}}}
+        {"$group": {"_id": None, "total": {"$sum": {"$add": [{"$ifNull": ["$price", 0]}, {"$ifNull": ["$commission", 0]}]}}, "count": {"$sum": 1}}}
     ]).to_list(1)
     pending_total = round(float(pending_agg[0]["total"]) if pending_agg else 0.0, 2)
     pending_count = int(pending_agg[0]["count"]) if pending_agg else 0
