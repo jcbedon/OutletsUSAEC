@@ -757,7 +757,7 @@ https://outletsusaec.shop/`;
                                 title={`Por facturar: $${Number(client.pending_to_invoice || 0).toFixed(2)} (${client.pending_purchases_count || 0} compras de esta semana aún no facturadas)`}
                                 data-testid={`pending-to-invoice-${client.customer_id}`}
                               >
-                                Por facturar: {client.pending_purchases_count || 0} items
+                                Por facturar: {client.pending_purchases_count || 0} items (${Number(client.pending_to_invoice || 0).toFixed(2)})
                               </div>
                             )}
                             {(client.floating_deposits || 0) > 0.01 && (
