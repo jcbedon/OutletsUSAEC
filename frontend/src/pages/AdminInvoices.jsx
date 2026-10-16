@@ -886,23 +886,26 @@ export default function AdminInvoices() {
                       <div
                         key={client.id}
                         className={`p-3 rounded-xl border bg-white hover:border-blue-300 hover:shadow-md cursor-pointer transition-all flex items-center justify-between ${
-                          client.pending_to_invoice > 0 ? 'border-l-4 border-l-amber-400' : ''
+                          client.pending_purchases_count > 0 ? 'border-l-4 border-l-amber-400' : ''
                         }`}
                         onClick={() => handleSelectClientForInvoice(client)}
                         data-testid={`select-client-${client.customer_id}`}
                       >
                         <div className="flex items-center gap-3">
                           <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-                            client.pending_to_invoice > 0 ? 'bg-amber-50' : 'bg-blue-50'
+                            client.pending_purchases_count > 0 ? 'bg-amber-50' : 'bg-blue-50'
                           }`}>
-                            <User className={`h-5 w-5 ${client.pending_to_invoice > 0 ? 'text-amber-600' : 'text-blue-600'}`} />
+                            <User className={`h-5 w-5 ${client.pending_purchases_count > 0 ? 'text-amber-600' : 'text-blue-600'}`} />
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
                               <p className="font-medium" style={{ color: '#1E3A5F' }}>{client.name}</p>
-                              {client.pending_to_invoice > 0 && (
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
-                                  {client.pending_to_invoice} pendiente{client.pending_to_invoice > 1 ? 's' : ''}
+                              {client.pending_purchases_count > 0 && (
+                                <span
+                                  className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium"
+                                  title={`Subtotal por facturar: $${(client.pending_to_invoice || 0).toFixed(2)}`}
+                                >
+                                  {client.pending_purchases_count} item{client.pending_purchases_count > 1 ? 's' : ''} por facturar
                                 </span>
                               )}
                             </div>
