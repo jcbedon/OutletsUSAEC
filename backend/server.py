@@ -8050,10 +8050,11 @@ async def get_reports_summary(
         sia = lv.get("store_invoice_amount")
         if sia is None:
             continue
-        sp = lv.get("store_profit")
-        if sp is None:
-            sp = (lv.get("total_sales") or 0) - (sia or 0)
-        rewards_total += (sp or 0)
+        # Always recompute fresh (the stored `store_profit` can be stale if
+        # purchases were added/removed after the store invoice was uploaded).
+        # This mirrors the Live Shopping "Ganancia" report: total_sales - store_invoice.
+        sp = (lv.get("total_sales") or 0) - (sia or 0)
+        rewards_total += sp
     rewards_total = round(rewards_total, 2)
 
     return {
