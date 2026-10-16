@@ -8037,9 +8037,29 @@ async def get_reports_summary(
     for customer in top_customers:
         user = await db.users.find_one({"customer_id": customer["_id"], "tenant_id": tid}, {"_id": 0, "name": 1})
         customer["name"] = user["name"] if user else "Sin nombre"
+
+    # Rewards = suma de la "Ganancia" (store_profit) de TODOS los lives de la semana
+    # (ganancia = total_sales del live - factura de la tienda subida). Solo cuentan
+    # los lives que ya tienen la factura de la tienda cargada (store_invoice_amount).
+    lives_period = await db.lives.find(
+        {"tenant_id": tid, **date_filter},
+        {"_id": 0, "total_sales": 1, "store_invoice_amount": 1, "store_profit": 1}
+    ).to_list(20000)
+    rewards_total = 0.0
+    for lv in lives_period:
+        sia = lv.get("store_invoice_amount")
+        if sia is None:
+            continue
+        sp = lv.get("store_profit")
+        if sp is None:
+            sp = (lv.get("total_sales") or 0) - (sia or 0)
+        rewards_total += (sp or 0)
+    rewards_total = round(rewards_total, 2)
+
     return {
         "total_sales": total_sales[0]["total"] if total_sales else 0,
         "total_commissions": total_commissions[0]["total"] if total_commissions else 0,
+        "rewards": rewards_total,
         "client_count": client_count, "live_count": live_count,
         "pending_shipments": pending_shipments,
         "total_shipping": total_shipping[0]["total"] if total_shipping else 0,
