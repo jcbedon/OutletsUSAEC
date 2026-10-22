@@ -8796,6 +8796,145 @@ async def get_clients_debts_report(current_user: dict = Depends(get_current_user
         }
     }
 
+@api_router.get("/admin/reports/payments")
+async def get_client_payments_report(period: str = "week", current_user: dict = Depends(get_current_user)):
+    """Report of clients who are PAYING OFF their debt via approved deposits.
+
+    Lists every client that made at least one approved deposit (abono) within the
+    selected period, ordered by the MOST RECENT payment first. For each client we
+    also surface their remaining `real_debt` so the admin can tell who already
+    finished paying vs who still owes. Filterable by day / week / all.
+    """
+    if current_user["role"] not in ["admin", "employee"]:
+        raise HTTPException(status_code=403, detail="No autorizado")
+    tid = current_user["tenant_id"]
+
+    # ── Period start (payment date filter) ──────────────────────────────────
+    now = datetime.now(timezone.utc)
+    start_iso = None
+    if period == "day":
+        start_iso = now.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    elif period == "week":
+        # Current week = Monday 12:00 Ecuador (UTC-5) → i.e. Monday 17:00 UTC,
+        # consistent with the dashboard summary / weekly cutoff.
+        days_since_monday = now.weekday()
+        cs = (now - timedelta(days=days_since_monday)).replace(hour=17, minute=0, second=0, microsecond=0)
+        if now < cs:
+            cs = cs - timedelta(days=7)
+        start_iso = cs.isoformat()
+    # "all" → no start filter
+
+    # Fetch all approved deposits for the tenant, then filter in python using
+    # the effective payment date (approved_at preferred, created_at fallback).
+    all_deps = await db.wallet_transactions.find(
+        {"tenant_id": tid, "type": "deposit", "status": "approved", "is_deleted": {"$ne": True}},
+        {"_id": 0, "user_id": 1, "customer_id": 1, "amount": 1, "created_at": 1, "approved_at": 1, "description": 1}
+    ).to_list(50000)
+
+    def pay_date(d):
+        return d.get("approved_at") or d.get("created_at") or ""
+
+    deps_in_period = [d for d in all_deps if (start_iso is None or pay_date(d) >= start_iso)]
+
+    empty_summary = {"clients_count": 0, "total_collected": 0, "payments_count": 0,
+                     "still_owing": 0, "fully_paid": 0}
+    if not deps_in_period:
+        return {"payments": [], "summary": empty_summary, "period": period}
+
+    # Group deposits by client.
+    by_user = {}
+    for d in deps_in_period:
+        uid = d.get("user_id")
+        if not uid:
+            continue
+        g = by_user.setdefault(uid, {"total_paid": 0.0, "count": 0, "last_date": "", "items": []})
+        amt = float(d.get("amount") or 0)
+        g["total_paid"] += amt
+        g["count"] += 1
+        pd = pay_date(d)
+        if pd > g["last_date"]:
+            g["last_date"] = pd
+        g["items"].append({"date": pd, "amount": round(amt, 2), "description": d.get("description", "")})
+
+    user_ids = list(by_user.keys())
+    clients = await db.users.find(
+        {"id": {"$in": user_ids}, "tenant_id": tid, "role": "client"},
+        {"_id": 0, "password_hash": 0}
+    ).to_list(len(user_ids))
+    clients_dict = {c["id"]: c for c in clients}
+    cust_ids = [c.get("customer_id") for c in clients if c.get("customer_id")]
+
+    # ── Remaining real debt (same formula as the Deudas report) ─────────────
+    last_inv_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": {"$in": cust_ids}, "is_annulled": {"$ne": True}}},
+        {"$sort": {"created_at": -1}},
+        {"$group": {"_id": "$customer_id",
+                    "amount": {"$first": "$total_a_pagar"},
+                    "saldo_a_favor": {"$first": "$saldo_a_favor"}}}
+    ]).to_list(len(cust_ids) or 1)
+    last_inv_dict = {x["_id"]: x for x in last_inv_agg}
+
+    approved_deposits_agg = await db.wallet_transactions.aggregate([
+        {"$match": {"tenant_id": tid, "type": "deposit", "status": "approved",
+                    "is_deleted": {"$ne": True}, "user_id": {"$in": user_ids}}},
+        {"$group": {"_id": "$user_id", "total": {"$sum": "$amount"}}}
+    ]).to_list(len(user_ids))
+    approved_dep_by_uid = {a["_id"]: float(a["total"] or 0) for a in approved_deposits_agg}
+
+    applied_deposits_agg = await db.invoices.aggregate([
+        {"$match": {"tenant_id": tid, "customer_id": {"$in": cust_ids}, "is_annulled": {"$ne": True}}},
+        {"$unwind": {"path": "$applied_deposits", "preserveNullAndEmptyArrays": False}},
+        {"$group": {"_id": "$customer_id", "total": {"$sum": "$applied_deposits.amount_applied"}}}
+    ]).to_list(len(cust_ids) or 1)
+    applied_by_customer = {a["_id"]: float(a["total"] or 0) for a in applied_deposits_agg}
+
+    payments = []
+    total_collected = 0.0
+    for uid, g in by_user.items():
+        c = clients_dict.get(uid)
+        if not c:
+            continue
+        cust = c.get("customer_id")
+        li = last_inv_dict.get(cust, {})
+        last_total_a_pagar = float(li.get("amount") or 0)
+        last_saldo_a_favor = float(li.get("saldo_a_favor") or 0)
+        approved_dep = approved_dep_by_uid.get(uid, 0)
+        applied_dep = applied_by_customer.get(cust, 0)
+        floating = round(max(0.0, approved_dep - applied_dep), 2)
+        real_debt = round(last_total_a_pagar - last_saldo_a_favor - floating, 2)
+        total_collected += g["total_paid"]
+        g["items"].sort(key=lambda x: x["date"], reverse=True)
+        payments.append({
+            "id": uid,
+            "customer_id": cust,
+            "name": c.get("name"),
+            "whatsapp": c.get("whatsapp", ""),
+            "country": c.get("country", ""),
+            "total_paid": round(g["total_paid"], 2),
+            "payments_count": g["count"],
+            "last_payment_date": g["last_date"],
+            "real_debt": real_debt,
+            "fully_paid": real_debt <= 0.01,
+            "items": g["items"][:20],
+        })
+
+    # Most recently paid first.
+    payments.sort(key=lambda x: x["last_payment_date"], reverse=True)
+
+    return {
+        "payments": payments,
+        "period": period,
+        "summary": {
+            "clients_count": len(payments),
+            "total_collected": round(total_collected, 2),
+            "payments_count": sum(p["payments_count"] for p in payments),
+            "still_owing": sum(1 for p in payments if p["real_debt"] > 0.01),
+            "fully_paid": sum(1 for p in payments if p["real_debt"] <= 0.01),
+        }
+    }
+
+
+
 
 @api_router.get("/admin/reports/purchases-without-tax")
 async def get_purchases_without_tax(current_user: dict = Depends(get_current_user)):

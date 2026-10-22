@@ -1,14 +1,15 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/App";
-import { getBusinessStats, getClientsDebtsReport, getInactiveClientsReport } from "@/lib/api";
+import { getBusinessStats, getClientsDebtsReport, getInactiveClientsReport, getClientPaymentsReport } from "@/lib/api";
+import { generatePaymentsReportPDF } from "@/lib/paymentsReportPDF";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, DollarSign, TrendingUp, TrendingDown, Wallet, Store, Radio, BarChart3, PieChart as PieChartIcon, Users, AlertTriangle, Search, Filter, ChevronDown, ChevronUp, Receipt, Image, Clock, Phone } from "lucide-react";
+import { ArrowLeft, DollarSign, TrendingUp, TrendingDown, Wallet, Store, Radio, BarChart3, PieChart as PieChartIcon, Users, AlertTriangle, Search, Filter, ChevronDown, ChevronUp, Receipt, Image, Clock, Phone, HandCoins, Download, MessageCircle, CheckCircle2 } from "lucide-react";
 import { SalesTrendChart, StoreBarChart, ProfitPieChart, LiveBarChart, ClientsDebtsChart, ClientsDebtsPieChart, ClientsByDateChart } from "@/components/StatsCharts";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import StoreProfitsReport from "@/components/StoreProfitsReport";
@@ -88,6 +89,67 @@ export default function AdminStats() {
   const [inactiveLimit, setInactiveLimit] = useState(50);
   const [includeNeverPurchased, setIncludeNeverPurchased] = useState(false);
 
+  // Filtros / datos para Abonos (clientes que van pagando su deuda)
+  const [paymentsData, setPaymentsData] = useState(null);
+  const [paymentsPeriod, setPaymentsPeriod] = useState("week");
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [paymentsSearch, setPaymentsSearch] = useState("");
+
+  const loadPayments = async (p) => {
+    try {
+      setPaymentsLoading(true);
+      const res = await getClientPaymentsReport(p || paymentsPeriod);
+      setPaymentsData(res.data);
+    } catch (e) {
+      toast.error("Error al cargar abonos");
+    } finally {
+      setPaymentsLoading(false);
+    }
+  };
+
+  const handlePaymentsPeriodChange = (p) => {
+    setPaymentsPeriod(p);
+    loadPayments(p);
+  };
+
+  const filteredPayments = useMemo(() => {
+    const list = paymentsData?.payments || [];
+    if (!paymentsSearch) return list;
+    const term = paymentsSearch.toLowerCase();
+    return list.filter((p) =>
+      (p.name || "").toLowerCase().includes(term) ||
+      (p.customer_id || "").toLowerCase().includes(term) ||
+      (p.whatsapp || "").includes(term)
+    );
+  }, [paymentsData, paymentsSearch]);
+
+  const openWhatsAppCollect = (p) => {
+    const digits = String(p.whatsapp || "").replace(/[^0-9]/g, "");
+    if (digits.length < 8) {
+      toast.error("Este cliente no tiene un WhatsApp válido");
+      return;
+    }
+    const owes = Number(p.real_debt || 0) > 0.01;
+    const msg = owes
+      ? `Hola ${p.name || ""}, gracias por tu abono de $${Number(p.total_paid || 0).toFixed(2)}. Te recordamos que aún queda un saldo pendiente de $${Number(p.real_debt || 0).toFixed(2)}. ¿Nos ayudas a completarlo? ¡Gracias!`
+      : `Hola ${p.name || ""}, ¡gracias por tu pago! Tu cuenta está al día. 🙌`;
+    window.open(`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`, "_blank");
+  };
+
+  const handleDownloadPaymentsPDF = () => {
+    if (!filteredPayments.length) {
+      toast.error("No hay abonos para descargar con los filtros actuales");
+      return;
+    }
+    const periodLabel = paymentsPeriod === "day" ? "Hoy" : paymentsPeriod === "week" ? "Esta semana" : "Todo el historial";
+    generatePaymentsReportPDF({
+      tenantName: user?.tenant_name || "Reporte",
+      periodLabel,
+      payments: filteredPayments,
+      summary: paymentsData?.summary || {},
+    });
+  };
+
   const loadStats = async (p) => {
     try {
       setLoading(true);
@@ -108,6 +170,7 @@ export default function AdminStats() {
 
   useEffect(() => {
     loadStats();
+    loadPayments();
   }, []);
 
   // Refresh whenever the user comes back to this tab.
@@ -352,6 +415,7 @@ export default function AdminStats() {
             { value: "resumen",    perm: "stats_resumen",    label: "Resumen",    Icon: DollarSign,    activeCls: "data-[state=active]:bg-slate-800 data-[state=active]:text-white" },
             { value: "ganancias",  perm: "stats_tiendas",    label: "Tiendas",    Icon: Receipt,       activeCls: "data-[state=active]:bg-green-600 data-[state=active]:text-white" },
             { value: "deudas",     perm: "stats_deudas",     label: "Deudas",     Icon: AlertTriangle, activeCls: "data-[state=active]:bg-red-600 data-[state=active]:text-white" },
+            { value: "abonos",     perm: "stats_deudas",     label: "Abonos",     Icon: HandCoins,     activeCls: "data-[state=active]:bg-emerald-600 data-[state=active]:text-white" },
             { value: "inactivos",  perm: "stats_inactivos",  label: "Inactivos",  Icon: Clock,         activeCls: "data-[state=active]:bg-orange-600 data-[state=active]:text-white" },
             { value: "graficas",   perm: "stats_graficas",   label: "Graficas",   Icon: BarChart3,     activeCls: "data-[state=active]:bg-slate-800 data-[state=active]:text-white" },
             { value: "detalle",    perm: "stats_detalle",    label: "Detalle",    Icon: Store,         activeCls: "data-[state=active]:bg-slate-800 data-[state=active]:text-white" },
@@ -890,6 +954,163 @@ export default function AdminStats() {
                   </CardContent>
                 </Card>
               )}
+            </div>
+          </TabsContent>
+
+          {/* Abonos Tab — clientes que van pagando su deuda */}
+          <TabsContent value="abonos" className="mt-6">
+            <div className="space-y-6">
+              {/* Controls: period filter + search + PDF */}
+              <Card className="rounded-xl">
+                <CardContent className="p-4">
+                  <div className="flex flex-col lg:flex-row gap-4 lg:items-center">
+                    <div className="flex gap-2">
+                      {[
+                        { key: "day", label: "Hoy" },
+                        { key: "week", label: "Esta semana" },
+                        { key: "all", label: "Todo" },
+                      ].map((opt) => (
+                        <Button
+                          key={opt.key}
+                          variant={paymentsPeriod === opt.key ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => handlePaymentsPeriodChange(opt.key)}
+                          className={paymentsPeriod === opt.key ? "bg-emerald-600 hover:bg-emerald-700" : ""}
+                          data-testid={`payments-period-${opt.key}`}
+                        >
+                          {opt.label}
+                        </Button>
+                      ))}
+                    </div>
+                    <div className="flex-1 relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Input
+                        placeholder="Buscar por nombre, ID o WhatsApp..."
+                        value={paymentsSearch}
+                        onChange={(e) => setPaymentsSearch(e.target.value)}
+                        className="pl-10"
+                        data-testid="payments-search-input"
+                      />
+                    </div>
+                    <Button
+                      onClick={handleDownloadPaymentsPDF}
+                      className="bg-slate-800 hover:bg-slate-900"
+                      data-testid="payments-download-pdf"
+                    >
+                      <Download className="h-4 w-4 mr-2" /> Descargar PDF
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* KPI cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card className="rounded-xl border-emerald-200 bg-emerald-50">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-extrabold text-emerald-700" data-testid="payments-total-collected">
+                      {formatMoney(paymentsData?.summary?.total_collected || 0)}
+                    </p>
+                    <p className="text-xs text-emerald-600">Total cobrado</p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-extrabold text-slate-800">{paymentsData?.summary?.clients_count || 0}</p>
+                    <p className="text-xs text-gray-500">Clientes que abonaron</p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-extrabold text-green-600">{paymentsData?.summary?.fully_paid || 0}</p>
+                    <p className="text-xs text-green-600">Ya pagaron</p>
+                  </CardContent>
+                </Card>
+                <Card className="rounded-xl">
+                  <CardContent className="p-4 text-center">
+                    <p className="text-2xl font-extrabold text-amber-600">{paymentsData?.summary?.still_owing || 0}</p>
+                    <p className="text-xs text-amber-600">Aún deben</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Table — ordered by most recent payment first */}
+              <Card className="rounded-xl">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2 text-emerald-700">
+                    <HandCoins className="h-5 w-5" /> Abonos recientes
+                    <span className="text-xs font-normal text-gray-400">(el pago más reciente primero)</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {paymentsLoading ? (
+                    <p className="text-center text-gray-400 py-8">Cargando abonos…</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-gray-50">
+                            <th className="text-left p-2 font-medium">Cliente</th>
+                            <th className="text-left p-2 font-medium">ID</th>
+                            <th className="text-right p-2 font-medium">Último pago</th>
+                            <th className="text-center p-2 font-medium">Abonos</th>
+                            <th className="text-right p-2 font-medium">Total abonado</th>
+                            <th className="text-right p-2 font-medium">Deuda restante</th>
+                            <th className="text-center p-2 font-medium">Cobrar</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredPayments.map((p) => {
+                            const owes = Number(p.real_debt || 0) > 0.01;
+                            return (
+                              <tr key={p.id} className="border-b hover:bg-gray-50" data-testid={`payments-row-${p.customer_id}`}>
+                                <td className="p-2">
+                                  <div className="font-medium text-slate-800">{p.name}</div>
+                                  <div className="text-xs text-gray-500">{p.whatsapp}</div>
+                                </td>
+                                <td className="p-2">
+                                  <Badge variant="outline" className="text-xs">{p.customer_id}</Badge>
+                                </td>
+                                <td className="p-2 text-right text-gray-600" data-testid={`payments-lastdate-${p.customer_id}`}>
+                                  {p.last_payment_date
+                                    ? new Date(p.last_payment_date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })
+                                    : '—'}
+                                </td>
+                                <td className="p-2 text-center text-gray-600">{p.payments_count}</td>
+                                <td className="p-2 text-right">
+                                  <span className="font-bold text-emerald-600">{formatMoney(p.total_paid)}</span>
+                                </td>
+                                <td className="p-2 text-right">
+                                  {owes ? (
+                                    <span className="font-bold text-red-600">{formatMoney(p.real_debt)}</span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 font-semibold text-green-600">
+                                      <CheckCircle2 className="h-4 w-4" /> Pagado
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-2 text-center">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-green-300 text-green-700 hover:bg-green-50"
+                                    onClick={() => openWhatsAppCollect(p)}
+                                    data-testid={`payments-wa-${p.customer_id}`}
+                                  >
+                                    <MessageCircle className="h-4 w-4" />
+                                  </Button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      {filteredPayments.length === 0 && (
+                        <p className="text-center text-gray-400 py-8">No hay abonos en este periodo</p>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 

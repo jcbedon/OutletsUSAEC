@@ -161,6 +161,7 @@ export const getClientsPurchasesReport = () => api.get("/admin/reports/clients-p
 export const getAllPurchasesReport = () => api.get("/admin/reports/all-purchases");
 export const getClientsDebtsReport = () => api.get("/admin/reports/clients-debts");
 export const getInactiveClientsReport = () => api.get("/admin/reports/inactive-clients");
+export const getClientPaymentsReport = (period = "week") => api.get(`/admin/reports/payments?period=${period}`);
 export const getPurchasesWithoutTax = () => api.get("/admin/reports/purchases-without-tax");
 export const getStoreProfitsReport = () => api.get("/admin/reports/store-profits");
 
