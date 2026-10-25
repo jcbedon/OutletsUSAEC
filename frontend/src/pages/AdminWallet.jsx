@@ -126,6 +126,9 @@ export default function AdminWallet() {
   // specific account so it shows up in the bank ledger. When the tenant has
   // only one account we don't even need to render the selector.
   const [bankAccounts, setBankAccounts] = useState([]);
+  // ALL accounts (incl. inactive) — used only to resolve the display label of
+  // the bank account a past recharge was attributed to.
+  const [allBankAccounts, setAllBankAccounts] = useState([]);
   const [rechargeBankAccountId, setRechargeBankAccountId] = useState("");
   const rechargeFileInputRef = useRef(null);
   
@@ -160,6 +163,7 @@ export default function AdminWallet() {
       setDeletedDeposits(deletedRes.data || []);
       const active = ((banksRes.data?.bank_accounts) || []).filter((a) => a.is_active !== false);
       setBankAccounts(active);
+      setAllBankAccounts((banksRes.data?.bank_accounts) || []);
       // When only one active account exists, preselect it so the manual
       // recharge always lands somewhere even if the admin doesn't touch the
       // selector.
@@ -516,6 +520,16 @@ export default function AdminWallet() {
       setAllDeposits(prev => prev.map(d => d.id === deposit.id ? { ...d, bank_reviewed: !next } : d));
       toast.error("No se pudo actualizar la revisión");
     }
+  };
+
+  // Resolve the human-readable label of the bank account a recharge was
+  // attributed to (so the admin can see WHERE each deposit landed).
+  const resolveBankAccount = (bankAccountId) => {
+    if (!bankAccountId) return null;
+    const acc = allBankAccounts.find((a) => a.id === bankAccountId);
+    if (!acc) return null;
+    const last4 = String(acc.account_number || "").slice(-4);
+    return `${acc.bank_name || "Cuenta"}${acc.owner_name ? " · " + acc.owner_name : ""}${last4 ? " · ••" + last4 : ""}`;
   };
 
   const getStatusBadge = (status) => {
@@ -1419,6 +1433,15 @@ export default function AdminWallet() {
                                   )}
                                 </div>
                                 <p className="text-sm text-gray-500">{deposit.description}</p>
+                                {resolveBankAccount(deposit.bank_account_id) ? (
+                                  <p className="text-xs text-sky-700 mt-1 inline-flex items-center gap-1" data-testid={`deposit-bank-account-${deposit.id}`}>
+                                    <span className="font-semibold">Cuenta:</span> {resolveBankAccount(deposit.bank_account_id)}
+                                  </p>
+                                ) : (deposit.status === 'approved' && (
+                                  <p className="text-xs text-amber-600 mt-1" data-testid={`deposit-bank-account-none-${deposit.id}`}>
+                                    Sin cuenta bancaria asignada
+                                  </p>
+                                ))}
                                 <p className="text-xs text-gray-400 mt-1">
                                   {new Date(deposit.created_at).toLocaleDateString('es-ES', {
                                     day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'
