@@ -206,7 +206,14 @@ export async function generateBankStatementPDF({ tenantName, tenantLogo, account
       const desc = String(tx.description || "—");
       const descShort = desc.length > 38 ? desc.substring(0, 36) + "…" : desc;
 
+      // Remitente (sender) / Destinatario (recipient) read from the proof image.
+      const remitente = tx.remitente || null;
+      const destinatario = tx.destinatario || (tx.kind === "recharge" ? (account.owner_name || null) : null);
+      const hasParties = !!(remitente || destinatario);
+
       doc.setTextColor(15, 23, 42);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
       doc.text(fmtDate(tx.created_at), colX.date, y);
       doc.text(KIND_LABEL[tx.kind] || tx.kind, colX.kind, y);
       doc.text(descShort, colX.desc, y);
@@ -217,11 +224,23 @@ export async function generateBankStatementPDF({ tenantName, tenantLogo, account
 
       doc.setTextColor(15, 23, 42);
       doc.text(fmtMoney(tx.running), colX.balance, y, { align: "right" });
-      y += 14;
+      y += 13;
+
+      // Sub-line: De (remitente) → Para (destinatario)
+      if (hasParties) {
+        const clip = (s, n) => (s && s.length > n ? s.substring(0, n - 1) + "…" : s || "—");
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(100, 116, 139);
+        const parties = `De: ${clip(remitente, 34)}   →   Para: ${clip(destinatario, 34)}`;
+        doc.text(parties, colX.desc, y);
+        y += 11;
+      }
 
       // Row separator
       doc.setDrawColor(241, 245, 249);
       doc.line(margin, y - 6, pageW - margin, y - 6);
+      y += 1;
     }
   }
 

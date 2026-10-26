@@ -1879,6 +1879,28 @@ async def list_account_transactions(account_id: str, start_date: Optional[str] =
     if start_date and end_date:
         q["created_at"] = {"$gte": start_date, "$lte": end_date}
     txs = await db.bank_transactions.find(q, {"_id": 0}).sort("created_at", -1).to_list(20000)
+
+    # Enrich recharge rows with Remitente / Destinatario read from the proof
+    # image (OCR) of the originating wallet transaction, so the statement PDF
+    # can show who sent the money and who received it.
+    source_ids = [t.get("source_transaction_id") for t in txs
+                  if t.get("kind") == "recharge" and t.get("source_transaction_id")]
+    if source_ids:
+        src_txs = await db.wallet_transactions.find(
+            {"tenant_id": tid, "id": {"$in": list(set(source_ids))}},
+            {"_id": 0, "id": 1, "ai_scan": 1, "user_name": 1}
+        ).to_list(len(source_ids))
+        src_map = {s["id"]: s for s in src_txs}
+        for t in txs:
+            src = src_map.get(t.get("source_transaction_id"))
+            if not src:
+                continue
+            ai = src.get("ai_scan") or {}
+            t["remitente"] = ai.get("detected_sender_name")
+            t["remitente_cuenta"] = ai.get("detected_sender_account")
+            t["destinatario"] = ai.get("detected_beneficiary_name")
+            t["destinatario_cuenta"] = ai.get("detected_destination_account")
+
     stats = await _compute_account_balance(tid, account_id)
     return {"transactions": txs, **stats}
 
@@ -3655,6 +3677,8 @@ async def request_deposit_with_proof(
                         "confidence": scan.get("confidence"),
                         "detected_destination_account": scan.get("detected_destination_account"),
                         "detected_beneficiary_name": scan.get("detected_beneficiary_name"),
+                        "detected_sender_name": scan.get("detected_sender_name"),
+                        "detected_sender_account": scan.get("detected_sender_account"),
                         "detected_deposit_date": detected_deposit_date,
                         "raw_text": scan.get("raw"),
                         "scanned_at": datetime.now(timezone.utc).isoformat()
@@ -3711,11 +3735,13 @@ async def _scan_proof_image(proof_url: str, session_id: str = "ocr"):
             system_message=(
                 "You extract payment information from deposit receipt images. "
                 "Return STRICT JSON with exactly these fields: "
-                '{"reference_number": "<string or null>", "amount": <number or null>, "currency": "<string or null>", "confidence": "<low|medium|high>", "destination_account": "<string or null>", "beneficiary_name": "<string or null>", "deposit_date": "<YYYY-MM-DD or null>"}. '
+                '{"reference_number": "<string or null>", "amount": <number or null>, "currency": "<string or null>", "confidence": "<low|medium|high>", "destination_account": "<string or null>", "beneficiary_name": "<string or null>", "sender_name": "<string or null>", "sender_account": "<string or null>", "deposit_date": "<YYYY-MM-DD or null>"}. '
                 "Rules: reference_number is the voucher/transaction/receipt number (usually long digits). "
                 "amount is the numeric amount deposited (no currency symbols). "
                 "destination_account is the bank account number that received the deposit (where the money was transferred TO). "
-                "beneficiary_name is the name of the person/company that received the money. "
+                "beneficiary_name is the name of the person/company that RECEIVED the money (the recipient / destinatario). "
+                "sender_name is the name of the person/company that SENT the money (the sender / remitente / 'ordenante' / 'De' / 'Origen' / 'Titular origen'). "
+                "sender_account is the bank account number the money was sent FROM (origin account), if shown. "
                 "deposit_date is the date the deposit/transfer was actually made in ISO format YYYY-MM-DD. "
                 "Common date labels: 'Fecha', 'Fecha de transacción', 'Date', 'Transaction date', 'Fecha de depósito', 'Fecha y hora'. "
                 "If the receipt shows the date as DD/MM/YYYY convert it to YYYY-MM-DD. If only a partial date is readable use null. "
@@ -3725,7 +3751,8 @@ async def _scan_proof_image(proof_url: str, session_id: str = "ocr"):
         image_file = FileContentWithMimeType(file_path=tmp_path, mime_type=content_type)
         prompt = (
             "Analiza este comprobante de depósito y extrae: número de comprobante, monto, "
-            "número de cuenta destino, nombre del beneficiario y fecha del depósito. Responde únicamente con JSON."
+            "número de cuenta destino, nombre del beneficiario (destinatario), nombre del remitente (quien envía), "
+            "cuenta de origen y fecha del depósito. Responde únicamente con JSON."
         )
         raw = await chat.send_message(UserMessage(text=prompt, file_contents=[image_file]))
     except Exception:
@@ -3778,6 +3805,8 @@ async def _scan_proof_image(proof_url: str, session_id: str = "ocr"):
         "confidence": parsed.get("confidence"),
         "detected_destination_account": (parsed.get("destination_account") or "").strip() or None if isinstance(parsed.get("destination_account"), str) else None,
         "detected_beneficiary_name": (parsed.get("beneficiary_name") or "").strip() or None if isinstance(parsed.get("beneficiary_name"), str) else None,
+        "detected_sender_name": (parsed.get("sender_name") or "").strip() or None if isinstance(parsed.get("sender_name"), str) else None,
+        "detected_sender_account": (parsed.get("sender_account") or "").strip() or None if isinstance(parsed.get("sender_account"), str) else None,
         "detected_deposit_date": detected_deposit_date,
         "raw": text[:1500]
     }
@@ -3812,6 +3841,8 @@ async def scan_deposit_proof(transaction_id: str, current_user: dict = Depends(g
             "confidence": result.get("confidence"),
             "detected_destination_account": result.get("detected_destination_account"),
             "detected_beneficiary_name": result.get("detected_beneficiary_name"),
+            "detected_sender_name": result.get("detected_sender_name"),
+            "detected_sender_account": result.get("detected_sender_account"),
             "detected_deposit_date": result.get("detected_deposit_date"),
             "raw_text": result.get("raw"),
             "scanned_at": datetime.now(timezone.utc).isoformat()
@@ -4602,6 +4633,8 @@ async def admin_create_recharge(
                 "confidence": scan.get("confidence"),
                 "detected_destination_account": scan.get("detected_destination_account"),
                 "detected_beneficiary_name": scan.get("detected_beneficiary_name"),
+                "detected_sender_name": scan.get("detected_sender_name"),
+                "detected_sender_account": scan.get("detected_sender_account"),
                 "detected_deposit_date": detected_deposit_date,
                 "raw_text": scan.get("raw"),
                 "scanned_at": datetime.now(timezone.utc).isoformat()
