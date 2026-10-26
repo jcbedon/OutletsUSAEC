@@ -26,7 +26,17 @@ import {
   Plus,
   Trash2,
   Settings2,
+  Users,
+  Filter,
 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   getBankAccountsSummary,
   getBankAccountTransactions,
@@ -86,6 +96,9 @@ export default function AdminBankAccounts() {
   const [editAccounts, setEditAccounts] = useState([]);
   const [savingAccounts, setSavingAccounts] = useState(false);
   const [manageLoading, setManageLoading] = useState(false);
+  // Ledger view controls
+  const [showParties, setShowParties] = useState(true);
+  const [kindFilter, setKindFilter] = useState("all");
 
   const loadSummary = async () => {
     setLoading(true);
@@ -362,6 +375,12 @@ export default function AdminBankAccounts() {
     return out.reverse();
   })();
 
+  // Displayed rows: filter by movement type (running balance already computed
+  // on the full set above so it stays correct regardless of the filter).
+  const filteredLedger = kindFilter === "all"
+    ? ledgerWithBalance
+    : ledgerWithBalance.filter((t) => t.kind === kindFilter);
+
   return (
     <div className="app-bg min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/40 to-slate-50 pb-12">
       {/* Header — banking-style hero */}
@@ -580,6 +599,35 @@ export default function AdminBankAccounts() {
                     </div>
                   </div>
 
+                  {/* Ledger controls: show/hide parties + type filter */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                    <label className="flex items-center gap-2 cursor-pointer select-none" data-testid="toggle-parties-label">
+                      <Checkbox
+                        checked={showParties}
+                        onCheckedChange={(v) => setShowParties(!!v)}
+                        data-testid="toggle-parties-checkbox"
+                      />
+                      <span className="text-xs font-medium text-slate-700 flex items-center gap-1">
+                        <Users className="h-3.5 w-3.5 text-indigo-600" />
+                        Mostrar remitente / destinatario
+                      </span>
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-3.5 w-3.5 text-slate-400" />
+                      <Select value={kindFilter} onValueChange={setKindFilter}>
+                        <SelectTrigger className="h-8 w-44 rounded-lg text-xs" data-testid="ledger-type-filter">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all" data-testid="ledger-filter-all">Todos los movimientos</SelectItem>
+                          <SelectItem value="recharge" data-testid="ledger-filter-recharge">Recargas de clientes</SelectItem>
+                          <SelectItem value="manual_deposit" data-testid="ledger-filter-manual_deposit">Depósitos manuales</SelectItem>
+                          <SelectItem value="withdrawal" data-testid="ledger-filter-withdrawal">Retiros</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
                   {/* Ledger table — banking style */}
                   <ScrollArea className="h-[460px] rounded-lg border border-slate-200">
                     <table className="w-full text-sm">
@@ -587,6 +635,12 @@ export default function AdminBankAccounts() {
                         <tr>
                           <th className="text-left px-3 py-2">Fecha</th>
                           <th className="text-left px-3 py-2">Concepto</th>
+                          {showParties && (
+                            <>
+                              <th className="text-left px-3 py-2 hidden md:table-cell" data-testid="th-remitente">Remitente</th>
+                              <th className="text-left px-3 py-2 hidden md:table-cell" data-testid="th-destinatario">Destinatario</th>
+                            </>
+                          )}
                           <th className="text-left px-3 py-2 hidden md:table-cell">Ref.</th>
                           <th className="text-right px-3 py-2">Monto</th>
                           <th className="text-right px-3 py-2 hidden md:table-cell">Saldo</th>
@@ -594,14 +648,14 @@ export default function AdminBankAccounts() {
                       </thead>
                       <tbody>
                         {ledgerLoading ? (
-                          <tr><td colSpan={5} className="text-center py-8 text-slate-400">Cargando movimientos…</td></tr>
-                        ) : ledgerWithBalance.length === 0 ? (
-                          <tr><td colSpan={5} className="text-center py-12 text-slate-400">
+                          <tr><td colSpan={showParties ? 7 : 5} className="text-center py-8 text-slate-400">Cargando movimientos…</td></tr>
+                        ) : filteredLedger.length === 0 ? (
+                          <tr><td colSpan={showParties ? 7 : 5} className="text-center py-12 text-slate-400">
                             <ReceiptText className="h-10 w-10 mx-auto mb-2 text-slate-300" />
                             Sin movimientos
                           </td></tr>
                         ) : (
-                          ledgerWithBalance.map((tx) => {
+                          filteredLedger.map((tx) => {
                             const meta = kindMeta[tx.kind] || kindMeta.recharge;
                             const isDeleted = !!tx.is_deleted;
                             return (
@@ -635,6 +689,26 @@ export default function AdminBankAccounts() {
                                     )}
                                   </div>
                                 </td>
+                                {showParties && (
+                                  <>
+                                    <td className="px-3 py-2 text-xs hidden md:table-cell align-top" data-testid={`ledger-remitente-${tx.id}`}>
+                                      <span className={isDeleted ? "line-through text-slate-400" : "text-slate-700"}>
+                                        {tx.remitente || (tx.kind === "recharge" ? (tx.customer_name || "—") : "—")}
+                                      </span>
+                                      {tx.remitente_cuenta && (
+                                        <div className="text-[9px] text-slate-400 font-mono">{tx.remitente_cuenta}</div>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2 text-xs hidden md:table-cell align-top" data-testid={`ledger-destinatario-${tx.id}`}>
+                                      <span className={isDeleted ? "line-through text-slate-400" : "text-slate-700"}>
+                                        {tx.destinatario || (tx.kind === "recharge" ? (selected?.owner_name || "—") : "—")}
+                                      </span>
+                                      {tx.destinatario_cuenta && (
+                                        <div className="text-[9px] text-slate-400 font-mono">{tx.destinatario_cuenta}</div>
+                                      )}
+                                    </td>
+                                  </>
+                                )}
                                 <td className={`px-3 py-2 text-xs font-mono hidden md:table-cell ${isDeleted ? "line-through text-slate-400" : "text-slate-600"}`}>
                                   {tx.reference_number || "—"}
                                 </td>

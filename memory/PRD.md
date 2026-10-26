@@ -291,3 +291,11 @@ Pendiente menor (no bloqueante): el endpoint bulk no usa transacción DB (degrad
 - Ledger endpoint GET /admin/bank-accounts/{id}/transactions: enriquece cada fila kind="recharge" uniendo con el wallet_transaction origen (ai_scan) → agrega remitente, remitente_cuenta, destinatario, destinatario_cuenta. Funciona para datos nuevos y antiguos (si el scan capturó los nombres).
 - PDF (lib/bankStatementPDF.js): bajo cada movimiento se dibuja sublínea gris "De: {remitente}  →  Para: {destinatario}" (destinatario cae al titular de la cuenta si el OCR no lo capturó en recargas).
 - IMPORTANTE: el remitente solo se captura en recargas escaneadas DE AHORA EN ADELANTE (antes no se extraía). Recargas antiguas pueden re-escanearse para backfill. Probado: endpoint devuelve remitente/destinatario (curl) y el PDF se genera sin errores ("PDF generado"). Datos de prueba simulados fueron limpiados.
+
+## [26 Oct 2026] Cuentas: PDF horizontal + Remitente/Destinatario en pantalla con check y filtro
+- PDF (lib/bankStatementPDF.js): rehecho en LANDSCAPE con jspdf-autotable. Columnas: FECHA, TIPO, DESCRIPCIÓN, REMITENTE, DESTINATARIO, REF., MONTO, SALDO. Cabecera con datos de cuenta (izq) + tarjetas resumen (der). Fallbacks: remitente→customer_name, destinatario→owner_name de la cuenta cuando OCR no lo capturó.
+- AdminBankAccounts.jsx (tabla de movimientos en pantalla):
+  - Nuevas columnas REMITENTE y DESTINATARIO (con cuenta origen/destino en gris si existe). Solo-escritorio (hidden md:table-cell).
+  - Checkbox "Mostrar remitente / destinatario" (showParties, default ON) para mostrar/ocultar esas columnas. testid toggle-parties-checkbox.
+  - Filtro por tipo de movimiento (Select kindFilter: all/recharge/manual_deposit/withdrawal). testid ledger-type-filter. El saldo corrido se calcula sobre TODO y solo se filtra la visualización.
+  - Probado en preview: columnas visibles, check oculta columnas, filtro "Recargas" deja solo recargas. PDF se genera sin errores.
