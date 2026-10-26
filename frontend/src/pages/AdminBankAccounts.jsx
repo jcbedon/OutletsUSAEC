@@ -28,6 +28,7 @@ import {
   Settings2,
   Users,
   Filter,
+  Search,
 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -99,6 +100,7 @@ export default function AdminBankAccounts() {
   // Ledger view controls
   const [showParties, setShowParties] = useState(true);
   const [kindFilter, setKindFilter] = useState("all");
+  const [ledgerSearch, setLedgerSearch] = useState("");
 
   const loadSummary = async () => {
     setLoading(true);
@@ -377,9 +379,16 @@ export default function AdminBankAccounts() {
 
   // Displayed rows: filter by movement type (running balance already computed
   // on the full set above so it stays correct regardless of the filter).
-  const filteredLedger = kindFilter === "all"
-    ? ledgerWithBalance
-    : ledgerWithBalance.filter((t) => t.kind === kindFilter);
+  const filteredLedger = ledgerWithBalance.filter((t) => {
+    if (kindFilter !== "all" && t.kind !== kindFilter) return false;
+    const term = ledgerSearch.trim().toLowerCase();
+    if (!term) return true;
+    const haystack = [
+      t.customer_name, t.customer_id, t.remitente, t.destinatario,
+      t.reference_number, t.description, t.remitente_cuenta, t.destinatario_cuenta,
+    ].filter(Boolean).join(" ").toLowerCase();
+    return haystack.includes(term);
+  });
 
   return (
     <div className="app-bg min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50/40 to-slate-50 pb-12">
@@ -626,6 +635,27 @@ export default function AdminBankAccounts() {
                         </SelectContent>
                       </Select>
                     </div>
+                  </div>
+
+                  {/* Search a client / movement inside this account */}
+                  <div className="relative mb-3">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input
+                      value={ledgerSearch}
+                      onChange={(e) => setLedgerSearch(e.target.value)}
+                      placeholder="Buscar cliente por nombre, ID, remitente, destinatario o referencia…"
+                      className="pl-9 h-9 rounded-lg text-xs"
+                      data-testid="ledger-search-input"
+                    />
+                    {ledgerSearch && (
+                      <button
+                        onClick={() => setLedgerSearch("")}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                        data-testid="ledger-search-clear"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
 
                   {/* Ledger table — banking style */}
